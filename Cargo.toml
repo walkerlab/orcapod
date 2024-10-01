@@ -1,0 +1,11 @@
+[package]
+name = "orcapod"
+version = "0.1.0"
+edition = "2021"
+license = "MIT license"
+
+[dependencies]
+colored = "2.1.0"
+fmt = "0.1.0"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_yaml = "0.9.34"

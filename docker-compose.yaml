@@ -1,0 +1,13 @@
+services:
+  dev-container:
+    privileged: true
+    build: .
+    volumes:
+      - ./:/src
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
