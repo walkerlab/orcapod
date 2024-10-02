@@ -11,7 +11,7 @@
 	"remoteEnv": {
 		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
 	},
-	"postStartCommand": "docker system prune -fa && docker volume prune -f & sudo apt-get update && sudo apt-get install fish -y && sudo apt-get clean",
+	"postStartCommand": "docker system prune -fa && docker volume prune -f",
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
