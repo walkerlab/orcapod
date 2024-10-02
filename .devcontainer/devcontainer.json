@@ -6,7 +6,7 @@
 	"overrideCommand": false,
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 	"mounts": [
-		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume",
+		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume"
 	],
 	"remoteEnv": {
 		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
@@ -21,7 +21,7 @@
 		"--name=${localWorkspaceFolderBasename}_devcontainer",
 		"--cpus=2",
 		"--memory=8gb",
-		"--privileged",
+		"--privileged"
 	],
 	"customizations": {
 		"vscode": {
@@ -30,7 +30,7 @@
 				"vadimcn.vscode-lldb", // Rust CodeLLDB debugger
 				"ms-vscode.hexeditor", // Binary preview in HEX
 				"tamasfe.even-better-toml", // *.toml language support
-				"eamodio.gitlens", // Git explorer in VSCode
+				"eamodio.gitlens" // Git explorer in VSCode
 			]
 		}
 	}
