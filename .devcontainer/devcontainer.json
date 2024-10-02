@@ -1,0 +1,37 @@
+{
+	"name": "Development",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"overrideCommand": false,
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	"mounts": [
+		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume",
+	],
+	"remoteEnv": {
+		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+	},
+	"postStartCommand": "docker system prune -fa && docker volume prune -f",
+	"hostRequirements": {
+		"cpus": 2,
+		"memory": "8gb",
+		"storage": "32gb"
+	},
+	"runArgs": [
+		"--name=${localWorkspaceFolderBasename}_devcontainer",
+		"--cpus=2",
+		"--memory=8gb",
+		"--privileged",
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"rust-lang.rust-analyzer", // Rust VSCode features
+				"vadimcn.vscode-lldb", // Rust CodeLLDB debugger
+				"ms-vscode.hexeditor", // Binary preview in HEX
+				"tamasfe.even-better-toml", // *.toml language support
+				"eamodio.gitlens", // Git explorer in VSCode
+			]
+		}
+	}
+}
