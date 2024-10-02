@@ -1,26 +1,60 @@
-// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+{
+	"name": "Development",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
+	"overrideCommand": false,
+	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+	"mounts": [
+		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume",
+	],
+	"remoteEnv": {
+		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+	},
+	"postStartCommand": "docker system prune -fa && docker volume prune -f",
+	"hostRequirements": {
+		"cpus": 2,
+		"memory": "8gb",
+		"storage": "32gb"
+	},
+	"runArgs": [
+		"--name=${localWorkspaceFolderBasename}_devcontainer",
+		"--cpus=2",
+		"--memory=8gb",
+		"--privileged",
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"rust-lang.rust-analyzer", // Rust VSCode features
+				"vadimcn.vscode-lldb", // Rust CodeLLDB debugger
+				"ms-vscode.hexeditor", // Binary preview in HEX
+				"tamasfe.even-better-toml", // *.toml language support
+				"eamodio.gitlens", // Git explorer in VSCode
+			]
+		}
+	}
+} // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
 {
 	"name": "Existing Dockerfile",
 	"dockerComposeFile": "../docker-compose.yaml",
-    "service": "dev-container",
+	"service": "dev-container",
 	"workspaceFolder": "/src",
-
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
-
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
-
 	// Uncomment the next line to run commands after the container is created.
 	"postStartCommand": "apt update && apt install fish -y && chsh -s $(which fish)",
-
 	// Configure tool-specific properties.
 	"customizations": {
 		// Configure properties specific to VS Code.
 		"vscode": {
-		  // Add the IDs of extensions you want installed when the container is created.
-		  "extensions": ["rust-lang.rust-analyzer"]
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"rust-lang.rust-analyzer"
+			]
 		}
 	}
 	// Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.

@@ -1,1 +1,4 @@
-/target
+.trash
+.env
+Cargo.lock
+target
