@@ -1,0 +1,18 @@
+{
+    "editor.formatOnPaste": false,
+    "editor.formatOnSave": true,
+    "notebook.formatOnSave.enabled": true,
+    "editor.rulers": [
+        88
+    ],
+    "[markdown]": {
+        "editor.defaultFormatter": null
+    },
+    "[rust]": {
+        "editor.inlayHints.enabled": "off",
+    },
+    "files.autoSave": "off",
+    "gitlens.showWelcomeOnInstall": false,
+    "gitlens.showWhatsNewAfterUpgrades": false,
+    "lldb.consoleMode": "evaluate",
+}

@@ -1,0 +1,104 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Rust: Debug single integration test",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--tests",
+                    "--package=orcapod",
+                ],
+                "filter": {
+                    "kind": "test"
+                }
+            },
+            "args": [
+                "--exact",
+                "--nocapture",
+                "test_function_name",
+            ],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Rust: Debug all integration tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--tests",
+                    "--package=orcapod",
+                ],
+                "filter": {
+                    "kind": "test"
+                }
+            },
+            "args": [
+                "--exact",
+                "--nocapture",
+            ],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Rust: Debug unit tests",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=orcapod"
+                ],
+                "filter": {
+                    "name": "orcapod",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Rust: Debug executable",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=exe_file_stem",
+                    "--package=orcapod"
+                ],
+                "filter": {
+                    "name": "exe_file_stem",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Rust: Debug unit tests in executable",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=exe_file_stem",
+                    "--package=orcapod"
+                ],
+                "filter": {
+                    "name": "exe_file_stem",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}",
+        },
+    ]
+}
