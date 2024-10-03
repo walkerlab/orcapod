@@ -1,5 +1,12 @@
 # orcapod
 
+### Rust help
+
+#### Run all integration tests
+
+```bash
+cargo test --test '*' --package=orcapod -- --exact --nocapture
+```
 
 ### Interesting Docs/Refs
 
