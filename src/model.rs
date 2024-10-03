@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Serialize)]
 pub struct Pod {
-    annotation: Annotation,
+    pub annotation: Annotation,
     command: String,
     // gpu: Option<GPUSpecRequirement>
     image: String,                               // Sha256 of docker image hash
@@ -17,7 +17,7 @@ pub struct Pod {
     output_stream_map: BTreeMap<String, PathBuf>,
     recommended_cpus: f32,
     recommended_memory: u64,
-    sha256: String,
+    pub sha256: String,
     source: String, // Git Commmit
 
                     // fn save(&self, fs: FileStore) -> Result {

@@ -32,4 +32,5 @@ fn pod() {
 
     fs.save_pod(&pod);
     println!("{:?}", pod);
+    println!("{:?}", fs);
 }
