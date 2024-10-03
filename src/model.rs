@@ -9,8 +9,8 @@ pub struct Pod {
     annotation: Annotation,
     command: String,
     // gpu: Option<GPUSpecRequirement>
-    image: String, // Sha256 of docker image hash
-    input_stream_map: BTreeMap<String, PathBuf>,
+    image: String,                               // Sha256 of docker image hash
+    input_stream_map: BTreeMap<String, PathBuf>, // change this back to KeyInfo later
     // might default to /output but needs
     output_dir: PathBuf,
     // here PathBuf will be relative to output_dir

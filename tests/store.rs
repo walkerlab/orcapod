@@ -30,7 +30,6 @@ fn pod() {
         String::from("https://github.com/zenml-io/zenml/tree/0.67.0"),
     );
 
+    fs.save_pod(&pod);
     println!("{:?}", pod);
-
-    fs.save_pod(pod);
 }
