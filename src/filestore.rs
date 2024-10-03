@@ -1,14 +1,19 @@
 use std::{
+    collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
 };
 
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
-use crate::{model::Annotation, store::Store};
+use crate::{
+    model::{Annotation, GPUSpecRequirement, KeyInfo},
+    store::Store,
+};
 
-struct FileStore {
+pub struct FileStore {
     storage_folder_path: PathBuf,
 }
 
@@ -37,20 +42,38 @@ struct AnnotationYaml {
     version: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct PodYaml {
+    class: String,
+    input_stream_map: BTreeMap<String, KeyInfo>,
+    output_dir: PathBuf,
+    output_stream_map: BTreeMap<String, KeyInfo>,
+    image_digest: String,
+    recommended_cpus: f32, // Num of recommneded cpu cores (can be fractional)
+    min_memory: u64,       // Bytes
+    gpu: Option<GPUSpecRequirement>,
+    source_commit: String, // Git Commit
+}
+
+struct PodCheckSum {
+    pod_yaml_hash: String,
+    image.tar
+}
+
 impl Store for FileStore {
     fn store_annotation(
         &self,
         annotation: &crate::model::Annotation,
         hash: &str, // Of owner
     ) -> Result<(), String> {
-        let data_struct = &AnnotationYaml {
+        let data_struct = AnnotationYaml {
             class: String::from("Annotation"),
             name: annotation.name.clone(),
             description: annotation.description.clone(),
             version: annotation.version.to_string(),
         };
 
-        let yaml_str = serde_yaml::to_string(data_struct).expect(&format!(
+        let yaml_str = serde_yaml::to_string(&data_struct).expect(&format!(
             "{}{:?}",
             "Failed to seralize: ".bright_red(),
             data_struct
@@ -94,17 +117,32 @@ impl Store for FileStore {
             version: annotation_yaml.version,
         }
     }
-    
+
     fn store_pod(&self, pod: &crate::model::Pod) -> Result<(), String> {
-        todo!()
+        let pod_yaml = serde_yaml::to_string(&PodYaml {
+            class: "pod".into(),
+            input_stream_map: pod.input_stream_map.clone(),
+            output_dir: pod.output_dir.clone(),
+            output_stream_map: pod.output_stream_map.clone(),
+            image_digest: pod.image_sha256_hash.clone(),
+            recommended_cpus: pod.recommended_cpus,
+            min_memory: pod.min_memory,
+            gpu: pod.gpu,
+            source_commit: pod.source_commit.clone(),
+        });
+
+        // Compute the hash of the pod
+        let pod_hash = compute_hash()
+        Ok(())
     }
-    
+
     fn read_pod(&self, hash: &str) -> crate::model::Pod {
         todo!()
     }
 }
 
-/// Store Errors
+/// Helper Functions
+///
 
 fn create_file_and_dir_if_not_exist(path: &Path, content_to_write: &str) -> io::Result<()> {
     if !Path::new(&path).exists() {
@@ -115,4 +153,10 @@ fn create_file_and_dir_if_not_exist(path: &Path, content_to_write: &str) -> io::
     }
 
     fs::write(&path, content_to_write)
+}
+
+fn compute_hash(data: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    format!("{:X}", hasher.finalize())
 }
