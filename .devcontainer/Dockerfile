@@ -27,6 +27,5 @@ RUN \
     apt-get clean
 
 USER vscode
-ENV PATH ${PATH}:/home/vscode/.local/bin
-
-CMD bash -c "sudo rm /var/run/docker.pid; sudo dockerd"
+ENV PATH=${PATH}:/home/vscode/.local/bin
+CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]
