@@ -3,9 +3,9 @@ use crate::model::{Annotation, Pod};
 pub trait Store {
     fn store_annotation(&self, annotation: &Annotation, owner_hash: &str) -> Result<(), String>;
 
-    fn read_annotation(&self, hash: &str) -> Annotation;
+    fn load_annotation(&self, hash: &str) -> Result<Annotation, String>;
 
     fn store_pod(&self, pod: &Pod) -> Result<(), String>;
 
-    fn read_pod(&self, hash: &str) -> Pod;
+    fn load_pod(&self, hash: &str) -> Result<Pod, String>;
 }

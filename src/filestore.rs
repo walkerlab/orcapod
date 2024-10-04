@@ -1,17 +1,18 @@
 use std::{
     collections::BTreeMap,
-    fs, io,
+    fs,
     path::{Path, PathBuf},
 };
 
 use colored::Colorize;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use serde::Deserialize;
 
 use crate::{
-    model::{Annotation, GPUSpecRequirement, KeyInfo},
+    model::{Annotation, GPUSpecRequirement, KeyInfo, Pod, ToYaml},
     store::Store,
 };
+
+static POD_FOLDER_NAME: &str = "Pod";
 
 pub struct FileStore {
     storage_folder_path: PathBuf,
@@ -24,40 +25,21 @@ impl FileStore {
         }
     }
 
-    pub fn construct_annotation_path(&self, hash: &str) -> PathBuf {
+    fn construct_annotation_path(&self, hash: &str) -> PathBuf {
         let mut path_buf = self.storage_folder_path.to_path_buf();
         path_buf.push("Annotation");
         path_buf.push(format!("{}{}", hash, ".yaml"));
 
         path_buf
     }
-}
 
-/// Storage classes for yaml
-#[derive(Serialize, Deserialize, Debug)]
-struct AnnotationYaml {
-    class: String,
-    name: String,
-    description: String,
-    version: String,
-}
+    fn construct_folder_path(&self, model_name: &str, hash: &str) -> PathBuf {
+        let mut path_buf = self.storage_folder_path.to_path_buf();
+        path_buf.push(model_name);
+        path_buf.push(format!("{}.yaml", hash));
 
-#[derive(Serialize, Deserialize, Debug)]
-struct PodYaml {
-    class: String,
-    input_stream_map: BTreeMap<String, KeyInfo>,
-    output_dir: PathBuf,
-    output_stream_map: BTreeMap<String, KeyInfo>,
-    image_digest: String,
-    recommended_cpus: f32, // Num of recommneded cpu cores (can be fractional)
-    min_memory: u64,       // Bytes
-    gpu: Option<GPUSpecRequirement>,
-    source_commit: String, // Git Commit
-}
-
-struct PodCheckSum {
-    pod_yaml_hash: String,
-    image.tar
+        path_buf
+    }
 }
 
 impl Store for FileStore {
@@ -66,18 +48,7 @@ impl Store for FileStore {
         annotation: &crate::model::Annotation,
         hash: &str, // Of owner
     ) -> Result<(), String> {
-        let data_struct = AnnotationYaml {
-            class: String::from("Annotation"),
-            name: annotation.name.clone(),
-            description: annotation.description.clone(),
-            version: annotation.version.to_string(),
-        };
-
-        let yaml_str = serde_yaml::to_string(&data_struct).expect(&format!(
-            "{}{:?}",
-            "Failed to seralize: ".bright_red(),
-            data_struct
-        ));
+        let yaml_str = annotation.to_yaml();
 
         let path = self.construct_annotation_path(hash);
 
@@ -87,76 +58,167 @@ impl Store for FileStore {
         }
     }
 
-    fn read_annotation(&self, hash: &str) -> Annotation {
-        let mut path = self.construct_annotation_path(hash);
+    fn load_annotation(&self, hash: &str) -> Result<Annotation, String> {
+        let path = self.construct_annotation_path(hash);
 
-        let file = match fs::read_to_string(&path) {
-            Ok(raw_yaml) => raw_yaml,
-            Err(e) => panic!(
-                "{}{}{}",
-                e.to_string().bright_red(),
-                " for ".bright_red(),
-                path.to_string_lossy().bright_cyan()
-            ),
-        };
+        let file = read_yaml(&path)?;
 
-        let annotation_yaml: AnnotationYaml = match serde_yaml::from_str(&file) {
+        #[derive(Deserialize)]
+        struct AnnotationYaml {
+            name: String,
+            description: String,
+            version: String,
+        }
+
+        let yaml_struct: AnnotationYaml = match serde_yaml::from_str(&file) {
             Ok(value) => value,
-            Err(e) => panic!(
-                "{}{}{}{}",
-                "Failed to deserialize with error ".bright_red(),
-                e.to_string().bright_red(),
-                " for ".bright_red(),
-                path.to_string_lossy().bright_cyan()
-            ),
+            Err(e) => {
+                return Err(format!(
+                    "{}{}{}{}",
+                    "Failed to deserialize with error ".bright_red(),
+                    e.to_string().bright_red(),
+                    " for ".bright_red(),
+                    path.to_string_lossy().bright_cyan()
+                ))
+            }
         };
 
-        Annotation {
-            name: annotation_yaml.name,
-            description: annotation_yaml.description,
-            version: annotation_yaml.version,
+        Ok(Annotation {
+            name: yaml_struct.name,
+            description: yaml_struct.description,
+            version: yaml_struct.version,
+        })
+    }
+
+    fn store_pod(&self, pod: &Pod) -> Result<(), String> {
+        let path = self.construct_folder_path(POD_FOLDER_NAME, &pod.pod_hash);
+
+        // Try to save it
+        match create_file_and_dir_if_not_exist(&path, &pod.to_yaml()) {
+            Ok(_) => (),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        // Missing docker image save
+        // TODO
+
+        // Save the Annotation
+        match create_file_and_dir_if_not_exist(
+            &self.construct_annotation_path(&pod.pod_hash),
+            &pod.annotation.to_yaml(),
+        ) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Failed to store thus reverse the pod save
+                fs::remove_dir(path).unwrap();
+                Err(e.to_string())
+            }
         }
     }
 
-    fn store_pod(&self, pod: &crate::model::Pod) -> Result<(), String> {
-        let pod_yaml = serde_yaml::to_string(&PodYaml {
-            class: "pod".into(),
-            input_stream_map: pod.input_stream_map.clone(),
-            output_dir: pod.output_dir.clone(),
-            output_stream_map: pod.output_stream_map.clone(),
-            image_digest: pod.image_sha256_hash.clone(),
-            recommended_cpus: pod.recommended_cpus,
-            min_memory: pod.min_memory,
-            gpu: pod.gpu,
-            source_commit: pod.source_commit.clone(),
-        });
+    fn load_pod(&self, hash: &str) -> Result<Pod, String> {
+        let path = self.construct_folder_path(POD_FOLDER_NAME, hash);
 
-        // Compute the hash of the pod
-        let pod_hash = compute_hash()
-        Ok(())
-    }
+        #[derive(Deserialize)]
+        struct PodYaml {
+            gpu: Option<GPUSpecRequirement>,
+            image_digest: String,
+            input_stream_map: BTreeMap<String, KeyInfo>, // Num of recommneded cpu cores (can be fractional)
+            min_memory: u64,
+            output_dir: PathBuf,
+            output_stream_map: BTreeMap<String, KeyInfo>,
+            recommended_cpus: f32,
+            source_commit: String, // Git Commit
+        }
 
-    fn read_pod(&self, hash: &str) -> crate::model::Pod {
-        todo!()
+        let file = read_yaml(&path)?;
+        let yaml_struct: PodYaml = match serde_yaml::from_str(&file) {
+            Ok(value) => value,
+            Err(e) => {
+                return Err(format!(
+                    "{}{}{}{}",
+                    "Failed to deserialize with error ".bright_red(),
+                    e.to_string().bright_red(),
+                    " for ".bright_red(),
+                    path.to_string_lossy().bright_cyan()
+                ))
+            }
+        };
+
+        let annotation = self.load_annotation(hash)?;
+
+        let pod = Pod {
+            annotation,
+            gpu_spec_requirments: yaml_struct.gpu,
+            image_digest: yaml_struct.image_digest,
+            input_stream_map: yaml_struct.input_stream_map,
+            min_memory: yaml_struct.min_memory,
+            output_dir: yaml_struct.output_dir,
+            output_stream_map: yaml_struct.output_stream_map,
+            pod_hash: hash.to_string(),
+            recommended_cpus: yaml_struct.recommended_cpus,
+            source_commit: yaml_struct.source_commit,
+        };
+
+        pod.verify()?;
+        Ok(pod)
     }
 }
 
 /// Helper Functions
 ///
 
-fn create_file_and_dir_if_not_exist(path: &Path, content_to_write: &str) -> io::Result<()> {
-    if !Path::new(&path).exists() {
-        match path.parent() {
-            Some(value) => fs::create_dir_all(&value)?,
-            None => panic!("{}", "Unable to extract folder path".bright_red()), // Maybe do a more genric error here since std::io:result doesn't support that
-        };
-    }
+fn create_file_and_dir_if_not_exist(path: &Path, content_to_write: &str) -> Result<(), String> {
+    match Path::new(&path).exists() {
+        true => Err(format!(
+            "{}{}",
+            &path.to_string_lossy().bright_cyan(),
+            " already exists!".bright_red()
+        )),
+        false => {
+            // Create the all the folders above the file
+            let parent_path = match path.parent() {
+                Some(value) => value,
+                None => panic!("{}", "Unable to extract folder path".bright_red()), // Maybe do a more genric error here since std::io:result doesn't support that
+            };
 
-    fs::write(&path, content_to_write)
+            match fs::create_dir_all(&parent_path) {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(format!(
+                        "{}{}{}{}",
+                        "Failed to create parent directory ".bright_red(),
+                        &parent_path.to_string_lossy().bright_cyan(),
+                        " with error ".bright_red(),
+                        e.to_string().bright_cyan()
+                    ))
+                }
+            }
+
+            match fs::write(&path, content_to_write) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!(
+                    "{}{}{}{}",
+                    "Failed to write to: ".bright_red(),
+                    &path.to_string_lossy().cyan(),
+                    " with error ".bright_red(),
+                    e.to_string().bright_cyan()
+                )),
+            }
+        }
+    }
 }
 
-fn compute_hash(data: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    format!("{:X}", hasher.finalize())
+fn read_yaml(path: &Path) -> Result<String, String> {
+    Ok(match fs::read_to_string(&path) {
+        Ok(raw_yaml) => raw_yaml,
+        Err(e) => {
+            return Err(format!(
+                "{}{}{}",
+                e.to_string().bright_red(),
+                " for ".bright_red(),
+                path.to_string_lossy().bright_cyan(),
+            ))
+        }
+    })
 }
