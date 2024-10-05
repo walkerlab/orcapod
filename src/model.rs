@@ -134,19 +134,19 @@ impl Pod {
 
     pub fn verify(&self) -> Result<(), String> {
         let compute_hash = self.compute_hash();
-        match compute_hash != self.pod_hash {
-            true => {
-                // Hash is different, something went wrong
-                Err(format!(
-                    "{}{}{}{}{}",
-                    "Pod should have hash ".bright_red(),
-                    &compute_hash.bright_cyan(),
-                    " but ".bright_red(),
-                    &self.pod_hash.bright_cyan(),
-                    " was found".bright_red()
-                ))
-            }
-            false => Ok(()),
+
+        if compute_hash != self.pod_hash {
+            // Hash is different, something went wrong
+            Err(format!(
+                "{}{}{}{}{}",
+                "Pod should have hash ".bright_red(),
+                &compute_hash.bright_cyan(),
+                " but ".bright_red(),
+                &self.pod_hash.bright_cyan(),
+                " was found".bright_red()
+            ))
+        } else {
+            Ok(())
         }
     }
 }

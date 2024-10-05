@@ -1,4 +1,5 @@
 use std::{
+    clone,
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
@@ -19,14 +20,14 @@ pub struct FileStore {
 }
 
 impl FileStore {
-    pub fn new(storage_folder_path: PathBuf) -> Self {
+    pub fn new(storage_folder_path: impl Into<PathBuf>) -> Self {
         Self {
-            storage_folder_path: storage_folder_path,
+            storage_folder_path: storage_folder_path.into(),
         }
     }
 
     fn construct_annotation_path(&self, hash: &str) -> PathBuf {
-        let mut path_buf = self.storage_folder_path.to_path_buf();
+        let mut path_buf = self.storage_folder_path.clone();
         path_buf.push("Annotation");
         path_buf.push(format!("{}{}", hash, ".yaml"));
 
@@ -34,7 +35,7 @@ impl FileStore {
     }
 
     fn construct_folder_path(&self, model_name: &str, hash: &str) -> PathBuf {
-        let mut path_buf = self.storage_folder_path.to_path_buf();
+        let mut path_buf = self.storage_folder_path.clone();
         path_buf.push(model_name);
         path_buf.push(format!("{}.yaml", hash));
 
@@ -45,17 +46,13 @@ impl FileStore {
 impl Store for FileStore {
     fn store_annotation(
         &self,
-        annotation: &crate::model::Annotation,
+        annotation: &Annotation,
         hash: &str, // Of owner
     ) -> Result<(), String> {
         let yaml_str = annotation.to_yaml();
 
         let path = self.construct_annotation_path(hash);
-
-        match create_file_and_dir_if_not_exist(&path, &yaml_str) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
+        create_file_and_dir_if_not_exist(&path, &yaml_str)
     }
 
     fn load_annotation(&self, hash: &str) -> Result<Annotation, String> {
@@ -103,10 +100,7 @@ impl Store for FileStore {
         // TODO
 
         // Save the Annotation
-        match create_file_and_dir_if_not_exist(
-            &self.construct_annotation_path(&pod.pod_hash),
-            &pod.annotation.to_yaml(),
-        ) {
+        match self.store_annotation(&pod.annotation, &pod.pod_hash) {
             Ok(_) => Ok(()),
             Err(e) => {
                 // Failed to store thus reverse the pod save
@@ -169,42 +163,41 @@ impl Store for FileStore {
 ///
 
 fn create_file_and_dir_if_not_exist(path: &Path, content_to_write: &str) -> Result<(), String> {
-    match Path::new(&path).exists() {
-        true => Err(format!(
+    if Path::new(&path).exists() {
+        Err(format!(
             "{}{}",
             &path.to_string_lossy().bright_cyan(),
             " already exists!".bright_red()
-        )),
-        false => {
-            // Create the all the folders above the file
-            let parent_path = match path.parent() {
-                Some(value) => value,
-                None => panic!("{}", "Unable to extract folder path".bright_red()), // Maybe do a more genric error here since std::io:result doesn't support that
-            };
+        ))
+    } else {
+        // Create the all the folders above the file
+        let parent_path = match path.parent() {
+            Some(value) => value,
+            None => panic!("{}", "Unable to extract folder path".bright_red()), // Maybe do a more genric error here since std::io:result doesn't support that
+        };
 
-            match fs::create_dir_all(&parent_path) {
-                Ok(_) => (),
-                Err(e) => {
-                    return Err(format!(
-                        "{}{}{}{}",
-                        "Failed to create parent directory ".bright_red(),
-                        &parent_path.to_string_lossy().bright_cyan(),
-                        " with error ".bright_red(),
-                        e.to_string().bright_cyan()
-                    ))
-                }
-            }
-
-            match fs::write(&path, content_to_write) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!(
+        match fs::create_dir_all(&parent_path) {
+            Ok(_) => (),
+            Err(e) => {
+                return Err(format!(
                     "{}{}{}{}",
-                    "Failed to write to: ".bright_red(),
-                    &path.to_string_lossy().cyan(),
+                    "Failed to create parent directory ".bright_red(),
+                    &parent_path.to_string_lossy().bright_cyan(),
                     " with error ".bright_red(),
                     e.to_string().bright_cyan()
-                )),
+                ))
             }
+        }
+
+        match fs::write(&path, content_to_write) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!(
+                "{}{}{}{}",
+                "Failed to write to: ".bright_red(),
+                &path.to_string_lossy().cyan(),
+                " with error ".bright_red(),
+                e.to_string().bright_cyan()
+            )),
         }
     }
 }
