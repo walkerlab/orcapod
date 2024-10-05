@@ -1,5 +1,4 @@
 use std::{
-    clone,
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
