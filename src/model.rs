@@ -1,14 +1,21 @@
+use crate::util::hash_buffer;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::path::PathBuf;
 
 // --- core model structs (fields should be in lexicographical order)---
 
 #[derive(Debug, Serialize)]
 pub struct Pod {
+    #[serde(skip_serializing)]
     pub annotation: Annotation,
+    pub class: String,
     command: String,
+    file_content_checksums: BTreeMap<PathBuf, String>,
     // gpu: Option<GPUSpecRequirement>
+    #[serde(skip_serializing)]
+    pub hash: String,
     image: String,                               // Sha256 of docker image hash
     input_stream_map: BTreeMap<String, PathBuf>, // change this back to KeyInfo later
     // might default to /output but needs
@@ -17,7 +24,6 @@ pub struct Pod {
     output_stream_map: BTreeMap<String, PathBuf>,
     recommended_cpus: f32,
     recommended_memory: u64,
-    pub sha256: String,
     source: String, // Git Commmit
 
                     // fn save(&self, fs: FileStore) -> Result {
@@ -37,23 +43,38 @@ impl Pod {
         recommended_cpus: f32,
         recommended_memory: u64,
         source: String,
-    ) -> Self {
+    ) -> Result<Self, Box<dyn Error>> {
+        let class = std::any::type_name::<Self>()
+            .split("::")
+            .collect::<Vec<&str>>()[2]
+            .to_lowercase();
         let resolved_image = String::from(
             "zenmldocker/zenml-server@sha256:78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f",
         );
-        let hash = String::from("2e99758548972a8e8822ad47fa1017ff72f06f3ff6a016851f45c398732bc50c");
-        Self {
+        let checksums = BTreeMap::from([(
+            PathBuf::from("image.tar.gz"),
+            String::from("78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f"),
+        )]);
+        let pod_no_hash = Self {
             annotation,
+            class,
             command,
+            file_content_checksums: checksums,
+            hash: String::from(""),
             image: resolved_image,
             input_stream_map,
             output_dir,
             output_stream_map,
             recommended_cpus,
             recommended_memory,
-            sha256: hash,
             source,
-        }
+        };
+        let yaml = serde_yaml::to_string(&pod_no_hash)?;
+        let hash = hash_buffer(&yaml)?;
+        Ok(Self {
+            hash,
+            ..pod_no_hash
+        })
     }
 }
 

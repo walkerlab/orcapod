@@ -1,10 +1,13 @@
 use crate::model::Pod;
 use serde_yaml::Value;
 use std::collections::BTreeMap;
+use std::error::Error;
+use std::fs;
 use std::path::PathBuf;
 
 pub trait OrcaStore {
-    fn save_pod(&self, pod: &Pod); // add output later -> Result<(), String>
+    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>>;
 }
 
 #[derive(Debug)]
@@ -13,34 +16,73 @@ pub struct LocalFileStore {
 }
 
 impl OrcaStore for LocalFileStore {
-    fn save_pod(&self, pod: &Pod) {
-        let spec_dir = format!(
-            "{}/{}/{}",
-            self.location.to_str().unwrap(), // use ? when returning result
-            "pod",
-            pod.sha256
-        );
-
-        let spec_file = PathBuf::from(format!("{}/{}", spec_dir, "spec.yaml"));
-        let sig_file = PathBuf::from(format!("{}/{}", spec_dir, "signature.yaml"));
-        let annotation_file = format!(
-            "{}/{}/{}/{}/{}-{}.yaml",
-            self.location.to_str().unwrap(), // use ? when returning result
-            "annotation",
-            "pod",
-            pod.annotation.name,
-            pod.sha256,
-            pod.annotation.version,
-        );
-
-        let mut spec_yaml: String;
-        let annotation_yaml: String;
-
-        let field_iter: BTreeMap<String, Value> =
-            serde_yaml::from_str(&serde_yaml::to_string(pod).unwrap()).unwrap();
-
-        for (k, v) in &field_iter {
-            println!("key: {}, value: {:?}", k, v);
+    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
+        let spec_file = PathBuf::from(format!(
+            "{}/{}/{}/{}",
+            self.location.display().to_string(),
+            pod.class,
+            pod.hash,
+            "spec.yaml",
+        ));
+        let spec_yaml = serde_yaml::to_string(pod)?;
+        match spec_file.parent() {
+            Some(parent) => fs::create_dir_all(&parent)?,
+            None => {}
         }
+        fs::write(&spec_file, &spec_yaml)?;
+
+        let annotation_file = PathBuf::from(format!(
+            "{}/{}/{}/{}/{}-{}.yaml",
+            self.location.display().to_string(),
+            "annotation",
+            pod.class,
+            pod.annotation.name,
+            pod.hash,
+            pod.annotation.version,
+        ));
+        let annotation_yaml = serde_yaml::to_string(&pod.annotation)?;
+        match annotation_file.parent() {
+            Some(parent) => fs::create_dir_all(&parent)?,
+            None => {}
+        }
+        fs::write(&annotation_file, &annotation_yaml)?;
+        Ok(())
+        // println!("spec_file: {:?}", spec_file);
+        // println!("annotation_file: {:?}", annotation_file);
+        // println!("spec_yaml: {}", spec_yaml);
+        // println!("annotation_yaml: {}", annotation_yaml);
+    }
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
+        // let file_iter = glob::glob(&format!(
+        //     "{}/annotation/pod/**/*.yaml",
+        //     self.location.to_str().unwrap()
+        // ));
+        // let names = file_iter
+        //     .unwrap()
+        //     .map(|x| x.unwrap().display())
+        //     .collect::<Vec<_>>();
+
+        // let names = glob::glob(&format!(
+        //     "{}/annotation/pod/**/*.yaml",
+        //     self.location.display().to_string(),
+        // ))?
+        // .collect::<Vec<_>>();
+
+        let names = glob::glob(&format!(
+            "{}/annotation/pod/**/*.yaml",
+            self.location.display().to_string(),
+        ))?
+        .map(|x| Ok(x?.display().to_string()))
+        .collect::<Result<Vec<String>, Box<dyn Error>>>();
+        println!("list: {:?}", names);
+
+        Ok(BTreeMap::from([(
+            String::from("name"),
+            vec![
+                String::from("one"),
+                String::from("two"),
+                String::from("three"),
+            ],
+        )]))
     }
 }
