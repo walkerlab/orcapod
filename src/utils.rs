@@ -1,4 +1,4 @@
-pub fn get_struct_name<T>(_: T) -> String {
+pub fn get_struct_name<T>() -> String {
     std::any::type_name::<T>()
         .split("::")
         .collect::<Vec<&str>>()

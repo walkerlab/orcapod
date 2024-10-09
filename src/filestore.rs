@@ -12,9 +12,8 @@ use crate::{
     error::{DeserializeError, FailedToExtractParentFolder, FileAlreadyExists, WriteError},
     model::{to_yaml, Annotation, GPUSpecRequirement, KeyInfo, Pod},
     store::Store,
+    utils::get_struct_name,
 };
-
-static POD_FOLDER_NAME: &str = "Pod";
 
 pub struct FileStore {
     storage_folder_path: PathBuf,
@@ -83,7 +82,7 @@ impl Store for FileStore {
     }
 
     fn store_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let path = self.construct_folder_path(POD_FOLDER_NAME, &pod.pod_hash);
+        let path = self.construct_folder_path(&get_struct_name::<Pod>(), &pod.pod_hash);
 
         // Try to save it
         create_file_and_dir_if_not_exist(&path, &to_yaml(&pod)?)?;
@@ -96,7 +95,7 @@ impl Store for FileStore {
     }
 
     fn load_pod(&self, hash: &str) -> Result<Pod, Box<dyn Error>> {
-        let path = self.construct_folder_path(POD_FOLDER_NAME, hash);
+        let path = self.construct_folder_path(&get_struct_name::<Pod>(), hash);
 
         #[derive(Deserialize)]
         struct PodYaml {

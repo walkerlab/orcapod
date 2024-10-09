@@ -17,7 +17,7 @@ pub fn to_yaml<T: Serialize + std::fmt::Debug>(item: T) -> Result<String, Box<dy
         }
     };
 
-    yaml_str.insert_str(0, &format!("class: {}\n", get_struct_name(item)));
+    yaml_str.insert_str(0, &format!("class: {}\n", get_struct_name::<T>()));
 
     Ok(yaml_str)
 }
