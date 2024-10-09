@@ -44,6 +44,7 @@ impl Pod {
         recommended_memory: u64,
         source: String,
     ) -> Result<Self, Box<dyn Error>> {
+        // todo: move class to store save
         let class = std::any::type_name::<Self>()
             .split("::")
             .collect::<Vec<&str>>()[2]
@@ -51,6 +52,7 @@ impl Pod {
         let resolved_image = String::from(
             "zenmldocker/zenml-server@sha256:78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f",
         );
+        // todo: docker image:tag -> image@digest
         let checksums = BTreeMap::from([(
             PathBuf::from("image.tar.gz"),
             String::from("78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f"),

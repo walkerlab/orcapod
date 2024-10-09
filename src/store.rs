@@ -73,7 +73,7 @@ impl OrcaStore for LocalFileStore {
             self.location.display().to_string(),
         ))?
         .map(|x| Ok(x?.display().to_string()))
-        .collect::<Result<Vec<String>, Box<dyn Error>>>();
+        .collect::<Result<Vec<String>, Box<dyn Error>>>()?;
         println!("list: {:?}", names);
 
         Ok(BTreeMap::from([(
