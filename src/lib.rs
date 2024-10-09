@@ -1,4 +1,6 @@
+pub mod error;
 pub mod filestore;
 pub mod model;
 pub mod orca;
-pub mod store;
+mod store;
+mod utils;

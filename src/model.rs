@@ -1,12 +1,25 @@
 use core::f32;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, error::Error, path::PathBuf};
 
-use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub trait ToYaml {
-    fn to_yaml(&self) -> String;
+use crate::{error::SerializeError, utils::get_struct_name};
+
+pub fn to_yaml<T: Serialize + std::fmt::Debug>(item: T) -> Result<String, Box<dyn Error>> {
+    let mut yaml_str = match serde_yaml::to_string(&item) {
+        Ok(value) => value,
+        Err(error) => {
+            return Err(Box::new(SerializeError {
+                item_debug_string: format!("{:?}", item),
+                error,
+            }))
+        }
+    };
+
+    yaml_str.insert_str(0, &format!("class: {}\n", get_struct_name(item)));
+
+    Ok(yaml_str)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -14,19 +27,6 @@ pub struct Annotation {
     pub name: String,
     pub description: String,
     pub version: String,
-}
-
-impl ToYaml for Annotation {
-    fn to_yaml(&self) -> String {
-        let mut yaml_str = serde_yaml::to_string(&self).expect(&format!(
-            "{}{}",
-            "Failed to seralize: ".bright_red(),
-            format!("{:?}", &self)
-        ));
-
-        yaml_str.insert_str(0, "class: Annotation\n");
-        yaml_str
-    }
 }
 
 /// String would be the name of the model
@@ -63,19 +63,6 @@ pub struct Pod {
     pub pod_hash: String, // SHA256 docker image hash
     pub recommended_cpus: f32,
     pub source_commit: String, // Git Commit
-}
-
-impl ToYaml for Pod {
-    fn to_yaml(&self) -> String {
-        let mut yaml_str = serde_yaml::to_string(&self).expect(&format!(
-            "{}{}",
-            "Failed to seralize: ".bright_red(),
-            format!("{:?}", self).bright_cyan()
-        ));
-
-        yaml_str.insert_str(0, "class: Pod\n");
-        yaml_str
-    }
 }
 
 #[derive(Clone)]
@@ -122,37 +109,10 @@ impl Pod {
             source_commit: config.source_commit,
         };
 
-        let pod_hash = pod.compute_hash();
+        // Covert to yaml, if fails, just panic since it should always be valid
+        let pod_hash = format!("{:X}", Sha256::digest(to_yaml(&pod).unwrap()));
         pod.pod_hash = pod_hash;
 
         pod
     }
-
-    pub fn compute_hash(&self) -> String {
-        compute_sha_256_hash(&self.to_yaml())
-    }
-
-    pub fn verify(&self) -> Result<(), String> {
-        let compute_hash = self.compute_hash();
-
-        if compute_hash != self.pod_hash {
-            // Hash is different, something went wrong
-            Err(format!(
-                "{}{}{}{}{}",
-                "Pod should have hash ".bright_red(),
-                &compute_hash.bright_cyan(),
-                " but ".bright_red(),
-                &self.pod_hash.bright_cyan(),
-                " was found".bright_red()
-            ))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-fn compute_sha_256_hash(data: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    format!("{:X}", hasher.finalize())
 }
