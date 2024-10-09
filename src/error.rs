@@ -86,22 +86,22 @@ impl Display for SerializeError {
 }
 
 #[derive(Debug)]
-pub struct WriteError {
+pub struct IOError {
     pub path: PathBuf,
     pub error: io::Error,
 }
 
-impl Error for WriteError {}
+impl Error for IOError {}
 
-impl Display for WriteError {
+impl Display for IOError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}{}{}{}",
-            "Failed to write to: ".bright_red(),
+            "IO Error: ".bright_red(),
+            &self.error.to_string().bright_red(),
+            " at ".bright_red(),
             &self.path.to_string_lossy().cyan(),
-            " with error ".bright_red(),
-            &self.error.to_string().bright_cyan()
         )
     }
 }

@@ -5,11 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use colored::Colorize;
 use serde::Deserialize;
 
 use crate::{
-    error::{DeserializeError, FailedToExtractParentFolder, FileAlreadyExists, WriteError},
+    error::{DeserializeError, FailedToExtractParentFolder, FileAlreadyExists, IOError},
     model::{to_yaml, Annotation, GPUSpecRequirement, KeyInfo, Pod},
     store::Store,
     utils::get_struct_name,
@@ -161,7 +160,7 @@ fn create_file_and_dir_if_not_exist(
 
         match fs::write(&path, content_to_write) {
             Ok(_) => Ok(()),
-            Err(e) => Err(Box::new(WriteError {
+            Err(e) => Err(Box::new(IOError {
                 path: path.as_ref().into(),
                 error: e,
             })),
@@ -169,16 +168,14 @@ fn create_file_and_dir_if_not_exist(
     }
 }
 
-fn read_yaml(path: &Path) -> Result<String, String> {
+fn read_yaml(path: impl AsRef<Path>) -> Result<String, Box<dyn Error>> {
     Ok(match fs::read_to_string(&path) {
         Ok(raw_yaml) => raw_yaml,
-        Err(e) => {
-            return Err(format!(
-                "{}{}{}",
-                e.to_string().bright_red(),
-                " for ".bright_red(),
-                path.to_string_lossy().bright_cyan(),
-            ))
+        Err(error) => {
+            return Err(Box::new(IOError {
+                path: path.as_ref().into(),
+                error,
+            }))
         }
     })
 }
