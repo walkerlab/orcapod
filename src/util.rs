@@ -9,6 +9,7 @@ pub fn hash_buffer(buffer: &str) -> Result<String, Box<dyn Error>> {
 }
 
 fn hash_file(file: &str) -> Result<String, Box<dyn Error>> {
+    // todo: verify this works
     // https://www.thorsten-hans.com/weekly-rust-trivia-compute-a-sha256-hash-of-a-file/
     // Open the file
     let mut file = File::open(file)?;

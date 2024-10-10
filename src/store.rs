@@ -1,4 +1,5 @@
 use crate::model::Pod;
+use regex::Regex;
 use serde_yaml::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -8,6 +9,8 @@ use std::path::PathBuf;
 pub trait OrcaStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>>;
+    // fn load_pod(&self, name: &str, version: &str) -> Result<Option<Pod>, Box<dyn Error>>;
+    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
 }
 
 #[derive(Debug)]
@@ -53,36 +56,66 @@ impl OrcaStore for LocalFileStore {
         // println!("annotation_yaml: {}", annotation_yaml);
     }
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
-        // let file_iter = glob::glob(&format!(
-        //     "{}/annotation/pod/**/*.yaml",
-        //     self.location.to_str().unwrap()
-        // ));
-        // let names = file_iter
-        //     .unwrap()
-        //     .map(|x| x.unwrap().display())
-        //     .collect::<Vec<_>>();
+        let re = Regex::new(
+            r"^.*\/(?<name>[0-9a-zA-Z\-]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
+        )?;
 
-        // let names = glob::glob(&format!(
-        //     "{}/annotation/pod/**/*.yaml",
-        //     self.location.display().to_string(),
-        // ))?
-        // .collect::<Vec<_>>();
-
-        let names = glob::glob(&format!(
+        let paths = glob::glob(&format!(
             "{}/annotation/pod/**/*.yaml",
             self.location.display().to_string(),
-        ))?
-        .map(|x| Ok(x?.display().to_string()))
-        .collect::<Result<Vec<String>, Box<dyn Error>>>()?;
-        println!("list: {:?}", names);
+        ))?;
 
-        Ok(BTreeMap::from([(
-            String::from("name"),
-            vec![
-                String::from("one"),
-                String::from("two"),
-                String::from("three"),
-            ],
-        )]))
+        let (names, (hashes, versions)): (Vec<String>, (Vec<String>, Vec<String>)) = paths
+            .map(|p| {
+                let path_string = &p.unwrap().display().to_string(); // todo: fix unwrap call
+                let cap = re.captures(path_string).unwrap();
+                (
+                    cap["name"].to_string(),
+                    (cap["hash"].to_string(), cap["version"].to_string()),
+                )
+            })
+            .unzip();
+
+        Ok(BTreeMap::from([
+            (String::from("name"), names),
+            (String::from("hash"), hashes),
+            (String::from("version"), versions),
+        ]))
+    }
+    // fn load_pod(&self, name: &str, version: &str) -> Result<Option<Pod>, Box<dyn Error>> {}
+    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
+        // todo: need proper logic to remove empty annotation/hash dirs
+        let re = Regex::new(
+            r"^.*\/(?<name>[0-9a-zA-Z\-]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
+        )?;
+
+        let hash = match glob::glob(&format!(
+            "{}/annotation/pod/{}/*-{}.yaml",
+            self.location.display().to_string(),
+            name,
+            version,
+        ))?
+        .next()
+        {
+            Some(p) => {
+                let path_string = &p?.display().to_string();
+                let cap = re.captures(path_string).unwrap();
+                Some(cap["hash"].to_string())
+            }
+            None => None,
+        };
+
+        match hash {
+            Some(h) => fs::remove_file(&format!(
+                "{}/annotation/pod/{}/{}-{}.yaml",
+                self.location.display().to_string(),
+                h,
+                name,
+                version,
+            ))?,
+            None => {}
+        }
+
+        Ok(())
     }
 }

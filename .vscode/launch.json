@@ -20,8 +20,7 @@
             "args": [
                 "--exact",
                 "--nocapture",
-                // "pod",
-                "path_loop_benchmark",
+                "pod",
             ],
             "cwd": "${workspaceFolder}",
         },
