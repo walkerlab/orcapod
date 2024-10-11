@@ -39,11 +39,10 @@ pub fn from_yaml<T: DeserializeOwned>(
     spec_mapping.insert("hash".to_string(), Value::from(hash));
 
     let instance: T = serde_yaml::from_str(&serde_yaml::to_string(&spec_mapping)?)?;
-
     Ok(instance)
 }
 
-// --- core model structs (fields should be in lexicographical order)---
+// --- core model structs ---
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Pod {
@@ -80,10 +79,10 @@ impl Pod {
         recommended_memory: u64,
         source: String,
     ) -> Result<Self, Box<dyn Error>> {
+        // todo: resolved_image+checksums -> docker image:tag -> image@digest
         let resolved_image = String::from(
             "zenmldocker/zenml-server@sha256:78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f",
         );
-        // todo: docker image:tag -> image@digest
         let checksums = BTreeMap::from([(
             PathBuf::from("image.tar.gz"),
             String::from("78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f"),
@@ -101,7 +100,7 @@ impl Pod {
             recommended_memory,
             source,
         };
-        let hash = hash_buffer(&to_yaml::<Pod>(&pod_no_hash)?)?;
+        let hash = hash_buffer(&to_yaml::<Pod>(&pod_no_hash)?);
         Ok(Self {
             hash,
             ..pod_no_hash

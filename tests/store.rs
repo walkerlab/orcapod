@@ -40,31 +40,3 @@ fn pod() -> Result<(), Box<dyn Error>> {
     println!("{:?}", pod_des);
     Ok(())
 }
-
-// #[test]
-// fn something() {
-//     // struct NotFound<'a> {
-//     //     model: &'a str,
-//     //     name: &'a str,
-//     //     version: &'a str,
-//     // }
-//     use orcapod::error::NotFound;
-
-//     trait Getter {
-//         fn getter(&self);
-//     }
-
-//     impl Getter for NotFound<'_> {
-//         fn getter(&self) {
-//             println!("version: {}", self.version);
-//         }
-//     }
-
-//     let test = NotFound {
-//         model: "pod",
-//         name: "style-transfer",
-//         version: "0.1,0",
-//     };
-
-//     test.getter();
-// }

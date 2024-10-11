@@ -2,20 +2,65 @@ use std::error::Error;
 use std::fmt;
 
 #[derive(Debug)]
-pub struct NotFound<'a> {
-    pub model: &'a str,
-    pub name: &'a str,
-    pub version: &'a str,
+pub struct FileHasNoParent {
+    pub filepath: String,
 }
 
-impl fmt::Display for NotFound<'_> {
+impl fmt::Display for FileHasNoParent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "File `{}` has no parent.", self.filepath)
+    }
+}
+
+impl Error for FileHasNoParent {}
+
+#[derive(Debug)]
+pub struct NoAnnotationFound {
+    pub class: String,
+    pub name: String,
+    pub version: String,
+}
+
+impl fmt::Display for NoAnnotationFound {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "`{}:{}` {} not found.",
-            self.name, self.version, self.model
+            "No annotation found for `{}:{}` {}.",
+            self.name, self.version, self.class
         )
     }
 }
 
-impl Error for NotFound<'_> {}
+impl Error for NoAnnotationFound {}
+
+#[derive(Debug)]
+pub struct AnnotationFileFailedRegex {
+    pub filepath: String,
+}
+
+impl fmt::Display for AnnotationFileFailedRegex {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Annotation file `{}` failed regex.", self.filepath)
+    }
+}
+
+impl Error for AnnotationFileFailedRegex {}
+
+#[derive(Debug)]
+pub struct NoSpecFound {
+    pub class: String,
+    pub name: String,
+    pub version: String,
+}
+
+impl fmt::Display for NoSpecFound {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "No specification found for `{}:{}` {}.",
+            self.name, self.version, self.class
+        )
+    }
+}
+
+impl Error for NoSpecFound {}

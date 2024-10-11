@@ -1,4 +1,4 @@
-use crate::error::NotFound;
+use crate::error::{AnnotationFileFailedRegex, FileHasNoParent, NoAnnotationFound, NoSpecFound};
 use crate::model::{from_yaml, to_yaml, Pod};
 use crate::util::get_struct_name;
 use regex::Regex;
@@ -24,6 +24,7 @@ impl OrcaStore for LocalFileStore {
     const ANNOTATION_FILE_REGEX: &str = r"^.*\/(?<name>[0-9a-zA-Z\-]+)\/(?<hash>[0-9A-F]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$";
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
         let class = get_struct_name::<Pod>();
+
         let spec_yaml = to_yaml::<Pod>(&pod)?;
         let spec_file = PathBuf::from(format!(
             "{}/{}/{}/{}",
@@ -32,13 +33,12 @@ impl OrcaStore for LocalFileStore {
             pod.hash,
             "spec.yaml",
         ));
-
-        match spec_file.parent() {
-            Some(parent) => fs::create_dir_all(&parent)?,
-            None => {}
-        }
+        fs::create_dir_all(&spec_file.parent().ok_or(FileHasNoParent {
+            filepath: spec_file.display().to_string(),
+        })?)?;
         fs::write(&spec_file, &spec_yaml)?;
 
+        let annotation_yaml = serde_yaml::to_string(&pod.annotation)?;
         let annotation_file = PathBuf::from(format!(
             "{}/{}/{}/{}/{}-{}.yaml",
             self.location.display().to_string(),
@@ -48,26 +48,19 @@ impl OrcaStore for LocalFileStore {
             pod.hash,
             pod.annotation.version,
         ));
-        let annotation_yaml = serde_yaml::to_string(&pod.annotation)?;
-        match annotation_file.parent() {
-            Some(parent) => fs::create_dir_all(&parent)?,
-            None => {}
-        }
+        fs::create_dir_all(&annotation_file.parent().ok_or(FileHasNoParent {
+            filepath: annotation_file.display().to_string(),
+        })?)?;
         fs::write(&annotation_file, &annotation_yaml)?;
+
         Ok(())
-        // println!("spec_file: {:?}", spec_file);
-        // println!("annotation_file: {:?}", annotation_file);
-        // println!("spec_yaml: {}", spec_yaml);
-        // println!("annotation_yaml: {}", annotation_yaml);
     }
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
         let re = Regex::new(LocalFileStore::ANNOTATION_FILE_REGEX)?;
-
         let paths = glob::glob(&format!(
             "{}/annotation/pod/**/*.yaml",
             self.location.display().to_string(),
         ))?;
-
         let (names, (hashes, versions)): (Vec<String>, (Vec<String>, Vec<String>)) = paths
             .map(|p| {
                 let path_string = &p.unwrap().display().to_string(); // todo: fix unsafe
@@ -86,8 +79,8 @@ impl OrcaStore for LocalFileStore {
         ]))
     }
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
+        let class = "pod".to_string();
         let re = Regex::new(LocalFileStore::ANNOTATION_FILE_REGEX)?;
-
         let annotation_file = glob::glob(&format!(
             "{}/annotation/pod/{}/*-{}.yaml",
             self.location.display().to_string(),
@@ -95,31 +88,27 @@ impl OrcaStore for LocalFileStore {
             version,
         ))?
         .next()
-        .ok_or(NotFound {
-            model: "pod",
-            name: "something",
-            version: "0.1.0",
+        .ok_or(NoAnnotationFound {
+            class: class.clone(),
+            name: name.to_string(),
+            version: version.to_string(),
         })??;
-
-        let hash = re
-            .captures(&annotation_file.display().to_string())
-            .ok_or(NotFound {
-                model: "pod",
-                name: "something",
-                version: "0.1.0",
-            })?["hash"]
+        let hash = re.captures(&annotation_file.display().to_string()).ok_or(
+            AnnotationFileFailedRegex {
+                filepath: annotation_file.display().to_string(),
+            },
+        )?["hash"]
             .to_string();
-
         let spec_file = glob::glob(&format!(
             "{}/pod/{}/spec.yaml",
             self.location.display().to_string(),
             hash,
         ))?
         .next()
-        .ok_or(NotFound {
-            model: "pod",
-            name: "something",
-            version: "0.1.0",
+        .ok_or(NoSpecFound {
+            class: class.clone(),
+            name: name.to_string(),
+            version: version.to_string(),
         })??;
 
         Ok(from_yaml::<Pod>(
@@ -127,33 +116,6 @@ impl OrcaStore for LocalFileStore {
             &spec_file.display().to_string(),
             &hash,
         )?)
-
-        // let hash = match glob::glob(&format!(
-        //     "{}/annotation/pod/{}/*-{}.yaml",
-        //     self.location.display().to_string(),
-        //     name,
-        //     version,
-        // ))?
-        // .next()
-        // {
-        //     Some(p) => {
-        //         let path_string = &p?.display().to_string();
-        //         let cap = re.captures(path_string).unwrap();
-        //         Some(cap["hash"].to_string())
-        //     }
-        //     None => None,
-        // };
-
-        // let annotation_file = match hash {
-        //     Some(h) => Some(format!(
-        //         "{}/annotation/pod/{}/{}-{}.yaml",
-        //         self.location.display().to_string(),
-        //         h,
-        //         name,
-        //         version,
-        //     )),
-        //     None => None,
-        // };
     }
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
         // todo: need proper logic to remove empty annotation/hash dirs
