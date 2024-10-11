@@ -8,6 +8,7 @@ use std::time::Instant;
 
 #[test]
 fn pod() -> Result<(), Box<dyn Error>> {
+    // todo: clean up
     let fs = LocalFileStore {
         location: PathBuf::from("./test_store"),
     };
@@ -38,5 +39,8 @@ fn pod() -> Result<(), Box<dyn Error>> {
     let pod_des = fs.load_pod("style-transfer", "0.67.0")?;
     println!("{:?}", fs.list_pod());
     println!("{:?}", pod_des);
+
+    fs.delete_pod("style-transfer", "0.67.0")?;
+
     Ok(())
 }

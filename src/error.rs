@@ -34,19 +34,6 @@ impl fmt::Display for NoAnnotationFound {
 impl Error for NoAnnotationFound {}
 
 #[derive(Debug)]
-pub struct AnnotationFileFailedRegex {
-    pub filepath: String,
-}
-
-impl fmt::Display for AnnotationFileFailedRegex {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Annotation file `{}` failed regex.", self.filepath)
-    }
-}
-
-impl Error for AnnotationFileFailedRegex {}
-
-#[derive(Debug)]
 pub struct NoSpecFound {
     pub class: String,
     pub name: String,
