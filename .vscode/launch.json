@@ -5,6 +5,10 @@
             "type": "lldb",
             "request": "launch",
             "name": "Rust: Debug single integration test",
+            // "env": {
+            //     "RUST_BACKTRACE": "1",
+            //     "RUST_BACKTRACE": "full",
+            // },
             "cargo": {
                 "args": [
                     "test",
@@ -21,6 +25,7 @@
                 "--exact",
                 "--nocapture",
                 "pod",
+                // "something"
             ],
             "cwd": "${workspaceFolder}",
         },

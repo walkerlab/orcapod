@@ -33,13 +33,38 @@ fn pod() -> Result<(), Box<dyn Error>> {
         String::from("https://github.com/zenml-io/zenml/tree/0.67.0"),
     )?;
 
-    match fs.save_pod(&pod) {
-        Ok(_) => (),
-        Err(e) => {
-            println!("{}", e)
-        }
-    };
+    fs.save_pod(&pod)?;
+
+    let pod_des = fs.load_pod("style-transfer", "0.67.0")?;
     println!("{:?}", fs.list_pod());
-    // println!("{:?}", fs);
+    println!("{:?}", pod_des);
     Ok(())
 }
+
+// #[test]
+// fn something() {
+//     // struct NotFound<'a> {
+//     //     model: &'a str,
+//     //     name: &'a str,
+//     //     version: &'a str,
+//     // }
+//     use orcapod::error::NotFound;
+
+//     trait Getter {
+//         fn getter(&self);
+//     }
+
+//     impl Getter for NotFound<'_> {
+//         fn getter(&self) {
+//             println!("version: {}", self.version);
+//         }
+//     }
+
+//     let test = NotFound {
+//         model: "pod",
+//         name: "style-transfer",
+//         version: "0.1,0",
+//     };
+
+//     test.getter();
+// }

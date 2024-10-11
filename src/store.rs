@@ -1,15 +1,17 @@
-use crate::model::Pod;
+use crate::error::NotFound;
+use crate::model::{from_yaml, to_yaml, Pod};
+use crate::util::get_struct_name;
 use regex::Regex;
-use serde_yaml::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
 pub trait OrcaStore {
+    const ANNOTATION_FILE_REGEX: &str;
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>>;
-    // fn load_pod(&self, name: &str, version: &str) -> Result<Option<Pod>, Box<dyn Error>>;
+    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
 }
 
@@ -19,15 +21,18 @@ pub struct LocalFileStore {
 }
 
 impl OrcaStore for LocalFileStore {
+    const ANNOTATION_FILE_REGEX: &str = r"^.*\/(?<name>[0-9a-zA-Z\-]+)\/(?<hash>[0-9A-F]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$";
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
+        let class = get_struct_name::<Pod>();
+        let spec_yaml = to_yaml::<Pod>(&pod)?;
         let spec_file = PathBuf::from(format!(
             "{}/{}/{}/{}",
             self.location.display().to_string(),
-            pod.class,
+            class,
             pod.hash,
             "spec.yaml",
         ));
-        let spec_yaml = serde_yaml::to_string(pod)?;
+
         match spec_file.parent() {
             Some(parent) => fs::create_dir_all(&parent)?,
             None => {}
@@ -38,7 +43,7 @@ impl OrcaStore for LocalFileStore {
             "{}/{}/{}/{}/{}-{}.yaml",
             self.location.display().to_string(),
             "annotation",
-            pod.class,
+            class,
             pod.annotation.name,
             pod.hash,
             pod.annotation.version,
@@ -56,9 +61,7 @@ impl OrcaStore for LocalFileStore {
         // println!("annotation_yaml: {}", annotation_yaml);
     }
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
-        let re = Regex::new(
-            r"^.*\/(?<name>[0-9a-zA-Z\-]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
-        )?;
+        let re = Regex::new(LocalFileStore::ANNOTATION_FILE_REGEX)?;
 
         let paths = glob::glob(&format!(
             "{}/annotation/pod/**/*.yaml",
@@ -67,8 +70,8 @@ impl OrcaStore for LocalFileStore {
 
         let (names, (hashes, versions)): (Vec<String>, (Vec<String>, Vec<String>)) = paths
             .map(|p| {
-                let path_string = &p.unwrap().display().to_string(); // todo: fix unwrap call
-                let cap = re.captures(path_string).unwrap();
+                let path_string = &p.unwrap().display().to_string(); // todo: fix unsafe
+                let cap = re.captures(path_string).unwrap(); // todo: fix unsafe
                 (
                     cap["name"].to_string(),
                     (cap["hash"].to_string(), cap["version"].to_string()),
@@ -82,12 +85,80 @@ impl OrcaStore for LocalFileStore {
             (String::from("version"), versions),
         ]))
     }
-    // fn load_pod(&self, name: &str, version: &str) -> Result<Option<Pod>, Box<dyn Error>> {}
+    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
+        let re = Regex::new(LocalFileStore::ANNOTATION_FILE_REGEX)?;
+
+        let annotation_file = glob::glob(&format!(
+            "{}/annotation/pod/{}/*-{}.yaml",
+            self.location.display().to_string(),
+            name,
+            version,
+        ))?
+        .next()
+        .ok_or(NotFound {
+            model: "pod",
+            name: "something",
+            version: "0.1.0",
+        })??;
+
+        let hash = re
+            .captures(&annotation_file.display().to_string())
+            .ok_or(NotFound {
+                model: "pod",
+                name: "something",
+                version: "0.1.0",
+            })?["hash"]
+            .to_string();
+
+        let spec_file = glob::glob(&format!(
+            "{}/pod/{}/spec.yaml",
+            self.location.display().to_string(),
+            hash,
+        ))?
+        .next()
+        .ok_or(NotFound {
+            model: "pod",
+            name: "something",
+            version: "0.1.0",
+        })??;
+
+        Ok(from_yaml::<Pod>(
+            &annotation_file.display().to_string(),
+            &spec_file.display().to_string(),
+            &hash,
+        )?)
+
+        // let hash = match glob::glob(&format!(
+        //     "{}/annotation/pod/{}/*-{}.yaml",
+        //     self.location.display().to_string(),
+        //     name,
+        //     version,
+        // ))?
+        // .next()
+        // {
+        //     Some(p) => {
+        //         let path_string = &p?.display().to_string();
+        //         let cap = re.captures(path_string).unwrap();
+        //         Some(cap["hash"].to_string())
+        //     }
+        //     None => None,
+        // };
+
+        // let annotation_file = match hash {
+        //     Some(h) => Some(format!(
+        //         "{}/annotation/pod/{}/{}-{}.yaml",
+        //         self.location.display().to_string(),
+        //         h,
+        //         name,
+        //         version,
+        //     )),
+        //     None => None,
+        // };
+    }
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
         // todo: need proper logic to remove empty annotation/hash dirs
-        let re = Regex::new(
-            r"^.*\/(?<name>[0-9a-zA-Z\-]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
-        )?;
+        // in progress...
+        let re = Regex::new(LocalFileStore::ANNOTATION_FILE_REGEX)?;
 
         let hash = match glob::glob(&format!(
             "{}/annotation/pod/{}/*-{}.yaml",
@@ -99,7 +170,7 @@ impl OrcaStore for LocalFileStore {
         {
             Some(p) => {
                 let path_string = &p?.display().to_string();
-                let cap = re.captures(path_string).unwrap();
+                let cap = re.captures(path_string).unwrap(); // todo: fix unsafe
                 Some(cap["hash"].to_string())
             }
             None => None,
