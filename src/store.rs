@@ -1,13 +1,11 @@
-use crate::error::{AnnotationExists, FileHasNoParent, NoAnnotationFound, NoSpecFound};
-use crate::model::{from_yaml, to_yaml, Pod};
-use crate::util::get_struct_name;
+use crate::{
+    error::{AnnotationExists, FileHasNoParent, NoAnnotationFound, NoSpecFound},
+    model::{from_yaml, to_yaml, Pod},
+    util::get_struct_name,
+};
 use glob::{GlobError, Paths};
 use regex::Regex;
-use std::collections::BTreeMap;
-use std::error::Error;
-use std::fs;
-use std::iter::Map;
-use std::path::PathBuf;
+use std::{collections::BTreeMap, error::Error, fs, iter::Map, path::PathBuf};
 
 pub trait OrcaStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
@@ -18,22 +16,39 @@ pub trait OrcaStore {
 
 #[derive(Debug)]
 pub struct LocalFileStore {
-    pub location: PathBuf,
+    location: PathBuf,
 }
 
 impl LocalFileStore {
+    pub fn new(location: impl Into<PathBuf>) -> Self {
+        Self {
+            location: location.into(),
+        }
+    }
     fn _parse_annotation_path(
         filepath: &str,
     ) -> Result<
-        Map<Paths, impl FnMut(Result<PathBuf, GlobError>) -> (String, (String, String))>,
+        Map<
+            Paths,
+            impl FnMut(Result<PathBuf, GlobError>) -> (String, (String, String)),
+        >,
         Box<dyn Error>,
     > {
         let paths = glob::glob(filepath)?.map(|p| {
             let re = Regex::new(
-                r"^.*\/(?<name>[0-9a-zA-Z\-]+)\/(?<hash>[0-9A-F]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
-            ).unwrap();  // todo: fix unsafe
-            let path_string = &p.unwrap().display().to_string();  // todo: fix unsafe
-            let cap = re.captures(path_string).unwrap();  // todo: fix unsafe
+                r"(?x)
+                ^.*
+                \/(?<name>[0-9a-zA-Z\-]+)
+                \/
+                    (?<hash>[0-9A-F]+)
+                    -
+                    (?<version>[0-9]+\.[0-9]+\.[0-9]+)
+                    \.yaml
+                $",
+            )
+            .unwrap(); // todo: fix unsafe
+            let path_string = &p.unwrap().display().to_string(); // todo: fix unsafe
+            let cap = re.captures(path_string).unwrap(); // todo: fix unsafe
             (
                 cap["name"].to_string(),
                 (cap["hash"].to_string(), cap["version"].to_string()),
@@ -42,7 +57,10 @@ impl LocalFileStore {
 
         Ok(paths)
     }
-    fn _get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+    fn _get_pod_version_map(
+        &self,
+        name: &str,
+    ) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
         Ok(LocalFileStore::_parse_annotation_path(&format!(
             "{}/annotation/pod/{}/*.yaml",
             self.location.display().to_string(),
@@ -55,7 +73,7 @@ impl LocalFileStore {
 
 impl OrcaStore for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let class = get_struct_name::<Pod>();
+        let class = get_struct_name::<Pod>()?;
 
         let annotation_yaml = serde_yaml::to_string(&pod.annotation)?;
         let annotation_file = PathBuf::from(format!(
@@ -90,13 +108,14 @@ impl OrcaStore for LocalFileStore {
         fs::create_dir_all(&spec_file.parent().ok_or(FileHasNoParent {
             filepath: spec_file.display().to_string(),
         })?)?;
-        match fs::exists(&spec_file)? {
-            true => println!(
+        if fs::exists(&spec_file)? {
+            println!(
                 "Skip saving `{}:{}` {} since it is already stored.",
                 pod.annotation.name, pod.annotation.version, class,
-            ),
-            false => fs::write(&spec_file, &spec_yaml)?,
-        };
+            );
+        } else {
+            fs::write(&spec_file, &spec_yaml)?;
+        }
 
         Ok(())
     }

@@ -1,22 +1,24 @@
 use crate::util::{get_struct_name, hash_buffer};
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::collections::BTreeMap;
-use std::error::Error;
-use std::fs;
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    fs,
+    io::{BufRead, BufReader},
+    path::PathBuf,
+};
 
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
-    let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
+    let mapping: BTreeMap<String, Value> =
+        serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
         &mapping
             .into_iter()
             .filter(|(k, _)| k != "annotation" && k != "hash")
             .collect::<BTreeMap<_, _>>(),
     )?; // skip fields
-    yaml.insert_str(0, &format!("class: {}\n", get_struct_name::<T>())); // replace class at top
+    yaml.insert_str(0, &format!("class: {}\n", get_struct_name::<T>()?)); // replace class at top
 
     Ok(yaml)
 }
@@ -26,7 +28,8 @@ pub fn from_yaml<T: DeserializeOwned>(
     spec_file: &str,
     hash: &str,
 ) -> Result<T, Box<dyn Error>> {
-    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(&annotation_file)?)?;
+    let annotation: Mapping =
+        serde_yaml::from_str(&fs::read_to_string(&annotation_file)?)?;
     let spec_yaml = BufReader::new(fs::File::open(&spec_file)?)
         .lines()
         .skip(1)
@@ -51,7 +54,7 @@ pub struct Pod {
     file_content_checksums: BTreeMap<PathBuf, String>,
     // gpu: Option<GPUSpecRequirement>
     pub hash: String,
-    image: String,                               // Sha256 of docker image hash
+    image: String, // Sha256 of docker image hash
     input_stream_map: BTreeMap<String, PathBuf>, // change this back to KeyInfo later
     // might default to /output but needs
     output_dir: PathBuf,
@@ -68,6 +71,7 @@ pub struct Pod {
 }
 
 impl Pod {
+    // todo: default
     pub fn new(
         annotation: Annotation,
         command: String,
@@ -81,11 +85,13 @@ impl Pod {
     ) -> Result<Self, Box<dyn Error>> {
         // todo: resolved_image+checksums -> docker image:tag -> image@digest
         let resolved_image = String::from(
-            "zenmldocker/zenml-server@sha256:78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f",
+            "zenmldocker/zenml-server@sha256:78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f"
         );
         let checksums = BTreeMap::from([(
             PathBuf::from("image.tar.gz"),
-            String::from("78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f"),
+            String::from(
+                "78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f",
+            ),
         )]);
         let pod_no_hash = Self {
             annotation,

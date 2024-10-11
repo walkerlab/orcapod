@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
 
+// todo test: add GHA (integration tests + code coverage)
+
 // todo model test: require use of Pod::new
 // todo model test: to_yaml for Pod
 // todo model test: from_yaml for Pod
@@ -23,9 +25,7 @@ use std::path::PathBuf;
 #[test]
 fn pod() -> Result<(), Box<dyn Error>> {
     // todo: clean up
-    let fs = LocalFileStore {
-        location: PathBuf::from("./test_store"),
-    };
+    let fs = LocalFileStore::new(String::from("./test_store"));
     let pod = Pod::new(
         Annotation {
             name: String::from("style-transfer"),

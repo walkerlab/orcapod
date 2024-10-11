@@ -11,6 +11,10 @@
     "[rust]": {
         "editor.inlayHints.enabled": "off",
     },
+    "rust-analyzer.rustfmt.extraArgs": [
+        "--config",
+        "max_width=88"
+    ],
     "files.autoSave": "off",
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,

@@ -1,18 +1,18 @@
-use std::error::Error;
-use std::fmt;
+use std::{
+    error::Error,
+    fmt::{Display, Formatter, Result},
+};
 
 #[derive(Debug)]
 pub struct FileHasNoParent {
     pub filepath: String,
 }
-
-impl fmt::Display for FileHasNoParent {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Error for FileHasNoParent {}
+impl Display for FileHasNoParent {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         write!(f, "File `{}` has no parent.", self.filepath)
     }
 }
-
-impl Error for FileHasNoParent {}
 
 #[derive(Debug)]
 pub struct NoAnnotationFound {
@@ -20,9 +20,9 @@ pub struct NoAnnotationFound {
     pub name: String,
     pub version: String,
 }
-
-impl fmt::Display for NoAnnotationFound {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Error for NoAnnotationFound {}
+impl Display for NoAnnotationFound {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         write!(
             f,
             "No annotation found for `{}:{}` {}.",
@@ -31,17 +31,15 @@ impl fmt::Display for NoAnnotationFound {
     }
 }
 
-impl Error for NoAnnotationFound {}
-
 #[derive(Debug)]
 pub struct NoSpecFound {
     pub class: String,
     pub name: String,
     pub version: String,
 }
-
-impl fmt::Display for NoSpecFound {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Error for NoSpecFound {}
+impl Display for NoSpecFound {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         write!(
             f,
             "No specification found for `{}:{}` {}.",
@@ -50,17 +48,15 @@ impl fmt::Display for NoSpecFound {
     }
 }
 
-impl Error for NoSpecFound {}
-
 #[derive(Debug)]
 pub struct AnnotationExists {
     pub class: String,
     pub name: String,
     pub version: String,
 }
-
-impl fmt::Display for AnnotationExists {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl Error for AnnotationExists {}
+impl Display for AnnotationExists {
+    fn fmt(&self, f: &mut Formatter) -> Result {
         write!(
             f,
             "Annotation found for `{}:{}` {}.",
@@ -69,4 +65,11 @@ impl fmt::Display for AnnotationExists {
     }
 }
 
-impl Error for AnnotationExists {}
+#[derive(Debug)]
+pub struct OutOfBounds {}
+impl Error for OutOfBounds {}
+impl Display for OutOfBounds {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "Index is out of bounds.")
+    }
+}
