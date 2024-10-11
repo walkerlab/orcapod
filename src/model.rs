@@ -30,8 +30,8 @@ pub fn from_yaml<T: DeserializeOwned>(
     let spec_yaml = BufReader::new(fs::File::open(&spec_file)?)
         .lines()
         .skip(1)
-        .map(|l| l.unwrap()) // todo: fix unsafe
-        .collect::<Vec<_>>()
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?
         .join("\n");
 
     let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&spec_yaml)?;
