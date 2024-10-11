@@ -66,7 +66,7 @@ fn test_pod() {
     check_pod_against_config(&pod, &config);
 
     // Try loading it now from storage noww
-    let pod = match load_pod(&pod.pod_hash, &storage_backend) {
+    let pod = match load_pod(&pod.pod_hash, &config.version, &storage_backend) {
         Ok(value) => value,
         Err(e) => panic!("{}", e),
     };

@@ -25,10 +25,11 @@ impl FileStore {
         }
     }
 
-    fn construct_annotation_path(&self, hash: &str) -> PathBuf {
+    fn construct_annotation_path(&self, hash: &str, ver: &str) -> PathBuf {
         let mut path_buf = self.storage_folder_path.clone();
-        path_buf.push("Annotation");
-        path_buf.push(format!("{}{}", hash, ".yaml"));
+        path_buf.push(get_struct_name::<Annotation>());
+        path_buf.push(hash);
+        path_buf.push(format!("{}{}", ver, ".yaml"));
 
         path_buf
     }
@@ -49,13 +50,13 @@ impl Store for FileStore {
         hash: &str, // Of owner
     ) -> Result<(), Box<dyn Error>> {
         create_file_and_dir_if_not_exist(
-            self.construct_annotation_path(hash),
+            self.construct_annotation_path(hash, &annotation.version),
             &to_yaml(annotation)?,
         )
     }
 
-    fn load_annotation(&self, hash: &str) -> Result<Annotation, Box<dyn Error>> {
-        let path = self.construct_annotation_path(hash);
+    fn load_annotation(&self, hash: &str, version: &str) -> Result<Annotation, Box<dyn Error>> {
+        let path = self.construct_annotation_path(hash, version);
 
         let file = read_yaml(&path)?;
 
@@ -93,7 +94,7 @@ impl Store for FileStore {
         self.store_annotation(&pod.annotation, &pod.pod_hash)
     }
 
-    fn load_pod(&self, hash: &str) -> Result<Pod, Box<dyn Error>> {
+    fn load_pod(&self, hash: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
         let path = self.construct_folder_path(&get_struct_name::<Pod>(), hash);
 
         #[derive(Deserialize)]
@@ -117,7 +118,7 @@ impl Store for FileStore {
             }
         };
 
-        let annotation = self.load_annotation(hash)?;
+        let annotation = self.load_annotation(hash, version)?;
 
         Ok(Pod {
             annotation,
