@@ -1,4 +1,4 @@
-use crate::error::{FileHasNoParent, NoAnnotationFound, NoSpecFound};
+use crate::error::{AnnotationExists, FileHasNoParent, NoAnnotationFound, NoSpecFound};
 use crate::model::{from_yaml, to_yaml, Pod};
 use crate::util::get_struct_name;
 use glob::{GlobError, Paths};
@@ -55,21 +55,7 @@ impl LocalFileStore {
 
 impl OrcaStore for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        // todo: validate version doesn't already exist
         let class = get_struct_name::<Pod>();
-
-        let spec_yaml = to_yaml::<Pod>(&pod)?;
-        let spec_file = PathBuf::from(format!(
-            "{}/{}/{}/{}",
-            self.location.display().to_string(),
-            class,
-            pod.hash,
-            "spec.yaml",
-        ));
-        fs::create_dir_all(&spec_file.parent().ok_or(FileHasNoParent {
-            filepath: spec_file.display().to_string(),
-        })?)?;
-        fs::write(&spec_file, &spec_yaml)?;
 
         let annotation_yaml = serde_yaml::to_string(&pod.annotation)?;
         let annotation_file = PathBuf::from(format!(
@@ -84,7 +70,33 @@ impl OrcaStore for LocalFileStore {
         fs::create_dir_all(&annotation_file.parent().ok_or(FileHasNoParent {
             filepath: annotation_file.display().to_string(),
         })?)?;
+        (!fs::exists(&annotation_file)?)
+            .then_some(())
+            .ok_or(AnnotationExists {
+                class: class.clone(),
+                name: pod.annotation.name.clone(),
+                version: pod.annotation.version.clone(),
+            })?;
         fs::write(&annotation_file, &annotation_yaml)?;
+
+        let spec_yaml = to_yaml::<Pod>(&pod)?;
+        let spec_file = PathBuf::from(format!(
+            "{}/{}/{}/{}",
+            self.location.display().to_string(),
+            class,
+            pod.hash,
+            "spec.yaml",
+        ));
+        fs::create_dir_all(&spec_file.parent().ok_or(FileHasNoParent {
+            filepath: spec_file.display().to_string(),
+        })?)?;
+        match fs::exists(&spec_file)? {
+            true => println!(
+                "Skip saving `{}:{}` {} since it is already stored.",
+                pod.annotation.name, pod.annotation.version, class,
+            ),
+            false => fs::write(&spec_file, &spec_yaml)?,
+        };
 
         Ok(())
     }

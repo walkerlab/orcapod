@@ -10,5 +10,3 @@ pub fn get_struct_name<T>() -> String {
 pub fn hash_buffer(buffer: &str) -> String {
     format!("{:X}", Sha256::digest(buffer))
 }
-
-// pretty table could go here

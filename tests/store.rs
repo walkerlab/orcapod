@@ -1,10 +1,24 @@
 use orcapod::model::{Annotation, Pod};
 use orcapod::store::{LocalFileStore, OrcaStore};
-use regex::Regex;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::PathBuf;
-use std::time::Instant;
+
+// todo model test: require use of Pod::new
+// todo model test: to_yaml for Pod
+// todo model test: from_yaml for Pod
+// todo model test: hash correct for Pod
+
+// todo store test: save_pod (annotation + spec written)
+// todo store test: save_pod with annotation that already exists (Err(AnnotationExists))
+// todo store test: save_pod with spec that already exists (skipped and logged)
+// todo store test: load_pod (instance matches values in annotation + spec)
+// todo store test: load_pod with missing annotation (Err(NoAnnotationFound))
+// todo store test: load_pod with missing spec (Err(NoSpecFound))
+// todo store test: list_pod (displays correct saved pods)
+// todo store test: delete_pod (removes annotation leaves spec)
+// todo store test: delete_pod (removes annotation, removes spec dir if last ref'ed annotation)
+// todo store test: delete_pod (removes annotation, removes spec dir, removes annotation dir if last version)
 
 #[test]
 fn pod() -> Result<(), Box<dyn Error>> {
