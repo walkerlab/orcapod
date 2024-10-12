@@ -3,7 +3,7 @@
     "editor.formatOnSave": true,
     "notebook.formatOnSave.enabled": true,
     "editor.rulers": [
-        100
+        88
     ],
     "[markdown]": {
         "editor.defaultFormatter": null
