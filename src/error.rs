@@ -54,23 +54,6 @@ impl Display for FileHasNoParent {
     }
 }
 
-// todo: raise error if a file exists before writting
-#[derive(Debug)]
-pub struct FileAlreadyExists {
-    pub path: PathBuf,
-}
-impl Error for FileAlreadyExists {}
-impl Display for FileAlreadyExists {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            &self.path.to_string_lossy().bright_cyan(),
-            " already exists!".bright_red()
-        )
-    }
-}
-
 // todo: wrapper around serde_yaml::to_string
 #[derive(Debug)]
 pub struct SerializeError {
@@ -112,18 +95,16 @@ impl Display for IOError {
 }
 
 #[derive(Debug)]
-pub struct AnnotationExists {
-    pub class: String,
-    pub name: String,
-    pub version: String,
+pub struct FileExists {
+    pub path: PathBuf,
 }
-impl Error for AnnotationExists {}
-impl Display for AnnotationExists {
+impl Error for FileExists {}
+impl Display for FileExists {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
-            "Annotation found for `{}:{}` {}.",
-            self.name, self.version, self.class
+            "File `{}` already exists.",
+            self.path.display().to_string().bright_red()
         )
     }
 }
@@ -140,23 +121,6 @@ impl Display for NoAnnotationFound {
         write!(
             f,
             "No annotation found for `{}:{}` {}.",
-            self.name, self.version, self.class
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct NoSpecFound {
-    pub class: String,
-    pub name: String,
-    pub version: String,
-}
-impl Error for NoSpecFound {}
-impl Display for NoSpecFound {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "No specification found for `{}:{}` {}.",
             self.name, self.version, self.class
         )
     }

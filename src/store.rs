@@ -1,11 +1,9 @@
-// todo: have a pathbuf gen for annotation vs spec
-// todo: annotation save/load methods
-// todo: methods for save_file (annotation error if exists, spec skips if exist)
 use crate::{
-    error::{AnnotationExists, FileHasNoParent, NoAnnotationFound, NoSpecFound},
+    error::{FileExists, FileHasNoParent, NoAnnotationFound},
     model::{from_yaml, to_yaml, Pod},
     util::get_struct_name,
 };
+use colored::Colorize;
 use glob::{GlobError, Paths};
 use regex::Regex;
 use std::{collections::BTreeMap, error::Error, fs, iter::Map, path::PathBuf};
@@ -22,14 +20,130 @@ pub struct LocalFileStore {
     location: PathBuf,
 }
 
+impl Store for LocalFileStore {
+    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
+        let class = get_struct_name::<Pod>()?;
+
+        LocalFileStore::save_file(
+            &self.make_annotation_path(
+                &class,
+                &pod.hash,
+                &pod.annotation.name,
+                &pod.annotation.version,
+            ),
+            &serde_yaml::to_string(&pod.annotation)?,
+            true,
+        )?;
+
+        LocalFileStore::save_file(
+            &self.make_spec_path(&class, &pod.hash),
+            &to_yaml::<Pod>(&pod)?,
+            false,
+        )?;
+
+        Ok(())
+    }
+    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
+        let class = "pod".to_string();
+
+        let (_, (hash, _)) = LocalFileStore::parse_annotation_path(
+            &self.make_annotation_path("pod", "*", &name, &version),
+        )?
+        .next()
+        .ok_or(NoAnnotationFound {
+            class: class.clone(),
+            name: name.to_string(),
+            version: version.to_string(),
+        })?;
+
+        Ok(from_yaml::<Pod>(
+            &self.make_annotation_path("pod", &hash, &name, &version),
+            &self.make_spec_path("pod", &hash),
+            &hash,
+        )?)
+    }
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
+        let (names, (hashes, versions)): (Vec<String>, (Vec<String>, Vec<String>)) =
+            LocalFileStore::parse_annotation_path(
+                &self.make_annotation_path("pod", "*", "*", "*"),
+            )?
+            .unzip();
+
+        Ok(BTreeMap::from([
+            (String::from("name"), names),
+            (String::from("hash"), hashes),
+            (String::from("version"), versions),
+        ]))
+    }
+    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
+        // assumes propagate = false
+        let versions = LocalFileStore::get_pod_version_map(&self, name)?;
+        let annotation_file =
+            self.make_annotation_path("pod", &versions[version], &name, &version);
+        let annotation_dir = annotation_file.parent().ok_or(FileHasNoParent {
+            path: annotation_file.clone(),
+        })?;
+        let spec_file = self.make_spec_path("pod", &versions[version]);
+        let spec_dir = spec_file.parent().ok_or(FileHasNoParent {
+            path: spec_file.clone(),
+        })?;
+
+        fs::remove_file(&annotation_file)?;
+        if versions
+            .iter()
+            .filter(|&(v, h)| v != version && h == &versions[v])
+            .collect::<BTreeMap<_, _>>()
+            .is_empty()
+        {
+            fs::remove_dir_all(&spec_dir)?;
+        }
+        if versions
+            .iter()
+            .filter(|&(v, _)| v != version)
+            .collect::<BTreeMap<_, _>>()
+            .is_empty()
+        {
+            fs::remove_dir_all(&annotation_dir)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl LocalFileStore {
     pub fn new(location: impl Into<PathBuf>) -> Self {
         Self {
             location: location.into(),
         }
     }
-    fn _parse_annotation_path(
-        filepath: &str,
+    fn make_annotation_path(
+        &self,
+        class: &str,
+        hash: &str,
+        name: &str,
+        version: &str,
+    ) -> PathBuf {
+        PathBuf::from(format!(
+            "{}/{}/{}/{}/{}-{}.yaml",
+            self.location.display().to_string(),
+            "annotation",
+            class,
+            name,
+            hash,
+            version,
+        ))
+    }
+    fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
+        PathBuf::from(format!(
+            "{}/{}/{}/{}",
+            self.location.display().to_string(),
+            class,
+            hash,
+            "spec.yaml",
+        ))
+    }
+    fn parse_annotation_path(
+        path: &PathBuf,
     ) -> Result<
         Map<
             Paths,
@@ -37,7 +151,7 @@ impl LocalFileStore {
         >,
         Box<dyn Error>,
     > {
-        let paths = glob::glob(filepath)?.map(|p| {
+        let paths = glob::glob(&path.display().to_string())?.map(|p| {
             let re = Regex::new(
                 r"(?x)
                 ^.*
@@ -60,157 +174,37 @@ impl LocalFileStore {
 
         Ok(paths)
     }
-    fn _get_pod_version_map(
+    fn get_pod_version_map(
         &self,
         name: &str,
     ) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
-        Ok(LocalFileStore::_parse_annotation_path(&format!(
-            "{}/annotation/pod/{}/*.yaml",
-            self.location.display().to_string(),
-            name,
-        ))?
+        Ok(LocalFileStore::parse_annotation_path(
+            &self.make_annotation_path("pod", "*", name, "*"),
+        )?
         .map(|(_, (h, v))| (v, h))
         .collect::<BTreeMap<String, String>>())
     }
-}
-
-impl Store for LocalFileStore {
-    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let class = get_struct_name::<Pod>()?;
-
-        let annotation_yaml = serde_yaml::to_string(&pod.annotation)?;
-        let annotation_file = PathBuf::from(format!(
-            "{}/{}/{}/{}/{}-{}.yaml",
-            self.location.display().to_string(),
-            "annotation",
-            class,
-            pod.annotation.name,
-            pod.hash,
-            pod.annotation.version,
-        ));
-        fs::create_dir_all(&annotation_file.parent().ok_or(FileHasNoParent {
-            path: annotation_file.clone(),
-        })?)?;
-        (!fs::exists(&annotation_file)?)
-            .then_some(())
-            .ok_or(AnnotationExists {
-                class: class.clone(),
-                name: pod.annotation.name.clone(),
-                version: pod.annotation.version.clone(),
-            })?;
-        fs::write(&annotation_file, &annotation_yaml)?;
-
-        let spec_yaml = to_yaml::<Pod>(&pod)?;
-        let spec_file = PathBuf::from(format!(
-            "{}/{}/{}/{}",
-            self.location.display().to_string(),
-            class,
-            pod.hash,
-            "spec.yaml",
-        ));
-        fs::create_dir_all(&spec_file.parent().ok_or(FileHasNoParent {
-            path: spec_file.clone(),
-        })?)?;
-        if fs::exists(&spec_file)? {
+    fn save_file(
+        file: &PathBuf,
+        content: &str,
+        is_annotation: bool,
+    ) -> Result<(), Box<dyn Error>> {
+        fs::create_dir_all(
+            &file
+                .parent()
+                .ok_or(FileHasNoParent { path: file.clone() })?,
+        )?;
+        let file_exists = fs::exists(&file)?;
+        if file_exists && is_annotation {
+            return Err(Box::new(FileExists { path: file.clone() }));
+        } else if file_exists && !is_annotation {
             println!(
-                "Skip saving `{}:{}` {} since it is already stored.",
-                pod.annotation.name, pod.annotation.version, class,
+                "Skip saving `{}` since it is already stored.",
+                file.display().to_string().bright_cyan(),
             );
         } else {
-            fs::write(&spec_file, &spec_yaml)?;
+            fs::write(&file, content)?;
         }
-
-        Ok(())
-    }
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
-        let (names, (hashes, versions)): (Vec<String>, (Vec<String>, Vec<String>)) =
-            LocalFileStore::_parse_annotation_path(&format!(
-                "{}/annotation/pod/**/*.yaml",
-                self.location.display().to_string(),
-            ))?
-            .unzip();
-
-        Ok(BTreeMap::from([
-            (String::from("name"), names),
-            (String::from("hash"), hashes),
-            (String::from("version"), versions),
-        ]))
-    }
-    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
-        let class = "pod".to_string();
-
-        let (_, (hash, _)) = LocalFileStore::_parse_annotation_path(&format!(
-            "{}/annotation/pod/{}/*-{}.yaml",
-            self.location.display().to_string(),
-            name,
-            version,
-        ))?
-        .next()
-        .ok_or(NoAnnotationFound {
-            class: class.clone(),
-            name: name.to_string(),
-            version: version.to_string(),
-        })?;
-        let annotation_file = format!(
-            "{}/annotation/pod/{}/{}-{}.yaml",
-            self.location.display().to_string(),
-            name,
-            hash,
-            version,
-        );
-
-        let spec_file = glob::glob(&format!(
-            "{}/pod/{}/spec.yaml",
-            self.location.display().to_string(),
-            hash,
-        ))?
-        .next()
-        .ok_or(NoSpecFound {
-            class: class.clone(),
-            name: name.to_string(),
-            version: version.to_string(),
-        })??;
-
-        Ok(from_yaml::<Pod>(
-            &annotation_file,
-            &spec_file.display().to_string(),
-            &hash,
-        )?)
-    }
-    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
-        // assumes propagate = false
-        let versions = LocalFileStore::_get_pod_version_map(&self, name)?;
-        let annotation_dir = format!(
-            "{}/annotation/pod/{}",
-            self.location.display().to_string(),
-            name,
-        );
-
-        fs::remove_file(&format!(
-            "{}/{}-{}.yaml",
-            annotation_dir, versions[version], version,
-        ))?;
-        if versions
-            .iter()
-            .filter(|&(v, h)| v != version && h == &versions[v])
-            .collect::<BTreeMap<_, _>>()
-            .is_empty()
-        {
-            fs::remove_dir_all(&format!(
-                "{}/pod/{}",
-                self.location.display().to_string(),
-                versions[version],
-            ))?;
-        }
-        if versions
-            .iter()
-            .filter(|&(v, _)| v != version)
-            .collect::<BTreeMap<_, _>>()
-            .is_empty()
-        {
-            fs::remove_dir_all(&annotation_dir)?;
-        }
-
         Ok(())
     }
 }

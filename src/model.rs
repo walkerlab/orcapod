@@ -24,8 +24,8 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
 }
 
 pub fn from_yaml<T: DeserializeOwned>(
-    annotation_file: &str,
-    spec_file: &str,
+    annotation_file: &PathBuf,
+    spec_file: &PathBuf,
     hash: &str,
 ) -> Result<T, Box<dyn Error>> {
     let annotation: Mapping =
