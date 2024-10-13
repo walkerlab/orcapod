@@ -14,36 +14,24 @@ use std::{
 };
 
 pub trait Store {
-    fn load_annotation(
-        &self,
-        hash: &str,
-        version: &str,
-    ) -> Result<Annotation, Box<dyn Error>>;
-
-    fn store_annotation(
-        &self,
-        annotation: &Annotation,
-        owner_hash: &str,
-    ) -> Result<(), Box<dyn Error>>;
-
-    fn load_pod(&self, hash: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
-
-    fn store_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
+    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
+    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
 }
 
-pub struct FileStore {
-    storage_folder_path: PathBuf,
+#[derive(Debug)]
+pub struct LocalFileStore {
+    location: PathBuf,
 }
 
-impl FileStore {
-    pub fn new(storage_folder_path: impl Into<PathBuf>) -> Self {
+impl LocalFileStore {
+    pub fn new(location: impl Into<PathBuf>) -> Self {
         Self {
-            storage_folder_path: storage_folder_path.into(),
+            location: location.into(),
         }
     }
 
     fn construct_annotation_path(&self, hash: &str, ver: &str) -> PathBuf {
-        let mut path_buf = self.storage_folder_path.clone();
+        let mut path_buf = self.location.clone();
         path_buf.push(get_struct_name::<Annotation>().unwrap());
         path_buf.push(hash);
         path_buf.push(format!("{}{}", ver, ".yaml"));
@@ -52,15 +40,12 @@ impl FileStore {
     }
 
     fn construct_folder_path(&self, model_name: &str, hash: &str) -> PathBuf {
-        let mut path_buf = self.storage_folder_path.clone();
+        let mut path_buf = self.location.clone();
         path_buf.push(model_name);
         path_buf.push(format!("{}.yaml", hash));
 
         path_buf
     }
-}
-
-impl Store for FileStore {
     fn store_annotation(
         &self,
         annotation: &Annotation,
@@ -101,8 +86,10 @@ impl Store for FileStore {
             version: yaml_struct.version,
         })
     }
+}
 
-    fn store_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
+impl Store for LocalFileStore {
+    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
         let path = self.construct_folder_path(&get_struct_name::<Pod>()?, &pod.hash);
 
         // Try to save it
