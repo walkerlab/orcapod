@@ -2,7 +2,7 @@ use crate::{
     error::{
         DeserializeError, FailedToExtractParentFolder, FileAlreadyExists, IOError,
     },
-    model::{to_yaml, Annotation, GPUSpecRequirement, KeyInfo, Pod},
+    model::{to_yaml, Annotation, Pod, RequiredGPU, StreamInfo},
     util::get_struct_name,
 };
 use serde::Deserialize;
@@ -103,8 +103,7 @@ impl Store for FileStore {
     }
 
     fn store_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let path =
-            self.construct_folder_path(&get_struct_name::<Pod>()?, &pod.pod_hash);
+        let path = self.construct_folder_path(&get_struct_name::<Pod>()?, &pod.hash);
 
         // Try to save it
         create_file_and_dir_if_not_exist(&path, &to_yaml(&pod)?)?;
@@ -113,7 +112,7 @@ impl Store for FileStore {
         // TODO
 
         // Save the Annotation
-        self.store_annotation(&pod.annotation, &pod.pod_hash)
+        self.store_annotation(&pod.annotation, &pod.hash)
     }
 
     fn load_pod(&self, hash: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
@@ -121,15 +120,17 @@ impl Store for FileStore {
 
         #[derive(Deserialize)]
         struct PodYaml {
-            gpu: Option<GPUSpecRequirement>,
-            image_digest: String,
+            gpu: Option<RequiredGPU>,
+            image: String,
             // Num of recommneded cpu cores (can be fractional)
-            input_stream_map: BTreeMap<String, KeyInfo>,
-            min_memory: u64,
+            input_stream_map: BTreeMap<String, StreamInfo>,
+            recommended_memory: u64,
             output_dir: PathBuf,
-            output_stream_map: BTreeMap<String, KeyInfo>,
+            output_stream_map: BTreeMap<String, StreamInfo>,
             recommended_cpus: f32,
-            source_commit: String, // Git Commit
+            source: String, // Git Commit
+            command: String,
+            file_content_checksums: BTreeMap<PathBuf, String>,
         }
 
         let file = read_yaml(&path)?;
@@ -142,18 +143,18 @@ impl Store for FileStore {
 
         let annotation = self.load_annotation(hash, version)?;
 
-        Ok(Pod {
+        Ok(Pod::new(
             annotation,
-            gpu_spec_requirments: yaml_struct.gpu,
-            image_digest: yaml_struct.image_digest,
-            input_stream_map: yaml_struct.input_stream_map,
-            min_memory: yaml_struct.min_memory,
-            output_dir: yaml_struct.output_dir,
-            output_stream_map: yaml_struct.output_stream_map,
-            pod_hash: hash.to_string(),
-            recommended_cpus: yaml_struct.recommended_cpus,
-            source_commit: yaml_struct.source_commit,
-        })
+            yaml_struct.source,
+            yaml_struct.image,
+            yaml_struct.command,
+            yaml_struct.input_stream_map,
+            yaml_struct.output_dir,
+            yaml_struct.output_stream_map,
+            yaml_struct.recommended_cpus,
+            yaml_struct.recommended_memory,
+            yaml_struct.gpu,
+        )?)
     }
 }
 

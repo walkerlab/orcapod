@@ -8,6 +8,7 @@ use std::{
     path::PathBuf,
 };
 
+// get a none when trying to figure struct_name
 #[derive(Debug)]
 pub struct OutOfBounds {}
 impl Error for OutOfBounds {}
@@ -17,6 +18,7 @@ impl Display for OutOfBounds {
     }
 }
 
+// wrapper around serde_yaml::from_str
 #[derive(Debug)]
 pub struct DeserializeError {
     pub path: PathBuf,
@@ -36,6 +38,7 @@ impl Display for DeserializeError {
     }
 }
 
+// wrapper around getting none when trying to find parent
 #[derive(Debug)]
 pub struct FailedToExtractParentFolder {
     pub path: PathBuf,
@@ -52,6 +55,7 @@ impl Display for FailedToExtractParentFolder {
     }
 }
 
+// raise error if a file exists before writting
 #[derive(Debug)]
 pub struct FileAlreadyExists {
     pub path: PathBuf,
@@ -68,6 +72,7 @@ impl Display for FileAlreadyExists {
     }
 }
 
+// wrapper around serde_yaml::to_string
 #[derive(Debug)]
 pub struct SerializeError {
     pub item_debug_string: String,
@@ -87,6 +92,7 @@ impl Display for SerializeError {
     }
 }
 
+// wrapper around fs::read_to_string and fs::write
 #[derive(Debug)]
 pub struct IOError {
     pub path: PathBuf,

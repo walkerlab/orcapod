@@ -1,120 +1,136 @@
-use core::f32;
-use std::{collections::BTreeMap, error::Error, path::PathBuf};
+use crate::util::{get_struct_name, hash_buffer};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_yaml::{Mapping, Value};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    fs,
+    io::{BufRead, BufReader},
+    path::PathBuf,
+};
 
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
+    let mapping: BTreeMap<String, Value> =
+        serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
+    let mut yaml = serde_yaml::to_string(
+        &mapping
+            .into_iter()
+            .filter(|(k, _)| k != "annotation" && k != "hash")
+            .collect::<BTreeMap<_, _>>(),
+    )?; // skip fields
+    yaml.insert_str(0, &format!("class: {}\n", get_struct_name::<T>()?)); // replace class at top
 
-use crate::{error::SerializeError, util::get_struct_name};
-
-pub fn to_yaml<T: Serialize + std::fmt::Debug>(
-    item: T,
-) -> Result<String, Box<dyn Error>> {
-    let mut yaml_str = match serde_yaml::to_string(&item) {
-        Ok(value) => value,
-        Err(error) => {
-            return Err(Box::new(SerializeError {
-                item_debug_string: format!("{:?}", item),
-                error,
-            }))
-        }
-    };
-
-    yaml_str.insert_str(0, &format!("class: {}\n", get_struct_name::<T>()?));
-
-    Ok(yaml_str)
+    Ok(yaml)
 }
+
+pub fn from_yaml<T: DeserializeOwned>(
+    annotation_file: &str,
+    spec_file: &str,
+    hash: &str,
+) -> Result<T, Box<dyn Error>> {
+    let annotation: Mapping =
+        serde_yaml::from_str(&fs::read_to_string(&annotation_file)?)?;
+    let spec_yaml = BufReader::new(fs::File::open(&spec_file)?)
+        .lines()
+        .skip(1)
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n");
+
+    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&spec_yaml)?;
+    spec_mapping.insert("annotation".to_string(), Value::from(annotation));
+    spec_mapping.insert("hash".to_string(), Value::from(hash));
+
+    let instance: T = serde_yaml::from_str(&serde_yaml::to_string(&spec_mapping)?)?;
+    Ok(instance)
+}
+
+// --- core model structs ---
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Pod {
+    pub annotation: Annotation,
+    pub hash: String,
+    source: String,
+    image: String,
+    command: String,
+    input_stream_map: BTreeMap<String, StreamInfo>,
+    output_dir: PathBuf,
+    output_stream_map: BTreeMap<String, StreamInfo>,
+    recommended_cpus: f32,
+    recommended_memory: u64,
+    required_gpu: Option<RequiredGPU>,
+    file_content_checksums: BTreeMap<PathBuf, String>,
+}
+
+impl Pod {
+    pub fn new(
+        annotation: Annotation,
+        source: String,
+        image: String,
+        command: String,
+        input_stream_map: BTreeMap<String, StreamInfo>,
+        output_dir: PathBuf,
+        output_stream_map: BTreeMap<String, StreamInfo>,
+        recommended_cpus: f32,
+        recommended_memory: u64,
+        required_gpu: Option<RequiredGPU>,
+    ) -> Result<Self, Box<dyn Error>> {
+        // todo: resolved_image+checksums -> docker image:tag -> image@digest
+        let resolved_image = String::from(
+            "zenmldocker/zenml-server@sha256:78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f"
+        );
+        let checksums = BTreeMap::from([(
+            PathBuf::from("image.tar.gz"),
+            String::from(
+                "78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f",
+            ),
+        )]);
+        let pod_no_hash = Self {
+            annotation,
+            hash: String::new(),
+            source,
+            image: resolved_image,
+            command,
+            input_stream_map,
+            output_dir,
+            output_stream_map,
+            recommended_cpus,
+            recommended_memory,
+            required_gpu,
+            file_content_checksums: checksums,
+        };
+        Ok(Self {
+            hash: hash_buffer(&to_yaml::<Pod>(&pod_no_hash)?),
+            ..pod_no_hash
+        })
+    }
+}
+
+// --- util types ---
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Annotation {
     pub name: String,
-    pub description: String,
     pub version: String,
+    pub description: String,
 }
 
-/// String would be the name of the model
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum GPUVendorInfo {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RequiredGPU {
+    pub model: GPUModel,
+    pub recommended_memory: u64,
+    pub count: u16,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum GPUModel {
     NVIDIA(String),
     AMD(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct GPUSpecRequirement {
-    pub vendor_info: GPUVendorInfo,
-    pub min_memory: u64,
-    pub count: u16,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct KeyInfo {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StreamInfo {
     pub path: PathBuf,
-    pub matching_pattern: String,
-}
-
-#[derive(Serialize, Debug)]
-pub struct Pod {
-    #[serde(skip_serializing)]
-    pub annotation: Annotation,
-    pub gpu_spec_requirments: Option<GPUSpecRequirement>,
-    pub image_digest: String,
-    pub input_stream_map: BTreeMap<String, KeyInfo>, // Num of recommneded cpu cores (can be fractional)
-    pub min_memory: u64,
-    pub output_dir: PathBuf,
-    pub output_stream_map: BTreeMap<String, KeyInfo>,
-    #[serde(skip_serializing)]
-    pub pod_hash: String, // SHA256 docker image hash
-    pub recommended_cpus: f32,
-    pub source_commit: String, // Git Commit
-}
-
-#[derive(Clone)]
-pub struct PodNewConfig {
-    pub name: String,
-    pub description: String,
-    pub version: String,
-    pub input_stream_map: BTreeMap<String, KeyInfo>,
-    pub output_dir: PathBuf,
-    pub output_stream_map: BTreeMap<String, KeyInfo>, // Will be relative path of output_dir
-    pub image_name: String,
-    pub source_commit: String, // Git Commit only for reference
-    pub recommended_cpus: Option<f32>, // Num of recommneded cpu cores (can be fractional)
-    pub min_memory: Option<u64>,       // Bytes
-    pub gpu_spec_requirments: Option<GPUSpecRequirement>,
-}
-
-impl Pod {
-    pub fn new(config: PodNewConfig) -> Pod {
-        let recommended_cpus = match config.recommended_cpus {
-            Some(value) => value,
-            None => 2f32,
-        };
-
-        let min_memory = match config.min_memory {
-            Some(value) => value,
-            None => 4294967296,
-        };
-
-        let mut pod = Pod {
-            pod_hash: String::new(),
-            input_stream_map: config.input_stream_map,
-            output_dir: config.output_dir,
-            output_stream_map: config.output_stream_map,
-            annotation: Annotation {
-                name: config.name,
-                description: config.description,
-                version: config.version,
-            },
-            image_digest: config.image_name,
-            recommended_cpus,
-            min_memory: min_memory,
-            gpu_spec_requirments: config.gpu_spec_requirments,
-            source_commit: config.source_commit,
-        };
-
-        // Covert to yaml, if fails, just panic since it should always be valid
-        let pod_hash = format!("{:X}", Sha256::digest(to_yaml(&pod).unwrap()));
-        pod.pod_hash = pod_hash;
-
-        pod
-    }
+    pub match_pattern: String,
 }
