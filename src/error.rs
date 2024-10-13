@@ -1,20 +1,30 @@
+use colored::Colorize;
+use serde_yaml;
 use std::{
     error::Error,
-    fmt::{Debug, Display},
+    fmt,
+    fmt::{Display, Formatter},
     io,
     path::PathBuf,
 };
 
-use colored::Colorize;
+#[derive(Debug)]
+pub struct OutOfBounds {}
+impl Error for OutOfBounds {}
+impl Display for OutOfBounds {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Index is out of bounds.")
+    }
+}
 
 #[derive(Debug)]
 pub struct DeserializeError {
     pub path: PathBuf,
     pub error: serde_yaml::Error,
 }
-
+impl Error for DeserializeError {}
 impl Display for DeserializeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}{}{}",
@@ -26,17 +36,13 @@ impl Display for DeserializeError {
     }
 }
 
-impl Error for DeserializeError {}
-
 #[derive(Debug)]
 pub struct FailedToExtractParentFolder {
     pub path: PathBuf,
 }
-
 impl Error for FailedToExtractParentFolder {}
-
 impl Display for FailedToExtractParentFolder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}",
@@ -50,11 +56,9 @@ impl Display for FailedToExtractParentFolder {
 pub struct FileAlreadyExists {
     pub path: PathBuf,
 }
-
 impl Error for FileAlreadyExists {}
-
 impl Display for FileAlreadyExists {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}",
@@ -69,11 +73,9 @@ pub struct SerializeError {
     pub item_debug_string: String,
     pub error: serde_yaml::Error,
 }
-
 impl Error for SerializeError {}
-
 impl Display for SerializeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}{}{}",
@@ -90,11 +92,9 @@ pub struct IOError {
     pub path: PathBuf,
     pub error: io::Error,
 }
-
 impl Error for IOError {}
-
 impl Display for IOError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}{}{}",

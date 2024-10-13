@@ -4,9 +4,11 @@ use std::{collections::BTreeMap, error::Error, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{error::SerializeError, utils::get_struct_name};
+use crate::{error::SerializeError, util::get_struct_name};
 
-pub fn to_yaml<T: Serialize + std::fmt::Debug>(item: T) -> Result<String, Box<dyn Error>> {
+pub fn to_yaml<T: Serialize + std::fmt::Debug>(
+    item: T,
+) -> Result<String, Box<dyn Error>> {
     let mut yaml_str = match serde_yaml::to_string(&item) {
         Ok(value) => value,
         Err(error) => {
@@ -17,7 +19,7 @@ pub fn to_yaml<T: Serialize + std::fmt::Debug>(item: T) -> Result<String, Box<dy
         }
     };
 
-    yaml_str.insert_str(0, &format!("class: {}\n", get_struct_name::<T>()));
+    yaml_str.insert_str(0, &format!("class: {}\n", get_struct_name::<T>()?));
 
     Ok(yaml_str)
 }
@@ -74,7 +76,7 @@ pub struct PodNewConfig {
     pub output_dir: PathBuf,
     pub output_stream_map: BTreeMap<String, KeyInfo>, // Will be relative path of output_dir
     pub image_name: String,
-    pub source_commit: String,         // Git Commit only for reference
+    pub source_commit: String, // Git Commit only for reference
     pub recommended_cpus: Option<f32>, // Num of recommneded cpu cores (can be fractional)
     pub min_memory: Option<u64>,       // Bytes
     pub gpu_spec_requirments: Option<GPUSpecRequirement>,
