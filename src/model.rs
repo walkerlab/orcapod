@@ -60,7 +60,6 @@ pub struct Pod {
     recommended_cpus: f32,
     recommended_memory: u64,
     required_gpu: Option<RequiredGPU>,
-    file_content_checksums: BTreeMap<PathBuf, String>,
 }
 
 impl Pod {
@@ -76,21 +75,11 @@ impl Pod {
         recommended_memory: u64,
         required_gpu: Option<RequiredGPU>,
     ) -> Result<Self, Box<dyn Error>> {
-        // todo: resolved_image+checksums -> docker image:tag -> image@digest
-        let resolved_image = String::from(
-            "zenmldocker/zenml-server@sha256:78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f"
-        );
-        let checksums = BTreeMap::from([(
-            PathBuf::from("image.tar.gz"),
-            String::from(
-                "78efb7728aac9e4e79966bc13703e7cb239ba9c0eb6322c252bea0399ff2421f",
-            ),
-        )]);
         let pod_no_hash = Self {
             annotation,
             hash: String::new(),
             source,
-            image: resolved_image,
+            image,
             command,
             input_stream_map,
             output_dir,
@@ -98,7 +87,6 @@ impl Pod {
             recommended_cpus,
             recommended_memory,
             required_gpu,
-            file_content_checksums: checksums,
         };
         Ok(Self {
             hash: hash_buffer(&to_yaml::<Pod>(&pod_no_hash)?),

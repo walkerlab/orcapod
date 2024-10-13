@@ -1,19 +1,13 @@
 use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound},
     model::{from_yaml, to_yaml, Pod},
+    store::Store,
     util::get_struct_name,
 };
 use colored::Colorize;
 use glob::{GlobError, Paths};
 use regex::Regex;
 use std::{collections::BTreeMap, error::Error, fs, iter::Map, path::PathBuf};
-
-pub trait Store {
-    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
-    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>>;
-    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
-}
 
 #[derive(Debug)]
 pub struct LocalFileStore {
