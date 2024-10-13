@@ -1,21 +1,20 @@
+// todo: have a pathbuf gen for annotation vs spec
+// todo: annotation save/load methods
+// todo: methods for save_file (annotation error if exists, spec skips if exist)
 use crate::{
-    error::{
-        DeserializeError, FailedToExtractParentFolder, FileAlreadyExists, IOError,
-    },
-    model::{to_yaml, Annotation, Pod, RequiredGPU, StreamInfo},
+    error::{AnnotationExists, FileHasNoParent, NoAnnotationFound, NoSpecFound},
+    model::{from_yaml, to_yaml, Pod},
     util::get_struct_name,
 };
-use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    error::Error,
-    fs,
-    path::{Path, PathBuf},
-};
+use glob::{GlobError, Paths};
+use regex::Regex;
+use std::{collections::BTreeMap, error::Error, fs, iter::Map, path::PathBuf};
 
 pub trait Store {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>>;
+    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
 }
 
 #[derive(Debug)]
@@ -29,164 +28,189 @@ impl LocalFileStore {
             location: location.into(),
         }
     }
+    fn _parse_annotation_path(
+        filepath: &str,
+    ) -> Result<
+        Map<
+            Paths,
+            impl FnMut(Result<PathBuf, GlobError>) -> (String, (String, String)),
+        >,
+        Box<dyn Error>,
+    > {
+        let paths = glob::glob(filepath)?.map(|p| {
+            let re = Regex::new(
+                r"(?x)
+                ^.*
+                \/(?<name>[0-9a-zA-Z\-]+)
+                \/
+                    (?<hash>[0-9A-F]+)
+                    -
+                    (?<version>[0-9]+\.[0-9]+\.[0-9]+)
+                    \.yaml
+                $",
+            )
+            .unwrap(); // todo: fix unsafe
+            let path_string = &p.unwrap().display().to_string(); // todo: fix unsafe
+            let cap = re.captures(path_string).unwrap(); // todo: fix unsafe
+            (
+                cap["name"].to_string(),
+                (cap["hash"].to_string(), cap["version"].to_string()),
+            )
+        });
 
-    fn construct_annotation_path(&self, hash: &str, ver: &str) -> PathBuf {
-        let mut path_buf = self.location.clone();
-        path_buf.push(get_struct_name::<Annotation>().unwrap());
-        path_buf.push(hash);
-        path_buf.push(format!("{}{}", ver, ".yaml"));
-
-        path_buf
+        Ok(paths)
     }
-
-    fn construct_folder_path(&self, model_name: &str, hash: &str) -> PathBuf {
-        let mut path_buf = self.location.clone();
-        path_buf.push(model_name);
-        path_buf.push(format!("{}.yaml", hash));
-
-        path_buf
-    }
-    fn store_annotation(
+    fn _get_pod_version_map(
         &self,
-        annotation: &Annotation,
-        hash: &str, // Of owner
-    ) -> Result<(), Box<dyn Error>> {
-        create_file_and_dir_if_not_exist(
-            self.construct_annotation_path(hash, &annotation.version),
-            &to_yaml(annotation)?,
-        )
-    }
-
-    fn load_annotation(
-        &self,
-        hash: &str,
-        version: &str,
-    ) -> Result<Annotation, Box<dyn Error>> {
-        let path = self.construct_annotation_path(hash, version);
-
-        let file = read_yaml(&path)?;
-
-        #[derive(Deserialize)]
-        struct AnnotationYaml {
-            name: String,
-            description: String,
-            version: String,
-        }
-
-        let yaml_struct: AnnotationYaml = match serde_yaml::from_str(&file) {
-            Ok(value) => value,
-            Err(error) => {
-                return Err(Box::new(DeserializeError { path, error }));
-            }
-        };
-
-        Ok(Annotation {
-            name: yaml_struct.name,
-            description: yaml_struct.description,
-            version: yaml_struct.version,
-        })
+        name: &str,
+    ) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+        Ok(LocalFileStore::_parse_annotation_path(&format!(
+            "{}/annotation/pod/{}/*.yaml",
+            self.location.display().to_string(),
+            name,
+        ))?
+        .map(|(_, (h, v))| (v, h))
+        .collect::<BTreeMap<String, String>>())
     }
 }
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let path = self.construct_folder_path(&get_struct_name::<Pod>()?, &pod.hash);
+        let class = get_struct_name::<Pod>()?;
 
-        // Try to save it
-        create_file_and_dir_if_not_exist(&path, &to_yaml(&pod)?)?;
+        let annotation_yaml = serde_yaml::to_string(&pod.annotation)?;
+        let annotation_file = PathBuf::from(format!(
+            "{}/{}/{}/{}/{}-{}.yaml",
+            self.location.display().to_string(),
+            "annotation",
+            class,
+            pod.annotation.name,
+            pod.hash,
+            pod.annotation.version,
+        ));
+        fs::create_dir_all(&annotation_file.parent().ok_or(FileHasNoParent {
+            path: annotation_file.clone(),
+        })?)?;
+        (!fs::exists(&annotation_file)?)
+            .then_some(())
+            .ok_or(AnnotationExists {
+                class: class.clone(),
+                name: pod.annotation.name.clone(),
+                version: pod.annotation.version.clone(),
+            })?;
+        fs::write(&annotation_file, &annotation_yaml)?;
 
-        // Missing docker image save
-        // TODO
-
-        // Save the Annotation
-        self.store_annotation(&pod.annotation, &pod.hash)
-    }
-
-    fn load_pod(&self, hash: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
-        let path = self.construct_folder_path(&get_struct_name::<Pod>()?, hash);
-
-        #[derive(Deserialize)]
-        struct PodYaml {
-            gpu: Option<RequiredGPU>,
-            image: String,
-            // Num of recommneded cpu cores (can be fractional)
-            input_stream_map: BTreeMap<String, StreamInfo>,
-            recommended_memory: u64,
-            output_dir: PathBuf,
-            output_stream_map: BTreeMap<String, StreamInfo>,
-            recommended_cpus: f32,
-            source: String, // Git Commit
-            command: String,
-            file_content_checksums: BTreeMap<PathBuf, String>,
+        let spec_yaml = to_yaml::<Pod>(&pod)?;
+        let spec_file = PathBuf::from(format!(
+            "{}/{}/{}/{}",
+            self.location.display().to_string(),
+            class,
+            pod.hash,
+            "spec.yaml",
+        ));
+        fs::create_dir_all(&spec_file.parent().ok_or(FileHasNoParent {
+            path: spec_file.clone(),
+        })?)?;
+        if fs::exists(&spec_file)? {
+            println!(
+                "Skip saving `{}:{}` {} since it is already stored.",
+                pod.annotation.name, pod.annotation.version, class,
+            );
+        } else {
+            fs::write(&spec_file, &spec_yaml)?;
         }
 
-        let file = read_yaml(&path)?;
-        let yaml_struct: PodYaml = match serde_yaml::from_str(&file) {
-            Ok(value) => value,
-            Err(error) => {
-                return Err(Box::new(DeserializeError { path, error }));
-            }
-        };
+        Ok(())
+    }
+    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
+        let (names, (hashes, versions)): (Vec<String>, (Vec<String>, Vec<String>)) =
+            LocalFileStore::_parse_annotation_path(&format!(
+                "{}/annotation/pod/**/*.yaml",
+                self.location.display().to_string(),
+            ))?
+            .unzip();
 
-        let annotation = self.load_annotation(hash, version)?;
+        Ok(BTreeMap::from([
+            (String::from("name"), names),
+            (String::from("hash"), hashes),
+            (String::from("version"), versions),
+        ]))
+    }
+    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
+        let class = "pod".to_string();
 
-        Ok(Pod::new(
-            annotation,
-            yaml_struct.source,
-            yaml_struct.image,
-            yaml_struct.command,
-            yaml_struct.input_stream_map,
-            yaml_struct.output_dir,
-            yaml_struct.output_stream_map,
-            yaml_struct.recommended_cpus,
-            yaml_struct.recommended_memory,
-            yaml_struct.gpu,
+        let (_, (hash, _)) = LocalFileStore::_parse_annotation_path(&format!(
+            "{}/annotation/pod/{}/*-{}.yaml",
+            self.location.display().to_string(),
+            name,
+            version,
+        ))?
+        .next()
+        .ok_or(NoAnnotationFound {
+            class: class.clone(),
+            name: name.to_string(),
+            version: version.to_string(),
+        })?;
+        let annotation_file = format!(
+            "{}/annotation/pod/{}/{}-{}.yaml",
+            self.location.display().to_string(),
+            name,
+            hash,
+            version,
+        );
+
+        let spec_file = glob::glob(&format!(
+            "{}/pod/{}/spec.yaml",
+            self.location.display().to_string(),
+            hash,
+        ))?
+        .next()
+        .ok_or(NoSpecFound {
+            class: class.clone(),
+            name: name.to_string(),
+            version: version.to_string(),
+        })??;
+
+        Ok(from_yaml::<Pod>(
+            &annotation_file,
+            &spec_file.display().to_string(),
+            &hash,
         )?)
     }
-}
+    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
+        // assumes propagate = false
+        let versions = LocalFileStore::_get_pod_version_map(&self, name)?;
+        let annotation_dir = format!(
+            "{}/annotation/pod/{}",
+            self.location.display().to_string(),
+            name,
+        );
 
-/// Helper Functions
-///
-
-fn create_file_and_dir_if_not_exist(
-    path: impl AsRef<Path>,
-    content_to_write: &str,
-) -> Result<(), Box<dyn Error>> {
-    if path.as_ref().exists() {
-        return Err(Box::new(FileAlreadyExists {
-            path: path.as_ref().into(),
-        }));
-    } else {
-        // Create the all the folders above the file
-        let parent_path = match path.as_ref().parent() {
-            Some(value) => value,
-            None => {
-                return Err(Box::new(FailedToExtractParentFolder {
-                    path: path.as_ref().into(),
-                }))
-            }
-        };
-
-        fs::create_dir_all(&parent_path)?;
-
-        match fs::write(&path, content_to_write) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(Box::new(IOError {
-                path: path.as_ref().into(),
-                error: e,
-            })),
+        fs::remove_file(&format!(
+            "{}/{}-{}.yaml",
+            annotation_dir, versions[version], version,
+        ))?;
+        if versions
+            .iter()
+            .filter(|&(v, h)| v != version && h == &versions[v])
+            .collect::<BTreeMap<_, _>>()
+            .is_empty()
+        {
+            fs::remove_dir_all(&format!(
+                "{}/pod/{}",
+                self.location.display().to_string(),
+                versions[version],
+            ))?;
         }
+        if versions
+            .iter()
+            .filter(|&(v, _)| v != version)
+            .collect::<BTreeMap<_, _>>()
+            .is_empty()
+        {
+            fs::remove_dir_all(&annotation_dir)?;
+        }
+
+        Ok(())
     }
-}
-
-fn read_yaml(path: impl AsRef<Path>) -> Result<String, Box<dyn Error>> {
-    Ok(match fs::read_to_string(&path) {
-        Ok(raw_yaml) => raw_yaml,
-        Err(error) => {
-            return Err(Box::new(IOError {
-                path: path.as_ref().into(),
-                error,
-            }))
-        }
-    })
 }

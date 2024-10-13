@@ -8,7 +8,7 @@ use std::{
     path::PathBuf,
 };
 
-// get a none when trying to figure struct_name
+// (done) todo: get a none when trying to figure struct_name
 #[derive(Debug)]
 pub struct OutOfBounds {}
 impl Error for OutOfBounds {}
@@ -18,7 +18,7 @@ impl Display for OutOfBounds {
     }
 }
 
-// wrapper around serde_yaml::from_str
+// todo: wrapper around serde_yaml::from_str
 #[derive(Debug)]
 pub struct DeserializeError {
     pub path: PathBuf,
@@ -38,24 +38,23 @@ impl Display for DeserializeError {
     }
 }
 
-// wrapper around getting none when trying to find parent
+// todo: wrapper around getting none when trying to find parent
 #[derive(Debug)]
-pub struct FailedToExtractParentFolder {
+pub struct FileHasNoParent {
     pub path: PathBuf,
 }
-impl Error for FailedToExtractParentFolder {}
-impl Display for FailedToExtractParentFolder {
+impl Error for FileHasNoParent {}
+impl Display for FileHasNoParent {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
-            "{}{}",
-            "Unable to extract folder path".bright_red(),
-            &self.path.to_string_lossy().bright_cyan(),
+            "File `{}` has no parent.",
+            self.path.display().to_string().bright_red()
         )
     }
 }
 
-// raise error if a file exists before writting
+// todo: raise error if a file exists before writting
 #[derive(Debug)]
 pub struct FileAlreadyExists {
     pub path: PathBuf,
@@ -72,7 +71,7 @@ impl Display for FileAlreadyExists {
     }
 }
 
-// wrapper around serde_yaml::to_string
+// todo: wrapper around serde_yaml::to_string
 #[derive(Debug)]
 pub struct SerializeError {
     pub item_debug_string: String,
@@ -92,7 +91,7 @@ impl Display for SerializeError {
     }
 }
 
-// wrapper around fs::read_to_string and fs::write
+// todo: wrapper around fs::read_to_string and fs::write
 #[derive(Debug)]
 pub struct IOError {
     pub path: PathBuf,
@@ -108,6 +107,57 @@ impl Display for IOError {
             &self.error.to_string().bright_red(),
             " at ".bright_red(),
             &self.path.to_string_lossy().cyan(),
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct AnnotationExists {
+    pub class: String,
+    pub name: String,
+    pub version: String,
+}
+impl Error for AnnotationExists {}
+impl Display for AnnotationExists {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Annotation found for `{}:{}` {}.",
+            self.name, self.version, self.class
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct NoAnnotationFound {
+    pub class: String,
+    pub name: String,
+    pub version: String,
+}
+impl Error for NoAnnotationFound {}
+impl Display for NoAnnotationFound {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "No annotation found for `{}:{}` {}.",
+            self.name, self.version, self.class
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct NoSpecFound {
+    pub class: String,
+    pub name: String,
+    pub version: String,
+}
+impl Error for NoSpecFound {}
+impl Display for NoSpecFound {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "No specification found for `{}:{}` {}.",
+            self.name, self.version, self.class
         )
     }
 }
