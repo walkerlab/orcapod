@@ -8,7 +8,7 @@ use std::{
     path::PathBuf,
 };
 
-// (done) todo: get a none when trying to figure struct_name
+/// Wrapper around getting None when trying to find struct_name
 #[derive(Debug)]
 pub struct OutOfBounds {}
 impl Error for OutOfBounds {}
@@ -18,7 +18,7 @@ impl Display for OutOfBounds {
     }
 }
 
-// todo: wrapper around serde_yaml::from_str
+/// Wrapper around serde_yaml::from_str
 #[derive(Debug)]
 pub struct DeserializeError {
     pub path: PathBuf,
@@ -38,7 +38,7 @@ impl Display for DeserializeError {
     }
 }
 
-// todo: wrapper around getting none when trying to find parent
+/// Wrapper around getting None when trying to find parent
 #[derive(Debug)]
 pub struct FileHasNoParent {
     pub path: PathBuf,
@@ -54,7 +54,7 @@ impl Display for FileHasNoParent {
     }
 }
 
-// todo: wrapper around serde_yaml::to_string
+/// Wrapper around serde_yaml::to_string
 #[derive(Debug)]
 pub struct SerializeError {
     pub item_debug_string: String,
@@ -74,7 +74,7 @@ impl Display for SerializeError {
     }
 }
 
-// todo: wrapper around fs::read_to_string and fs::write
+/// Wrapper around fs::read_to_string and fs::write
 #[derive(Debug)]
 pub struct IOError {
     pub path: PathBuf,
@@ -94,6 +94,7 @@ impl Display for IOError {
     }
 }
 
+/// Raise error when file exists but unexpected
 #[derive(Debug)]
 pub struct FileExists {
     pub path: PathBuf,
@@ -109,6 +110,7 @@ impl Display for FileExists {
     }
 }
 
+/// Raise error when glob doesn't match on an annotation
 #[derive(Debug)]
 pub struct NoAnnotationFound {
     pub class: String,
@@ -123,5 +125,15 @@ impl Display for NoAnnotationFound {
             "No annotation found for `{}:{}` {}.",
             self.name, self.version, self.class
         )
+    }
+}
+
+/// Raise error when regex doesn't match
+#[derive(Debug)]
+pub struct NoRegexMatch {}
+impl Error for NoRegexMatch {}
+impl Display for NoRegexMatch {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "No match for regex.")
     }
 }

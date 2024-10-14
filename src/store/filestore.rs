@@ -1,5 +1,5 @@
 use crate::{
-    error::{FileExists, FileHasNoParent, NoAnnotationFound},
+    error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
     model::{from_yaml, to_yaml, Pod},
     store::Store,
     util::get_struct_name,
@@ -48,7 +48,7 @@ impl Store for LocalFileStore {
             class: class.clone(),
             name: name.to_string(),
             version: version.to_string(),
-        })?;
+        })??;
 
         Ok(from_yaml::<Pod>(
             &self.make_annotation_path("pod", &hash, &name, &version),
@@ -57,11 +57,10 @@ impl Store for LocalFileStore {
         )?)
     }
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
-        let (names, (hashes, versions)): (Vec<String>, (Vec<String>, Vec<String>)) =
-            LocalFileStore::parse_annotation_path(
-                &self.make_annotation_path("pod", "*", "*", "*"),
-            )?
-            .unzip();
+        let (names, (hashes, versions)) = LocalFileStore::parse_annotation_path(
+            &self.make_annotation_path("pod", "*", "*", "*"),
+        )?
+        .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>)), _>>()?;
 
         Ok(BTreeMap::from([
             (String::from("name"), names),
@@ -141,7 +140,9 @@ impl LocalFileStore {
     ) -> Result<
         Map<
             Paths,
-            impl FnMut(Result<PathBuf, GlobError>) -> (String, (String, String)),
+            impl FnMut(
+                Result<PathBuf, GlobError>,
+            ) -> Result<(String, (String, String)), Box<dyn Error>>,
         >,
         Box<dyn Error>,
     > {
@@ -156,14 +157,13 @@ impl LocalFileStore {
                     (?<version>[0-9]+\.[0-9]+\.[0-9]+)
                     \.yaml
                 $",
-            )
-            .unwrap(); // todo: fix unsafe
-            let path_string = &p.unwrap().display().to_string(); // todo: fix unsafe
-            let cap = re.captures(path_string).unwrap(); // todo: fix unsafe
-            (
+            )?;
+            let path_string = &p?.display().to_string();
+            let cap = re.captures(path_string).ok_or(NoRegexMatch {})?;
+            Ok((
                 cap["name"].to_string(),
                 (cap["hash"].to_string(), cap["version"].to_string()),
-            )
+            ))
         });
 
         Ok(paths)
@@ -175,8 +175,13 @@ impl LocalFileStore {
         Ok(LocalFileStore::parse_annotation_path(
             &self.make_annotation_path("pod", "*", name, "*"),
         )?
-        .map(|(_, (h, v))| (v, h))
-        .collect::<BTreeMap<String, String>>())
+        .map(|m| -> Result<(String, String), Box<dyn Error>> {
+            let metadata = m?.clone();
+            let hash = metadata.1 .0;
+            let version = metadata.1 .1;
+            Ok((version, hash))
+        })
+        .collect::<Result<BTreeMap<String, String>, _>>()?)
     }
     fn save_file(
         file: &PathBuf,
