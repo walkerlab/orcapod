@@ -1,20 +1,32 @@
+use colored::Colorize;
+use serde_yaml;
 use std::{
     error::Error,
-    fmt::{Debug, Display},
+    fmt,
+    fmt::{Display, Formatter},
     io,
     path::PathBuf,
 };
 
-use colored::Colorize;
+/// Wrapper around getting None when trying to find struct_name
+#[derive(Debug)]
+pub struct OutOfBounds {}
+impl Error for OutOfBounds {}
+impl Display for OutOfBounds {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Index is out of bounds.")
+    }
+}
 
+/// Wrapper around serde_yaml::from_str
 #[derive(Debug)]
 pub struct DeserializeError {
     pub path: PathBuf,
     pub error: serde_yaml::Error,
 }
-
+impl Error for DeserializeError {}
 impl Display for DeserializeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}{}{}",
@@ -26,54 +38,31 @@ impl Display for DeserializeError {
     }
 }
 
-impl Error for DeserializeError {}
-
+/// Wrapper around getting None when trying to find parent
 #[derive(Debug)]
-pub struct FailedToExtractParentFolder {
+pub struct FileHasNoParent {
     pub path: PathBuf,
 }
-
-impl Error for FailedToExtractParentFolder {}
-
-impl Display for FailedToExtractParentFolder {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Error for FileHasNoParent {}
+impl Display for FileHasNoParent {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
-            "{}{}",
-            "Unable to extract folder path".bright_red(),
-            &self.path.to_string_lossy().bright_cyan(),
+            "File `{}` has no parent.",
+            self.path.display().to_string().bright_red()
         )
     }
 }
 
-#[derive(Debug)]
-pub struct FileAlreadyExists {
-    pub path: PathBuf,
-}
-
-impl Error for FileAlreadyExists {}
-
-impl Display for FileAlreadyExists {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            &self.path.to_string_lossy().bright_cyan(),
-            " already exists!".bright_red()
-        )
-    }
-}
-
+/// Wrapper around serde_yaml::to_string
 #[derive(Debug)]
 pub struct SerializeError {
     pub item_debug_string: String,
     pub error: serde_yaml::Error,
 }
-
 impl Error for SerializeError {}
-
 impl Display for SerializeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}{}{}",
@@ -85,16 +74,15 @@ impl Display for SerializeError {
     }
 }
 
+/// Wrapper around fs::read_to_string and fs::write
 #[derive(Debug)]
 pub struct IOError {
     pub path: PathBuf,
     pub error: io::Error,
 }
-
 impl Error for IOError {}
-
 impl Display for IOError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
             "{}{}{}{}",
@@ -103,5 +91,49 @@ impl Display for IOError {
             " at ".bright_red(),
             &self.path.to_string_lossy().cyan(),
         )
+    }
+}
+
+/// Raise error when file exists but unexpected
+#[derive(Debug)]
+pub struct FileExists {
+    pub path: PathBuf,
+}
+impl Error for FileExists {}
+impl Display for FileExists {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "File `{}` already exists.",
+            self.path.display().to_string().bright_red()
+        )
+    }
+}
+
+/// Raise error when glob doesn't match on an annotation
+#[derive(Debug)]
+pub struct NoAnnotationFound {
+    pub class: String,
+    pub name: String,
+    pub version: String,
+}
+impl Error for NoAnnotationFound {}
+impl Display for NoAnnotationFound {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "No annotation found for `{}:{}` {}.",
+            self.name, self.version, self.class
+        )
+    }
+}
+
+/// Raise error when regex doesn't match
+#[derive(Debug)]
+pub struct NoRegexMatch {}
+impl Error for NoRegexMatch {}
+impl Display for NoRegexMatch {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "No match for regex.")
     }
 }
