@@ -3,7 +3,7 @@
     "editor.formatOnSave": true,
     "notebook.formatOnSave.enabled": true,
     "editor.rulers": [
-        88
+        100
     ],
     "[markdown]": {
         "editor.defaultFormatter": null
@@ -13,7 +13,7 @@
     },
     "rust-analyzer.rustfmt.extraArgs": [
         "--config",
-        "max_width=88"
+        "max_width=100"
     ],
     "files.autoSave": "off",
     "gitlens.showWelcomeOnInstall": false,
