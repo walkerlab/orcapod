@@ -22,7 +22,7 @@ We track only issues in the project so don't add PRs.
      - Merge the PR
      - Either update the issue status to `Done` or close the issue manually
 4. Contributors working on reviewer requested changes should:
-   - Set their PR to draft
+   - Convert their PR to draft
    - Update the issue status to `In Progress`
    - Repeat steps 2 and 3 as needed
 
