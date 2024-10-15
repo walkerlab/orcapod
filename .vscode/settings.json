@@ -9,7 +9,7 @@
         "editor.defaultFormatter": null
     },
     "[rust]": {
-        "editor.inlayHints.enabled": "off",
+        "editor.inlayHints.enabled": "on",
     },
     "rust-analyzer.rustfmt.extraArgs": [
         "--config",
