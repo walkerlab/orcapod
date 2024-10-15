@@ -2,7 +2,6 @@ use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
     model::{from_yaml, to_yaml, Pod},
     store::Store,
-    util::get_struct_name,
 };
 use colored::Colorize;
 use glob::{GlobError, Paths};
@@ -16,8 +15,9 @@ pub struct LocalFileStore {
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let class = get_struct_name::<Pod>()?;
+        let class = "pod";
 
+        // Save the annotation file and throw and error if exist
         LocalFileStore::save_file(
             &self.make_annotation_path(
                 &class,
@@ -29,6 +29,7 @@ impl Store for LocalFileStore {
             true,
         )?;
 
+        // Save the pod and skip if it already exist, for the case of many annotation to a single pod
         LocalFileStore::save_file(
             &self.make_spec_path(&class, &pod.hash),
             &to_yaml::<Pod>(&pod)?,

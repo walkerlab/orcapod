@@ -76,7 +76,7 @@ impl Pod {
         let pod_no_hash = Self {
             annotation,
             hash: String::new(),
-            source_commit: source_commit,
+            source_commit,
             image,
             command,
             input_stream_map,
@@ -111,7 +111,7 @@ pub struct GPURequirement {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum GPUModel {
-    NVIDIA(String),
+    NVIDIA(String), // String will be the specific model of the gpu
     AMD(String),
 }
 
