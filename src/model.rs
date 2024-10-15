@@ -49,7 +49,7 @@ pub fn from_yaml<T: DeserializeOwned>(
 pub struct Pod {
     pub annotation: Annotation,
     pub hash: String,
-    source: String,
+    source_commit: String,
     image: String,
     command: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
@@ -62,9 +62,7 @@ pub struct Pod {
 
 impl Pod {
     pub fn new(
-        name: String,
-        version: String,
-        description: String,
+        annotation: Annotation,
         source_commit: String,
         image: String,
         command: String,
@@ -76,13 +74,9 @@ impl Pod {
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self, Box<dyn Error>> {
         let pod_no_hash = Self {
-            annotation: Annotation {
-                name,
-                version,
-                description,
-            },
+            annotation,
             hash: String::new(),
-            source: source_commit,
+            source_commit: source_commit,
             image,
             command,
             input_stream_map,

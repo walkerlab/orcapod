@@ -180,7 +180,11 @@ impl LocalFileStore {
         .collect::<Result<BTreeMap<String, String>, _>>()?)
     }
 
-    fn save_file(file: &PathBuf, content: &str, skip_if_exist: bool) -> Result<(), Box<dyn Error>> {
+    fn save_file(
+        file: &PathBuf,
+        content: &str,
+        fail_if_exists: bool,
+    ) -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(
             &file
                 .parent()
@@ -188,7 +192,7 @@ impl LocalFileStore {
         )?;
         let file_exists = fs::exists(&file)?;
         if file_exists {
-            if skip_if_exist {
+            if !fail_if_exists {
                 println!(
                     "Skip saving `{}` since it is already stored.",
                     file.to_string_lossy().bright_cyan(),
