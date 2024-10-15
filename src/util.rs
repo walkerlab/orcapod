@@ -12,6 +12,6 @@ pub fn get_struct_name<T>() -> Result<String, OutOfBounds> {
         .to_lowercase())
 }
 
-pub fn hash_buffer(buffer: &str) -> String {
+pub fn hash(buffer: &str) -> String {
     format!("{:X}", Sha256::digest(buffer))
 }

@@ -11,7 +11,7 @@ use std::{collections::BTreeMap, error::Error, fs, iter::Map, path::PathBuf};
 
 #[derive(Debug)]
 pub struct LocalFileStore {
-    location: PathBuf,
+    pub directory: PathBuf,
 }
 
 impl Store for LocalFileStore {
@@ -37,6 +37,7 @@ impl Store for LocalFileStore {
 
         Ok(())
     }
+
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
         let class = "pod".to_string();
 
@@ -56,6 +57,7 @@ impl Store for LocalFileStore {
             &hash,
         )?)
     }
+
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
         let (names, (hashes, versions)) = LocalFileStore::parse_annotation_path(
             &self.make_annotation_path("pod", "*", "*", "*"),
@@ -68,11 +70,11 @@ impl Store for LocalFileStore {
             (String::from("version"), versions),
         ]))
     }
+
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
         // assumes propagate = false
         let versions = LocalFileStore::get_pod_version_map(&self, name)?;
-        let annotation_file =
-            self.make_annotation_path("pod", &versions[version], &name, &version);
+        let annotation_file = self.make_annotation_path("pod", &versions[version], &name, &version);
         let annotation_dir = annotation_file.parent().ok_or(FileHasNoParent {
             path: annotation_file.clone(),
         })?;
@@ -106,19 +108,14 @@ impl Store for LocalFileStore {
 impl LocalFileStore {
     pub fn new(location: impl Into<PathBuf>) -> Self {
         Self {
-            location: location.into(),
+            directory: location.into(),
         }
     }
-    fn make_annotation_path(
-        &self,
-        class: &str,
-        hash: &str,
-        name: &str,
-        version: &str,
-    ) -> PathBuf {
+
+    fn make_annotation_path(&self, class: &str, hash: &str, name: &str, version: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}/{}-{}.yaml",
-            self.location.display().to_string(),
+            self.directory.to_string_lossy(),
             "annotation",
             class,
             name,
@@ -126,27 +123,27 @@ impl LocalFileStore {
             version,
         ))
     }
+
     fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
-            self.location.display().to_string(),
+            self.directory.to_string_lossy(),
             class,
             hash,
             "spec.yaml",
         ))
     }
+
     fn parse_annotation_path(
         path: &PathBuf,
     ) -> Result<
         Map<
             Paths,
-            impl FnMut(
-                Result<PathBuf, GlobError>,
-            ) -> Result<(String, (String, String)), Box<dyn Error>>,
+            impl FnMut(Result<PathBuf, GlobError>) -> Result<(String, (String, String)), Box<dyn Error>>,
         >,
         Box<dyn Error>,
     > {
-        let paths = glob::glob(&path.display().to_string())?.map(|p| {
+        let paths = glob::glob(&path.to_string_lossy())?.map(|p| {
             let re = Regex::new(
                 r"(?x)
                 ^.*
@@ -158,8 +155,9 @@ impl LocalFileStore {
                     \.yaml
                 $",
             )?;
-            let path_string = &p?.display().to_string();
-            let cap = re.captures(path_string).ok_or(NoRegexMatch {})?;
+            let path = p?;
+            let path_string = &path.to_string_lossy();
+            let cap = re.captures(&path_string).ok_or(NoRegexMatch {})?;
             Ok((
                 cap["name"].to_string(),
                 (cap["hash"].to_string(), cap["version"].to_string()),
@@ -168,10 +166,8 @@ impl LocalFileStore {
 
         Ok(paths)
     }
-    fn get_pod_version_map(
-        &self,
-        name: &str,
-    ) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+
+    fn get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
         Ok(LocalFileStore::parse_annotation_path(
             &self.make_annotation_path("pod", "*", name, "*"),
         )?
@@ -183,24 +179,24 @@ impl LocalFileStore {
         })
         .collect::<Result<BTreeMap<String, String>, _>>()?)
     }
-    fn save_file(
-        file: &PathBuf,
-        content: &str,
-        is_annotation: bool,
-    ) -> Result<(), Box<dyn Error>> {
+
+    fn save_file(file: &PathBuf, content: &str, skip_if_exist: bool) -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(
             &file
                 .parent()
                 .ok_or(FileHasNoParent { path: file.clone() })?,
         )?;
         let file_exists = fs::exists(&file)?;
-        if file_exists && is_annotation {
-            return Err(Box::new(FileExists { path: file.clone() }));
-        } else if file_exists && !is_annotation {
-            println!(
-                "Skip saving `{}` since it is already stored.",
-                file.display().to_string().bright_cyan(),
-            );
+        if file_exists {
+            if skip_if_exist {
+                println!(
+                    "Skip saving `{}` since it is already stored.",
+                    file.to_string_lossy().bright_cyan(),
+                );
+                return Ok(());
+            } else {
+                return Err(Box::new(FileExists { path: file.clone() }));
+            }
         } else {
             fs::write(&file, content)?;
         }

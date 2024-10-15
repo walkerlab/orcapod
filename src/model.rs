@@ -1,4 +1,4 @@
-use crate::util::{get_struct_name, hash_buffer};
+use crate::util::{get_struct_name, hash};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::{
@@ -10,8 +10,7 @@ use std::{
 };
 
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
-    let mapping: BTreeMap<String, Value> =
-        serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
+    let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
         &mapping
             .into_iter()
@@ -28,8 +27,7 @@ pub fn from_yaml<T: DeserializeOwned>(
     spec_file: &PathBuf,
     hash: &str,
 ) -> Result<T, Box<dyn Error>> {
-    let annotation: Mapping =
-        serde_yaml::from_str(&fs::read_to_string(&annotation_file)?)?;
+    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(&annotation_file)?)?;
     let spec_yaml = BufReader::new(fs::File::open(&spec_file)?)
         .lines()
         .skip(1)
@@ -59,13 +57,15 @@ pub struct Pod {
     output_stream_map: BTreeMap<String, StreamInfo>,
     recommended_cpus: f32,
     recommended_memory: u64,
-    required_gpu: Option<RequiredGPU>,
+    required_gpu: Option<GPURequirement>,
 }
 
 impl Pod {
     pub fn new(
-        annotation: Annotation,
-        source: String,
+        name: String,
+        version: String,
+        description: String,
+        source_commit: String,
         image: String,
         command: String,
         input_stream_map: BTreeMap<String, StreamInfo>,
@@ -73,12 +73,16 @@ impl Pod {
         output_stream_map: BTreeMap<String, StreamInfo>,
         recommended_cpus: f32,
         recommended_memory: u64,
-        required_gpu: Option<RequiredGPU>,
+        required_gpu: Option<GPURequirement>,
     ) -> Result<Self, Box<dyn Error>> {
         let pod_no_hash = Self {
-            annotation,
+            annotation: Annotation {
+                name,
+                version,
+                description,
+            },
             hash: String::new(),
-            source,
+            source: source_commit,
             image,
             command,
             input_stream_map,
@@ -89,7 +93,7 @@ impl Pod {
             required_gpu,
         };
         Ok(Self {
-            hash: hash_buffer(&to_yaml::<Pod>(&pod_no_hash)?),
+            hash: hash(&to_yaml::<Pod>(&pod_no_hash)?),
             ..pod_no_hash
         })
     }
@@ -105,7 +109,7 @@ pub struct Annotation {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RequiredGPU {
+pub struct GPURequirement {
     pub model: GPUModel,
     pub recommended_memory: u64,
     pub count: u16,
