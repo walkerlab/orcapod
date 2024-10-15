@@ -55,8 +55,8 @@ pub struct Pod {
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
-    recommended_cpus: f32,
-    recommended_memory: u64,
+    min_cpus: f32,
+    min_memory: u64,
     required_gpu: Option<GPURequirement>,
 }
 
@@ -70,7 +70,7 @@ impl Pod {
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
         recommended_cpus: f32,
-        recommended_memory: u64,
+        min_memory: u64,
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self, Box<dyn Error>> {
         let pod_no_hash = Self {
@@ -82,8 +82,8 @@ impl Pod {
             input_stream_map,
             output_dir,
             output_stream_map,
-            recommended_cpus,
-            recommended_memory,
+            min_cpus: recommended_cpus,
+            min_memory,
             required_gpu,
         };
         Ok(Self {
