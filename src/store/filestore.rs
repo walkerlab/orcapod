@@ -2,6 +2,7 @@ use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
     model::{from_yaml, to_yaml, Pod},
     store::Store,
+    util::get_struct_name,
 };
 use colored::Colorize;
 use glob::{GlobError, Paths};
@@ -15,12 +16,9 @@ pub struct LocalFileStore {
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let class = "pod";
-
         // Save the annotation file and throw and error if exist
         LocalFileStore::save_file(
-            &self.make_annotation_path(
-                &class,
+            &self.make_annotation_path::<Pod>(
                 &pod.hash,
                 &pod.annotation.name,
                 &pod.annotation.version,
@@ -31,7 +29,7 @@ impl Store for LocalFileStore {
 
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
         LocalFileStore::save_file(
-            &self.make_spec_path(&class, &pod.hash),
+            &self.make_spec_path::<Pod>(&pod.hash),
             &to_yaml::<Pod>(&pod)?,
             false,
         )?;
@@ -40,28 +38,26 @@ impl Store for LocalFileStore {
     }
 
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
-        let class = "pod".to_string();
-
         let (_, (hash, _)) = LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", &name, &version),
+            &self.make_annotation_path::<Pod>("*", &name, &version),
         )?
         .next()
         .ok_or(NoAnnotationFound {
-            class: class.clone(),
-            name: name.to_string(),
-            version: version.to_string(),
+            class: "pod".into(),
+            name: name.into(),
+            version: version.into(),
         })??;
 
         Ok(from_yaml::<Pod>(
-            &self.make_annotation_path("pod", &hash, &name, &version),
-            &self.make_spec_path("pod", &hash),
+            &self.make_annotation_path::<Pod>(&hash, &name, &version),
+            &self.make_spec_path::<Pod>(&hash),
             &hash,
         )?)
     }
 
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
         let (names, (hashes, versions)) = LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", "*", "*"),
+            &self.make_annotation_path::<Pod>("*", "*", "*"),
         )?
         .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>)), _>>()?;
 
@@ -75,11 +71,11 @@ impl Store for LocalFileStore {
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
         // assumes propagate = false
         let versions = LocalFileStore::get_pod_version_map(&self, name)?;
-        let annotation_file = self.make_annotation_path("pod", &versions[version], &name, &version);
+        let annotation_file = self.make_annotation_path::<Pod>(&versions[version], &name, &version);
         let annotation_dir = annotation_file.parent().ok_or(FileHasNoParent {
             path: annotation_file.clone(),
         })?;
-        let spec_file = self.make_spec_path("pod", &versions[version]);
+        let spec_file = self.make_spec_path::<Pod>(&versions[version]);
         let spec_dir = spec_file.parent().ok_or(FileHasNoParent {
             path: spec_file.clone(),
         })?;
@@ -113,23 +109,23 @@ impl LocalFileStore {
         }
     }
 
-    fn make_annotation_path(&self, class: &str, hash: &str, name: &str, version: &str) -> PathBuf {
+    fn make_annotation_path<T>(&self, hash: &str, name: &str, version: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}/{}-{}.yaml",
             self.directory.to_string_lossy(),
             "annotation",
-            class,
+            get_struct_name::<T>().unwrap(),
             name,
             hash,
             version,
         ))
     }
 
-    fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
+    fn make_spec_path<T>(&self, hash: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
             self.directory.to_string_lossy(),
-            class,
+            get_struct_name::<T>().unwrap(),
             hash,
             "spec.yaml",
         ))
@@ -170,7 +166,7 @@ impl LocalFileStore {
 
     fn get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
         Ok(LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", name, "*"),
+            &self.make_annotation_path::<Pod>("*", name, "*"),
         )?
         .map(|m| -> Result<(String, String), Box<dyn Error>> {
             let metadata = m?.clone();
