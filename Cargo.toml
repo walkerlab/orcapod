@@ -5,3 +5,9 @@ edition = "2021"
 license = "MIT license"
 
 [dependencies]
+serde = { version = "1.0.210", features = ["derive"] }
+serde_yaml = "0.9.34"
+sha2 = "0.10.8"
+glob = "0.3.1"
+regex = "1.11.0"
+colored = "2.1.0"

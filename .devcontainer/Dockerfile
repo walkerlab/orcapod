@@ -22,9 +22,14 @@ RUN \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \
     echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /home/vscode/.bashrc && \
+    apt-get clean
+
+RUN \
     # rust auto styling
     rustup component add rustfmt && \
-    apt-get clean
+    # rust code coverage
+    cargo install cargo-llvm-cov && \
+    rustup component add llvm-tools-preview --toolchain 1.81.0-x86_64-unknown-linux-gnu
 
 USER vscode
 ENV PATH=${PATH}:/home/vscode/.local/bin
