@@ -37,3 +37,11 @@ We track only issues in the project so don't add PRs.
 - Reopened issues will automatically update status to `Todo`
 - Issue will automatically close once their status is updated to `Done`
 - Manually closed issues will automatically update status to `Done`
+
+## Set permissions to system defaults
+
+```bash
+# based on debian
+chmod u=rwx,g=rx,o=rx $(find . -not -path "./.git*" -type d | sort)  # directories
+chmod u=rw,g=r,o=r $(find . -not -path "./.git/*" -type f | sort)  # files
+```
