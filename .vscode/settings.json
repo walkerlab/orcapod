@@ -8,9 +8,6 @@
     "[markdown]": {
         "editor.defaultFormatter": null
     },
-    "[rust]": {
-        "editor.inlayHints.enabled": "on",
-    },
     "rust-analyzer.rustfmt.extraArgs": [
         "--config",
         "max_width=100"
