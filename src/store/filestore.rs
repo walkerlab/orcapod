@@ -1,6 +1,6 @@
 use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
-    model::{from_yaml, to_yaml, Pod},
+    model::{from_yaml, to_yaml, Pod, PodJob},
     util::get_struct_name,
 };
 use colored::Colorize;
@@ -18,7 +18,7 @@ pub struct LocalFileStore {
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
         // Save the annotation file and throw and error if exist
-        LocalFileStore::save_file(
+        Self::save_file(
             &self.make_annotation_path::<Pod>(
                 &pod.annotation.name,
                 &pod.hash,
@@ -29,7 +29,7 @@ impl Store for LocalFileStore {
         )?;
 
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        LocalFileStore::save_file(
+        Self::save_file(
             &self.make_spec_path::<Pod>(&pod.hash),
             &to_yaml::<Pod>(&pod)?,
             false,
@@ -48,6 +48,26 @@ impl Store for LocalFileStore {
 
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
         self.delete_item::<Pod>(name, version)
+    }
+
+    fn save_pod_job(&self, pod_job: &crate::model::PodJob) -> Result<(), Box<dyn Error>> {
+        todo!()
+    }
+
+    fn load_pod_job(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<crate::model::PodJob, Box<dyn Error>> {
+        self.load_item::<PodJob>(name, version)
+    }
+
+    fn list_pod_job(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
+        self.list_item::<PodJob>()
+    }
+
+    fn delete_pod_job(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
+        self.delete_item::<PodJob>(name, version)
     }
 }
 

@@ -87,8 +87,54 @@ impl Pod {
             required_gpu,
         };
         Ok(Self {
-            hash: hash(&to_yaml::<Pod>(&pod_no_hash)?),
+            hash: hash(&to_yaml(&pod_no_hash)?),
             ..pod_no_hash
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PodJob {
+    annotation: Annotation,
+    hash: String,
+    pod: Pod,
+    input_volume_map: BTreeMap<PathBuf, PathBuf>,
+    output_volume_map: BTreeMap<PathBuf, PathBuf>,
+    cpu_limit: f32, // Num of cpu to limit the pod from
+    mem_limit: u64, // Bytes to limit memory
+    retry_policy: PodRetryPolicy,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum PodRetryPolicy {
+    NoRetry,
+    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
+}
+
+impl PodJob {
+    pub fn new(
+        annotation: Annotation,
+        pod: Pod,
+        input_volume_map: BTreeMap<PathBuf, PathBuf>,
+        output_volume_map: BTreeMap<PathBuf, PathBuf>,
+        cpu_limit: f32,
+        mem_limit: u64,
+        retry_policy: PodRetryPolicy,
+    ) -> Result<Self, Box<dyn Error>> {
+        let pod_job_no_hash = PodJob {
+            annotation,
+            hash: String::new(),
+            pod,
+            input_volume_map,
+            output_volume_map,
+            cpu_limit,
+            mem_limit,
+            retry_policy,
+        };
+
+        Ok(Self {
+            hash: hash(&to_yaml(&pod_job_no_hash)?),
+            ..pod_job_no_hash
         })
     }
 }
