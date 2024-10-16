@@ -18,7 +18,7 @@ pub struct LocalFileStore {
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
         // Save the annotation file and throw and error if exist
-        LocalFileStore::save_file(
+        Self::save_file(
             &self.make_annotation_path::<Pod>(
                 &pod.annotation.name,
                 &pod.hash,
@@ -29,7 +29,7 @@ impl Store for LocalFileStore {
         )?;
 
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        LocalFileStore::save_file(
+        Self::save_file(
             &self.make_spec_path::<Pod>(&pod.hash),
             &to_yaml::<Pod>(&pod)?,
             false,
@@ -240,7 +240,7 @@ impl LocalFileStore {
         name: &str,
         version: &str,
     ) -> Result<T, Box<dyn Error>> {
-        let hash = LocalFileStore::search_annotation(
+        let hash = Self::search_annotation(
             &self
                 .make_annotation_path::<T>(&name, "*", &version)
                 .to_string_lossy(),
