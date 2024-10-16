@@ -1,8 +1,27 @@
 [package]
 name = "orcapod"
 version = "0.1.0"
-edition = "2021"
+description = "Intuitive compute pipeline orchestration with reproducibility, performance, and scalability in mind."
+repository = "https://github.com/walkerlab/orcapod"
+keywords = ["data", "pipeline", "compute", "orchestration"]
+categories = [
+    # "algorithms",
+    # "api-bindings",
+    "asynchronous",
+    # "caching",
+    # "command-line-utilities",
+    "concurrency",
+    # "data-structures",
+    "database-implementations",
+    # "encoding",
+    # "filesystem",
+    "science",
+    "virtualization",
+    # "web-programming::http-server",
+
+]
 license = "MIT license"
+edition = "2021"
 
 [dependencies]
 serde = { version = "1.0.210", features = ["derive"] }
@@ -11,3 +30,65 @@ sha2 = "0.10.8"
 glob = "0.3.1"
 regex = "1.11.0"
 colored = "2.1.0"
+
+[lints.rust]
+non_ascii_idents = "deny"
+# missing_docs = "warn"     # add once we have docs
+
+[lints.clippy]
+correctness = "deny"
+suspicious = "deny"
+style = "deny"
+complexity = "deny"
+perf = "deny"
+pedantic = "deny"
+restriction = "deny"
+nursery = "deny"
+cargo = "deny"
+
+arithmetic_side_effects = { level = "allow", priority = 127 }          # allow arithmatic for convenience though it could overflow
+as_conversions = { level = "allow", priority = 127 }                   # allow casting
+assertions_on_result_states = { level = "allow", priority = 127 }      # allow checking is_ok/is_err
+big_endian_bytes = { level = "allow", priority = 127 }                 # allow to_be_bytes / from_be_bytes
+blanket_clippy_restriction_lints = { level = "allow", priority = 127 } # allow setting all restrictions so we can omit specific ones
+default_numeric_fallback = { level = "allow", priority = 127 }         # allow type inferred by numeric literal
+disallowed_script_idents = { level = "allow", priority = 127 }         # skip since we use only ascii
+else_if_without_else = { level = "allow", priority = 127 }             # missing else ok
+exhaustive_enums = { level = "allow", priority = 127 }                 # revist once lib is ready to be used externally
+exhaustive_structs = { level = "allow", priority = 127 }               # revist once lib is ready to be used externally
+float_arithmetic = { level = "allow", priority = 127 }                 # allow float arithmatic
+host_endian_bytes = { level = "allow", priority = 127 }                # allow to_ne_bytes / from_ne_bytes
+implicit_return = { level = "allow", priority = 127 }                  # missing return ok
+indexing_slicing = { level = "allow", priority = 127 }                 # allow since guaranteed and error handling is overkill
+inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
+integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
+little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
+missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing assert before indexing ok
+missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok
+missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
+missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
+must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
+mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok
+non_ascii_literal = { level = "allow", priority = 127 }                # non-ascii char in string literal ok
+partial_pub_fields = { level = "allow", priority = 127 }               # partial struct pub fields ok
+pattern_type_mismatch = { level = "allow", priority = 127 }            # allow in favor of clippy::ref_patterns
+print_stderr = { level = "allow", priority = 127 }                     # stderr prints ok
+print_stdout = { level = "allow", priority = 127 }                     # stdout prints ok
+pub_use = { level = "allow", priority = 127 }                          # ok to structure source into many files but clean up import
+pub_with_shorthand = { level = "allow", priority = 127 }               # allow use of pub(super)
+pub_without_shorthand = { level = "allow", priority = 127 }            # allow use of pub(in super)
+question_mark_used = { level = "allow", priority = 127 }               # allow question operator
+self_named_module_files = { level = "allow", priority = 127 }          # mod files ok
+semicolon_inside_block = { level = "allow", priority = 127 }           # ok to keep inside block
+separated_literal_suffix = { level = "allow", priority = 127 }         # literal suffixes should be separated by underscore
+single_char_lifetime_names = { level = "allow", priority = 127 }       # single char lifetimes ok
+single_component_path_imports = { level = "allow", priority = 127 }    # allow for readability
+string_add = { level = "allow", priority = 127 }                       # simple concat ok
+string_lit_chars_any = { level = "allow", priority = 127 }             # favor readability until a perf case comes up
+todo = { level = "warn", priority = 127 }                              # warn todos
+use_debug = { level = "warn", priority = 127 }                         # debug print
+
+
+# soon to be removed
+missing_errors_doc = { level = "allow", priority = 127 } # remove once we have docs
+single_call_fn = { level = "allow", priority = 127 }     # remove once other models are in

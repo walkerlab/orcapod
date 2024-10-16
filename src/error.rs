@@ -1,31 +1,20 @@
 use colored::Colorize;
-use serde_yaml;
-use std::{
+use core::{
     error::Error,
     fmt,
     fmt::{Display, Formatter},
-    io,
-    path::PathBuf,
 };
+use serde_yaml;
+use std::{io, path::PathBuf};
 
-/// Wrapper around getting None when trying to find struct_name
+/// Wrapper around `serde_yaml::from_str`
 #[derive(Debug)]
-pub struct OutOfBounds {}
-impl Error for OutOfBounds {}
-impl Display for OutOfBounds {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "Index is out of bounds.")
-    }
-}
-
-/// Wrapper around serde_yaml::from_str
-#[derive(Debug)]
-pub struct DeserializeError {
+pub struct DeserializeFailure {
     pub path: PathBuf,
     pub error: serde_yaml::Error,
 }
-impl Error for DeserializeError {}
-impl Display for DeserializeError {
+impl Error for DeserializeFailure {}
+impl Display for DeserializeFailure {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
@@ -54,14 +43,14 @@ impl Display for FileHasNoParent {
     }
 }
 
-/// Wrapper around serde_yaml::to_string
+/// Wrapper around `serde_yaml::to_string`
 #[derive(Debug)]
-pub struct SerializeError {
+pub struct SerializeFailure {
     pub item_debug_string: String,
     pub error: serde_yaml::Error,
 }
-impl Error for SerializeError {}
-impl Display for SerializeError {
+impl Error for SerializeFailure {}
+impl Display for SerializeFailure {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
@@ -74,14 +63,14 @@ impl Display for SerializeError {
     }
 }
 
-/// Wrapper around fs::read_to_string and fs::write
+/// Wrapper around `fs::read_to_string` and `fs::write`
 #[derive(Debug)]
-pub struct IOError {
+pub struct IOFailure {
     pub path: PathBuf,
     pub error: io::Error,
 }
-impl Error for IOError {}
-impl Display for IOError {
+impl Error for IOFailure {}
+impl Display for IOFailure {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(
             f,
@@ -130,7 +119,7 @@ impl Display for NoAnnotationFound {
 
 /// Raise error when regex doesn't match
 #[derive(Debug)]
-pub struct NoRegexMatch {}
+pub struct NoRegexMatch;
 impl Error for NoRegexMatch {}
 impl Display for NoRegexMatch {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {

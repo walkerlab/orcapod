@@ -3,10 +3,17 @@ use crate::{
     model::{from_yaml, to_yaml, Pod},
     store::Store,
 };
+use alloc::collections::BTreeMap;
 use colored::Colorize;
+use core::{error::Error, iter::Map};
 use glob::{GlobError, Paths};
 use regex::Regex;
-use std::{collections::BTreeMap, error::Error, fs, iter::Map, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+extern crate alloc;
 
 #[derive(Debug)]
 pub struct LocalFileStore {
@@ -18,9 +25,9 @@ impl Store for LocalFileStore {
         let class = "pod";
 
         // Save the annotation file and throw and error if exist
-        LocalFileStore::save_file(
+        Self::save_file(
             &self.make_annotation_path(
-                &class,
+                class,
                 &pod.hash,
                 &pod.annotation.name,
                 &pod.annotation.version,
@@ -30,9 +37,9 @@ impl Store for LocalFileStore {
         )?;
 
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        LocalFileStore::save_file(
-            &self.make_spec_path(&class, &pod.hash),
-            &to_yaml::<Pod>(&pod)?,
+        Self::save_file(
+            &self.make_spec_path(class, &pod.hash),
+            &to_yaml::<Pod>(pod)?,
             false,
         )?;
 
@@ -40,30 +47,28 @@ impl Store for LocalFileStore {
     }
 
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
-        let class = "pod".to_string();
+        let class = "pod".to_owned();
 
-        let (_, (hash, _)) = LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", &name, &version),
-        )?
-        .next()
-        .ok_or(NoAnnotationFound {
-            class: class.clone(),
-            name: name.to_string(),
-            version: version.to_string(),
-        })??;
+        let (_, (hash, _)) =
+            Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, version))?
+                .next()
+                .ok_or(NoAnnotationFound {
+                    class,
+                    name: name.to_owned(),
+                    version: version.to_owned(),
+                })??;
 
-        Ok(from_yaml::<Pod>(
-            &self.make_annotation_path("pod", &hash, &name, &version),
+        from_yaml::<Pod>(
+            &self.make_annotation_path("pod", &hash, name, version),
             &self.make_spec_path("pod", &hash),
             &hash,
-        )?)
+        )
     }
 
     fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
-        let (names, (hashes, versions)) = LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", "*", "*"),
-        )?
-        .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>)), _>>()?;
+        let (names, (hashes, versions)) =
+            Self::parse_annotation_path(&self.make_annotation_path("pod", "*", "*", "*"))?
+                .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>)), _>>()?;
 
         Ok(BTreeMap::from([
             (String::from("name"), names),
@@ -74,32 +79,35 @@ impl Store for LocalFileStore {
 
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
         // assumes propagate = false
-        let versions = LocalFileStore::get_pod_version_map(&self, name)?;
-        let annotation_file = self.make_annotation_path("pod", &versions[version], &name, &version);
+        let class = "pod".to_owned();
+        let versions = self.get_pod_version_map(name)?;
+        let hash = versions.get(version).ok_or(NoAnnotationFound {
+            class,
+            name: name.to_owned(),
+            version: version.to_owned(),
+        })?;
+
+        let annotation_file = self.make_annotation_path("pod", hash, name, version);
         let annotation_dir = annotation_file.parent().ok_or(FileHasNoParent {
             path: annotation_file.clone(),
         })?;
-        let spec_file = self.make_spec_path("pod", &versions[version]);
+        let spec_file = self.make_spec_path("pod", hash);
         let spec_dir = spec_file.parent().ok_or(FileHasNoParent {
             path: spec_file.clone(),
         })?;
 
         fs::remove_file(&annotation_file)?;
-        if versions
+        if !versions
             .iter()
-            .filter(|&(v, h)| v != version && h == &versions[v])
-            .collect::<BTreeMap<_, _>>()
-            .is_empty()
+            .any(|(list_version, list_hash)| list_version != version && list_hash == hash)
         {
-            fs::remove_dir_all(&spec_dir)?;
+            fs::remove_dir_all(spec_dir)?;
         }
-        if versions
+        if !versions
             .iter()
-            .filter(|&(v, _)| v != version)
-            .collect::<BTreeMap<_, _>>()
-            .is_empty()
+            .any(|(list_version, _)| list_version != version)
         {
-            fs::remove_dir_all(&annotation_dir)?;
+            fs::remove_dir_all(annotation_dir)?;
         }
 
         Ok(())
@@ -107,7 +115,7 @@ impl Store for LocalFileStore {
 }
 
 impl LocalFileStore {
-    pub fn new(location: impl Into<PathBuf>) -> Self {
+    pub fn new<T: Into<PathBuf>>(location: T) -> Self {
         Self {
             directory: location.into(),
         }
@@ -136,7 +144,7 @@ impl LocalFileStore {
     }
 
     fn parse_annotation_path(
-        path: &PathBuf,
+        path: &Path,
     ) -> Result<
         Map<
             Paths,
@@ -144,7 +152,7 @@ impl LocalFileStore {
         >,
         Box<dyn Error>,
     > {
-        let paths = glob::glob(&path.to_string_lossy())?.map(|p| {
+        let paths = glob::glob(&path.to_string_lossy())?.map(|filepath| {
             let re = Regex::new(
                 r"(?x)
                 ^.*
@@ -156,12 +164,11 @@ impl LocalFileStore {
                     \.yaml
                 $",
             )?;
-            let path = p?;
-            let path_string = &path.to_string_lossy();
-            let cap = re.captures(&path_string).ok_or(NoRegexMatch {})?;
+            let filepath_string = String::from(filepath?.to_string_lossy());
+            let group = re.captures(&filepath_string).ok_or(NoRegexMatch {})?;
             Ok((
-                cap["name"].to_string(),
-                (cap["hash"].to_string(), cap["version"].to_string()),
+                group["name"].to_string(),
+                (group["hash"].to_string(), group["version"].to_string()),
             ))
         });
 
@@ -169,16 +176,14 @@ impl LocalFileStore {
     }
 
     fn get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
-        Ok(LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", name, "*"),
-        )?
-        .map(|m| -> Result<(String, String), Box<dyn Error>> {
-            let metadata = m?.clone();
-            let hash = metadata.1 .0;
-            let version = metadata.1 .1;
-            Ok((version, hash))
-        })
-        .collect::<Result<BTreeMap<String, String>, _>>()?)
+        Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, "*"))?
+            .map(|metadata| -> Result<(String, String), Box<dyn Error>> {
+                let resolved_metadata = metadata?;
+                let hash = resolved_metadata.1 .0;
+                let version = resolved_metadata.1 .1;
+                Ok((version, hash))
+            })
+            .collect::<Result<BTreeMap<String, String>, _>>()
     }
 
     fn save_file(
@@ -187,23 +192,19 @@ impl LocalFileStore {
         fail_if_exists: bool,
     ) -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(
-            &file
-                .parent()
+            file.parent()
                 .ok_or(FileHasNoParent { path: file.clone() })?,
         )?;
-        let file_exists = fs::exists(&file)?;
-        if file_exists {
-            if !fail_if_exists {
-                println!(
-                    "Skip saving `{}` since it is already stored.",
-                    file.to_string_lossy().bright_cyan(),
-                );
-                return Ok(());
-            } else {
-                return Err(Box::new(FileExists { path: file.clone() }));
-            }
+        let file_exists = fs::exists(file)?;
+        if file_exists && fail_if_exists {
+            return Err(Box::new(FileExists { path: file.clone() }));
+        } else if file_exists {
+            println!(
+                "Skip saving `{}` since it is already stored.",
+                file.to_string_lossy().bright_cyan(),
+            );
         } else {
-            fs::write(&file, content)?;
+            fs::write(file, content)?;
         }
         Ok(())
     }

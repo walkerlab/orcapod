@@ -1,6 +1,5 @@
 # DevContainer image
 FROM rust:1.81-slim
-
 RUN \
     adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
     # install docker
@@ -13,7 +12,6 @@ RUN \
     apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y && \
     usermod -aG docker vscode && \
     apt-get clean
-
 RUN \
     # dev setup
     apt update && \
@@ -24,13 +22,15 @@ RUN \
     echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /home/vscode/.bashrc && \
     apt-get clean
 
+USER vscode
+ENV CARGO_HOME=/home/vscode/.cargo \
+    PATH=/home/vscode/.cargo/bin:/home/vscode/.local/bin:$PATH
 RUN \
-    # rust auto styling
+    # rust auto formatting
     rustup component add rustfmt && \
+    # rust style linter
+    rustup component add clippy --toolchain 1.81.0-x86_64-unknown-linux-gnu && \
     # rust code coverage
     cargo install cargo-llvm-cov && \
     rustup component add llvm-tools-preview --toolchain 1.81.0-x86_64-unknown-linux-gnu
-
-USER vscode
-ENV PATH=${PATH}:/home/vscode/.local/bin
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

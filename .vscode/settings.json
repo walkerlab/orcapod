@@ -15,6 +15,7 @@
         "--config",
         "max_width=100"
     ],
+    "rust-analyzer.check.command": "clippy",
     "files.autoSave": "off",
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,
