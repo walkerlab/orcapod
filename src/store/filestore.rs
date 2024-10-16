@@ -260,7 +260,7 @@ impl LocalFileStore {
         name: &str,
         version: &str,
     ) -> Result<T, Box<dyn Error>> {
-        let hash = LocalFileStore::search_annotation(
+        let hash = Self::search_annotation(
             &self
                 .make_annotation_path::<T>(&name, "*", &version)
                 .to_string_lossy(),
