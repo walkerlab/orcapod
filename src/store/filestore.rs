@@ -1,11 +1,11 @@
 use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
-    model::{from_yaml, to_yaml, Pod},
+    model::{from_yaml, to_yaml, Annotation, Pod},
     util::get_struct_name,
 };
 use colored::Colorize;
 use regex::Regex;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::HashSet, error::Error, fs, path::PathBuf};
 
 use super::{ItemInfo, Store};
@@ -17,25 +17,7 @@ pub struct LocalFileStore {
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        // Save the annotation file and throw and error if exist
-        Self::save_file(
-            &self.make_annotation_path::<Pod>(
-                &pod.annotation.name,
-                &pod.hash,
-                &pod.annotation.version,
-            ),
-            &serde_yaml::to_string(&pod.annotation)?,
-            true,
-        )?;
-
-        // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        Self::save_file(
-            &self.make_spec_path::<Pod>(&pod.hash),
-            &to_yaml::<Pod>(&pod)?,
-            false,
-        )?;
-
-        Ok(())
+        self.save_item(pod, &pod.annotation, &pod.hash)
     }
 
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
@@ -166,6 +148,30 @@ impl LocalFileStore {
     }
 
     /// Generic functions for objects above
+
+    fn save_item<T: Serialize>(
+        &self,
+        item: &T,
+        annotation: &Annotation,
+        hash: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        // Save the annotation file and throw and error if exist
+        Self::save_file(
+            &self.make_annotation_path::<T>(&annotation.name, &hash, &annotation.version),
+            &serde_yaml::to_string(annotation)?,
+            true,
+        )?;
+
+        // Save the pod and skip if it already exist, for the case of many annotation to a single pod
+        Self::save_file(
+            &self.make_spec_path::<T>(&hash),
+            &to_yaml::<T>(&item)?,
+            false,
+        )?;
+
+        Ok(())
+    }
+
     fn delete_item<T>(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
         // Search for all annotation files that the matching name and version for the item
         let glob_pattern = self
