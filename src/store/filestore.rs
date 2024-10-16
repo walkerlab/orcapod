@@ -1,12 +1,14 @@
 use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
     model::{from_yaml, to_yaml, Pod},
-    store::Store,
+    util::get_struct_name,
 };
 use colored::Colorize;
-use glob::{GlobError, Paths};
 use regex::Regex;
-use std::{collections::BTreeMap, error::Error, fs, iter::Map, path::PathBuf};
+use serde::de::DeserializeOwned;
+use std::{collections::HashSet, error::Error, fs, path::PathBuf};
+
+use super::{ItemInfo, Store};
 
 #[derive(Debug)]
 pub struct LocalFileStore {
@@ -15,14 +17,11 @@ pub struct LocalFileStore {
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        let class = "pod";
-
         // Save the annotation file and throw and error if exist
         LocalFileStore::save_file(
-            &self.make_annotation_path(
-                &class,
-                &pod.hash,
+            &self.make_annotation_path::<Pod>(
                 &pod.annotation.name,
+                &pod.hash,
                 &pod.annotation.version,
             ),
             &serde_yaml::to_string(&pod.annotation)?,
@@ -31,7 +30,7 @@ impl Store for LocalFileStore {
 
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
         LocalFileStore::save_file(
-            &self.make_spec_path(&class, &pod.hash),
+            &self.make_spec_path::<Pod>(&pod.hash),
             &to_yaml::<Pod>(&pod)?,
             false,
         )?;
@@ -40,69 +39,15 @@ impl Store for LocalFileStore {
     }
 
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
-        let class = "pod".to_string();
-
-        let (_, (hash, _)) = LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", &name, &version),
-        )?
-        .next()
-        .ok_or(NoAnnotationFound {
-            class: class.clone(),
-            name: name.to_string(),
-            version: version.to_string(),
-        })??;
-
-        Ok(from_yaml::<Pod>(
-            &self.make_annotation_path("pod", &hash, &name, &version),
-            &self.make_spec_path("pod", &hash),
-            &hash,
-        )?)
+        self.load_item::<Pod>(name, version)
     }
 
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
-        let (names, (hashes, versions)) = LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", "*", "*"),
-        )?
-        .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>)), _>>()?;
-
-        Ok(BTreeMap::from([
-            (String::from("name"), names),
-            (String::from("hash"), hashes),
-            (String::from("version"), versions),
-        ]))
+    fn list_pod(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
+        self.list_item::<Pod>()
     }
 
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
-        // assumes propagate = false
-        let versions = LocalFileStore::get_pod_version_map(&self, name)?;
-        let annotation_file = self.make_annotation_path("pod", &versions[version], &name, &version);
-        let annotation_dir = annotation_file.parent().ok_or(FileHasNoParent {
-            path: annotation_file.clone(),
-        })?;
-        let spec_file = self.make_spec_path("pod", &versions[version]);
-        let spec_dir = spec_file.parent().ok_or(FileHasNoParent {
-            path: spec_file.clone(),
-        })?;
-
-        fs::remove_file(&annotation_file)?;
-        if versions
-            .iter()
-            .filter(|&(v, h)| v != version && h == &versions[v])
-            .collect::<BTreeMap<_, _>>()
-            .is_empty()
-        {
-            fs::remove_dir_all(&spec_dir)?;
-        }
-        if versions
-            .iter()
-            .filter(|&(v, _)| v != version)
-            .collect::<BTreeMap<_, _>>()
-            .is_empty()
-        {
-            fs::remove_dir_all(&annotation_dir)?;
-        }
-
-        Ok(())
+        self.delete_item::<Pod>(name, version)
     }
 }
 
@@ -113,72 +58,84 @@ impl LocalFileStore {
         }
     }
 
-    fn make_annotation_path(&self, class: &str, hash: &str, name: &str, version: &str) -> PathBuf {
+    fn make_annotation_path<T>(&self, name: &str, hash: &str, version: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}/{}-{}.yaml",
             self.directory.to_string_lossy(),
             "annotation",
-            class,
+            get_struct_name::<T>(),
             name,
             hash,
             version,
         ))
     }
 
-    fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
+    fn make_spec_path<T>(&self, hash: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
             self.directory.to_string_lossy(),
-            class,
+            get_struct_name::<T>(),
             hash,
             "spec.yaml",
         ))
     }
 
-    fn parse_annotation_path(
-        path: &PathBuf,
-    ) -> Result<
-        Map<
-            Paths,
-            impl FnMut(Result<PathBuf, GlobError>) -> Result<(String, (String, String)), Box<dyn Error>>,
-        >,
-        Box<dyn Error>,
-    > {
-        let paths = glob::glob(&path.to_string_lossy())?.map(|p| {
-            let re = Regex::new(
-                r"(?x)
+    /// Given a pattern to glob against (directory query), for every valid match,
+    /// perform regex on the return path splitting into 3 groups
+    /// - name
+    /// - hash
+    /// - version
+    ///
+    /// Returns a Result, where the Ok is Vec with n elements where n is the number of matches
+    /// and each element being <name, hash, version> all in strings.
+    ///
+    /// Error is a Box<dyn Error>
+    ///
+    /// # Examples
+    /// Given this pattern:
+    /// ``` markdown
+    /// /orca-data-storage/annotation/pod/example-pod/737f838cc457d833ff1dc01980aa56e9661304a26e33885defe995487e3306e7-0.0.0.yaml
+    /// ```
+    ///
+    /// The return should be a vector of 1 assuming the path exits with the value of
+    /// <example-pod, 737f838cc457d833ff1dc01980aa56e9661304a26e33885defe995487e3306e7, 0.0.0>
+    ///
+    ///
+    /// Given this pattern:
+    /// ``` markdown
+    /// /orca-data-storage/annotation/pod/*/*-*.yaml
+    /// ```
+    /// The return will be in the format will n of
+    /// <name, hash, version>
+    /// where n is the number of unique paths matching the glob pattern
+    ///
+    fn search_annotation(glob_pattern: &str) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
+        let mut matches = Vec::new();
+
+        let re = Regex::new(
+            r"
+                (?x)
                 ^.*
                 \/(?<name>[0-9a-zA-Z\-]+)
-                \/
-                    (?<hash>[0-9A-F]+)
-                    -
-                    (?<version>[0-9]+\.[0-9]+\.[0-9]+)
-                    \.yaml
+                \/(?<hash>[0-9a-f]+)
+                -
+                (?<version>[0-9]+\.[0-9]+\.[0-9]+)
+                \.yaml
                 $",
-            )?;
-            let path = p?;
-            let path_string = &path.to_string_lossy();
-            let cap = re.captures(&path_string).ok_or(NoRegexMatch {})?;
-            Ok((
-                cap["name"].to_string(),
-                (cap["hash"].to_string(), cap["version"].to_string()),
-            ))
-        });
+        )?;
 
-        Ok(paths)
-    }
+        for path in glob::glob(glob_pattern)? {
+            let path_str = path?.to_string_lossy().to_string();
 
-    fn get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
-        Ok(LocalFileStore::parse_annotation_path(
-            &self.make_annotation_path("pod", "*", name, "*"),
-        )?
-        .map(|m| -> Result<(String, String), Box<dyn Error>> {
-            let metadata = m?.clone();
-            let hash = metadata.1 .0;
-            let version = metadata.1 .1;
-            Ok((version, hash))
-        })
-        .collect::<Result<BTreeMap<String, String>, _>>()?)
+            let cap = re.captures(&path_str).ok_or(NoRegexMatch {})?;
+
+            matches.push(ItemInfo {
+                name: cap["name"].into(),
+                hash: cap["hash"].into(),
+                version: cap["version"].into(),
+            });
+        }
+        Ok(matches)
     }
 
     fn save_file(
@@ -206,5 +163,110 @@ impl LocalFileStore {
             fs::write(&file, content)?;
         }
         Ok(())
+    }
+
+    /// Generic functions for objects above
+    fn delete_item<T>(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
+        // Search for all annotation files that the matching name and version for the item
+        let glob_pattern = self
+            .make_annotation_path::<T>(name, "*", version)
+            .to_string_lossy()
+            .into_owned();
+
+        let matches = Self::search_annotation(&glob_pattern)?;
+
+        // If there is no matches, throw an error
+        matches.is_empty().then(|| {
+            return NoAnnotationFound {
+                class: get_struct_name::<T>(),
+                name: name.into(),
+                version: version.into(),
+            };
+        });
+
+        // Create buffer to store the parents path to check if it is empty after all delete
+        let mut annotation_parent_folder = HashSet::new();
+        let mut item_hashes_to_delete = HashSet::new();
+
+        for item in matches {
+            // Delete all annotation files that matches
+            let file_to_delete_path =
+                self.make_annotation_path::<T>(&item.name, &item.hash, &item.version);
+
+            // Extract parent and store it
+            annotation_parent_folder.insert(
+                file_to_delete_path
+                    .parent()
+                    .ok_or(FileHasNoParent {
+                        path: file_to_delete_path.clone(),
+                    })?
+                    .to_path_buf(),
+            );
+
+            // Add the item hash to the vec
+            item_hashes_to_delete.insert(item.hash.clone());
+
+            fs::remove_file(self.make_annotation_path::<T>(&item.name, &item.hash, &item.version))?;
+        }
+
+        // Go through and check if the parent folder is empty, if so delete it too
+        for parent_folder in annotation_parent_folder.iter() {
+            if parent_folder.read_dir()?.next().is_none() {
+                fs::remove_dir(parent_folder)?;
+            }
+        }
+
+        // Delete the item, but check if there is no other annotation referencing it
+        for item_hash in item_hashes_to_delete.iter() {
+            // Search annotation to see if there something pointing to it
+            let search_pattern = self
+                .make_annotation_path::<T>("*", &item_hash, "*")
+                .to_string_lossy()
+                .into_owned();
+            let matches = Self::search_annotation(&search_pattern)?;
+
+            if matches.is_empty() {
+                // Okay to delete as no other annotation is pointing to it
+                fs::remove_dir_all(self.make_spec_path::<T>(&item_hash))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Generic function for loading spec.yaml into memory
+    fn load_item<T: DeserializeOwned>(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<T, Box<dyn Error>> {
+        let hash = LocalFileStore::search_annotation(
+            &self
+                .make_annotation_path::<T>(&name, "*", &version)
+                .to_string_lossy(),
+        )?
+        .get(0)
+        .ok_or(NoAnnotationFound {
+            class: get_struct_name::<T>(),
+            name: name.to_string(),
+            version: version.to_string(),
+        })?
+        .hash
+        .clone();
+
+        Ok(from_yaml::<T>(
+            &self.make_annotation_path::<T>(&name, &hash, &version),
+            &self.make_spec_path::<T>(&hash),
+            &hash,
+        )?)
+    }
+
+    fn list_item<T>(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
+        Ok(Self::search_annotation(
+            &self
+                .make_annotation_path::<T>("*", "*", "*")
+                .to_string_lossy()
+                .to_owned(),
+        )?)
     }
 }

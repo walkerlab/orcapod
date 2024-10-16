@@ -17,7 +17,7 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
             .filter(|(k, _)| k != "annotation" && k != "hash")
             .collect::<BTreeMap<_, _>>(),
     )?; // skip fields
-    yaml.insert_str(0, &format!("class: {}\n", get_struct_name::<T>()?)); // replace class at top
+    yaml.insert_str(0, &format!("class: {}\n", get_struct_name::<T>())); // replace class at top
 
     Ok(yaml)
 }
