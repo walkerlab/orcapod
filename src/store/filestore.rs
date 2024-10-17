@@ -82,7 +82,7 @@ impl LocalFileStore {
     /// ```
     ///
     /// The return should be a vector of 1 assuming the path exits with the value of
-    /// ```
+    /// ``` markdown
     /// ItemInfo `{
     ///     name: example-pod,
     ///     hash: 737f838cc457d833ff1dc01980aa56e9661304a26e33885defe995487e3306e7,
@@ -127,7 +127,7 @@ impl LocalFileStore {
     /// Generic func to save all sorts of item
     ///
     /// Example usage inside LocalFileStore
-    /// ```
+    /// ``` markdown
     /// let pod = Pod::new(); // For example doesn't actually work
     /// self.save_item(pod, &pod.annotation, &pod.hash).unwrap()
     /// ```
