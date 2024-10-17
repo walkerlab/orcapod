@@ -95,21 +95,16 @@ impl LocalFileStore {
         let mut matches = Vec::new();
 
         let re = Regex::new(
-            r"
-                (?x)
-                ^.*
-                \/(?<name>[0-9a-zA-Z\-]+)
-                \/(?<hash>[0-9a-f]+)
-                -
-                (?<version>[0-9]+\.[0-9]+\.[0-9]+)
-                \.yaml
-                $",
+            r"\/(?<name>[0-9a-zA-Z\- ]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
         )?;
 
         for path in glob::glob(glob_pattern)? {
             let path_str = path?.to_string_lossy().to_string();
 
-            let cap = re.captures(&path_str).ok_or(NoRegexMatch {})?;
+            let cap = match re.captures(&path_str) {
+                Some(value) => value,
+                None => continue,
+            }
 
             matches.push(ItemInfo {
                 name: cap["name"].into(),

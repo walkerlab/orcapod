@@ -127,13 +127,3 @@ impl Display for NoAnnotationFound {
         )
     }
 }
-
-/// Raise error when regex doesn't match
-#[derive(Debug)]
-pub struct NoRegexMatch {}
-impl Error for NoRegexMatch {}
-impl Display for NoRegexMatch {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "No match for regex.")
-    }
-}
