@@ -1,4 +1,4 @@
-use crate::util::{get_struct_name, hash};
+use crate::util::{get_type_name, hash};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::{
@@ -17,7 +17,7 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
             .filter(|(k, _)| k != "annotation" && k != "hash")
             .collect::<BTreeMap<_, _>>(),
     )?; // skip fields
-    yaml.insert_str(0, &format!("class: {}\n", get_struct_name::<T>())); // replace class at top
+    yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
 
     Ok(yaml)
 }
