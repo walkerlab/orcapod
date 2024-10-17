@@ -139,17 +139,13 @@ impl LocalFileStore {
     ) -> Result<(), Box<dyn Error>> {
         // Save the annotation file and throw and error if exist
         Self::save_file(
-            &self.make_annotation_path::<T>(&annotation.name, &hash, &annotation.version),
+            &self.make_annotation_path::<T>(&annotation.name, hash, &annotation.version),
             &serde_yaml::to_string(annotation)?,
             true,
         )?;
 
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        Self::save_file(
-            &self.make_spec_path::<T>(&hash),
-            &to_yaml::<T>(&item)?,
-            false,
-        )?;
+        Self::save_file(&self.make_spec_path::<T>(hash), &to_yaml::<T>(item)?, false)?;
 
         Ok(())
     }
@@ -162,10 +158,10 @@ impl LocalFileStore {
     ) -> Result<T, Box<dyn Error>> {
         let hash = Self::search_annotation(
             &self
-                .make_annotation_path::<T>(&name, "*", &version)
+                .make_annotation_path::<T>(name, "*", version)
                 .to_string_lossy(),
         )?
-        .get(0)
+        .first()
         .ok_or(NoAnnotationFound {
             class: get_type_name::<T>(),
             name: name.to_string(),
@@ -174,20 +170,20 @@ impl LocalFileStore {
         .hash
         .clone();
 
-        Ok(from_yaml::<T>(
-            &self.make_annotation_path::<T>(&name, &hash, &version),
+        from_yaml::<T>(
+            &self.make_annotation_path::<T>(name, &hash, version),
             &self.make_spec_path::<T>(&hash),
             &hash,
-        )?)
+        )
     }
 
     fn list_item<T>(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
-        Ok(Self::search_annotation(
+        Self::search_annotation(
             &self
                 .make_annotation_path::<T>("*", "*", "*")
                 .to_string_lossy()
-                .to_owned(),
-        )?)
+                .clone(),
+        )
     }
 
     fn delete_item<T>(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
@@ -200,12 +196,10 @@ impl LocalFileStore {
         let matches = Self::search_annotation(&glob_pattern)?;
 
         // If there is no matches, throw an error
-        matches.is_empty().then(|| {
-            return NoAnnotationFound {
-                class: get_type_name::<T>(),
-                name: name.into(),
-                version: version.into(),
-            };
+        matches.is_empty().then(|| NoAnnotationFound {
+            class: get_type_name::<T>(),
+            name: name.into(),
+            version: version.into(),
         });
 
         // Create buffer to store the parents path to check if it is empty after all delete
@@ -244,14 +238,14 @@ impl LocalFileStore {
         for item_hash in item_hashes_to_delete.iter() {
             // Search annotation to see if there something pointing to it
             let search_pattern = self
-                .make_annotation_path::<T>("*", &item_hash, "*")
+                .make_annotation_path::<T>("*", item_hash, "*")
                 .to_string_lossy()
                 .into_owned();
             let matches = Self::search_annotation(&search_pattern)?;
 
             if matches.is_empty() {
                 // Okay to delete as no other annotation is pointing to it
-                let spec_path = self.make_spec_path::<T>(&item_hash);
+                let spec_path = self.make_spec_path::<T>(item_hash);
                 fs::remove_dir_all(spec_path.parent().ok_or(FileHasNoParent {
                     path: spec_path.clone(),
                 })?)?;
@@ -268,11 +262,10 @@ impl LocalFileStore {
         fail_if_exists: bool,
     ) -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(
-            &file
-                .parent()
+            file.parent()
                 .ok_or(FileHasNoParent { path: file.clone() })?,
         )?;
-        let file_exists = fs::exists(&file)?;
+        let file_exists = fs::exists(file)?;
         if file_exists {
             if !fail_if_exists {
                 println!(
@@ -284,7 +277,7 @@ impl LocalFileStore {
                 return Err(Box::new(FileExists { path: file.clone() }));
             }
         } else {
-            fs::write(&file, content)?;
+            fs::write(file, content)?;
         }
         Ok(())
     }

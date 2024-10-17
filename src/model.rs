@@ -27,11 +27,10 @@ pub fn from_yaml<T: DeserializeOwned>(
     spec_file: &PathBuf,
     hash: &str,
 ) -> Result<T, Box<dyn Error>> {
-    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(&annotation_file)?)?;
-    let spec_yaml = BufReader::new(fs::File::open(&spec_file)?)
+    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(annotation_file)?)?;
+    let spec_yaml = BufReader::new(fs::File::open(spec_file)?)
         .lines()
         .skip(1)
-        .into_iter()
         .collect::<Result<Vec<_>, _>>()?
         .join("\n");
 
