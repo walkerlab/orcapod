@@ -40,6 +40,8 @@ impl LocalFileStore {
         }
     }
 
+    // Helper Functions
+    /// Create the full path for the annotation yaml file identify by hash-ver.yaml
     fn make_annotation_path<T>(&self, name: &str, hash: &str, version: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}/{}-{}.yaml",
@@ -52,6 +54,7 @@ impl LocalFileStore {
         ))
     }
 
+    /// Create the full path to the spec.yaml given a hash and type T
     fn make_spec_path<T>(&self, hash: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
@@ -120,35 +123,15 @@ impl LocalFileStore {
         Ok(matches)
     }
 
-    fn save_file(
-        file: &PathBuf,
-        content: &str,
-        fail_if_exists: bool,
-    ) -> Result<(), Box<dyn Error>> {
-        fs::create_dir_all(
-            &file
-                .parent()
-                .ok_or(FileHasNoParent { path: file.clone() })?,
-        )?;
-        let file_exists = fs::exists(&file)?;
-        if file_exists {
-            if !fail_if_exists {
-                println!(
-                    "Skip saving `{}` since it is already stored.",
-                    file.to_string_lossy().bright_cyan(),
-                );
-                return Ok(());
-            } else {
-                return Err(Box::new(FileExists { path: file.clone() }));
-            }
-        } else {
-            fs::write(&file, content)?;
-        }
-        Ok(())
-    }
 
-    /// Generic functions for objects above
-
+    // Generic function for save load list delete
+    /// Generic func to save all sorts of item
+    /// 
+    /// Example usage inside LocalFileStore
+    /// ```
+    /// let pod = Pod::new(); // For example doesn't actually work
+    /// self.save_item(pod, &pod.annotation, &pod.hash).unwrap()
+    /// ```
     fn save_item<T: Serialize>(
         &self,
         item: &T,
@@ -170,6 +153,42 @@ impl LocalFileStore {
         )?;
 
         Ok(())
+    }
+
+    /// Generic function for loading spec.yaml into memory
+    fn load_item<T: DeserializeOwned>(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<T, Box<dyn Error>> {
+        let hash = Self::search_annotation(
+            &self
+                .make_annotation_path::<T>(&name, "*", &version)
+                .to_string_lossy(),
+        )?
+        .get(0)
+        .ok_or(NoAnnotationFound {
+            class: get_struct_name::<T>(),
+            name: name.to_string(),
+            version: version.to_string(),
+        })?
+        .hash
+        .clone();
+
+        Ok(from_yaml::<T>(
+            &self.make_annotation_path::<T>(&name, &hash, &version),
+            &self.make_spec_path::<T>(&hash),
+            &hash,
+        )?)
+    }
+
+    fn list_item<T>(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
+        Ok(Self::search_annotation(
+            &self
+                .make_annotation_path::<T>("*", "*", "*")
+                .to_string_lossy()
+                .to_owned(),
+        )?)
     }
 
     fn delete_item<T>(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
@@ -243,39 +262,31 @@ impl LocalFileStore {
         Ok(())
     }
 
-    /// Generic function for loading spec.yaml into memory
-    fn load_item<T: DeserializeOwned>(
-        &self,
-        name: &str,
-        version: &str,
-    ) -> Result<T, Box<dyn Error>> {
-        let hash = Self::search_annotation(
-            &self
-                .make_annotation_path::<T>(&name, "*", &version)
-                .to_string_lossy(),
-        )?
-        .get(0)
-        .ok_or(NoAnnotationFound {
-            class: get_struct_name::<T>(),
-            name: name.to_string(),
-            version: version.to_string(),
-        })?
-        .hash
-        .clone();
-
-        Ok(from_yaml::<T>(
-            &self.make_annotation_path::<T>(&name, &hash, &version),
-            &self.make_spec_path::<T>(&hash),
-            &hash,
-        )?)
-    }
-
-    fn list_item<T>(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
-        Ok(Self::search_annotation(
-            &self
-                .make_annotation_path::<T>("*", "*", "*")
-                .to_string_lossy()
-                .to_owned(),
-        )?)
+    // Help save file function
+    fn save_file(
+        file: &PathBuf,
+        content: &str,
+        fail_if_exists: bool,
+    ) -> Result<(), Box<dyn Error>> {
+        fs::create_dir_all(
+            &file
+                .parent()
+                .ok_or(FileHasNoParent { path: file.clone() })?,
+        )?;
+        let file_exists = fs::exists(&file)?;
+        if file_exists {
+            if !fail_if_exists {
+                println!(
+                    "Skip saving `{}` since it is already stored.",
+                    file.to_string_lossy().bright_cyan(),
+                );
+                return Ok(());
+            } else {
+                return Err(Box::new(FileExists { path: file.clone() }));
+            }
+        } else {
+            fs::write(&file, content)?;
+        }
+        Ok(())
     }
 }
