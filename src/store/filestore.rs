@@ -1,5 +1,5 @@
 use crate::{
-    error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
+    error::{FileExists, FileHasNoParent, NoAnnotationFound},
     model::{from_yaml, to_yaml, Annotation, Pod, PodJob},
     util::get_struct_name,
 };
@@ -32,7 +32,13 @@ impl Store for LocalFileStore {
         self.delete_item::<Pod>(name, version)
     }
 
+    /// Pod job will check will confirm that the pod is valid first before saving the pod_job
     fn save_pod_job(&self, pod_job: &crate::model::PodJob) -> Result<(), Box<dyn Error>> {
+        // Check if pod exists if not save it
+        if !self.make_spec_path::<Pod>(&pod_job.pod.hash).exists() {
+            self.save_pod(&pod_job.pod)?;
+        }
+
         self.save_item(pod_job, &pod_job.annotation, &pod_job.hash)
     }
 
@@ -118,10 +124,8 @@ impl LocalFileStore {
             r"\/(?<name>[0-9a-zA-Z\- ]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
         )?;
 
-        println!("{:?}", glob_pattern);
         for path in glob::glob(glob_pattern)? {
             let path_str = path?.to_string_lossy().to_string();
-            println!("{:?}", path_str);
 
             // Try to match, if fail to match continue
             let cap = match re.captures(&path_str) {
@@ -251,7 +255,10 @@ impl LocalFileStore {
 
             if matches.is_empty() {
                 // Okay to delete as no other annotation is pointing to it
-                fs::remove_dir_all(self.make_spec_path::<T>(&item_hash))?;
+                let spec_path = self.make_spec_path::<T>(&item_hash);
+                fs::remove_dir_all(spec_path.parent().ok_or(FileHasNoParent {
+                    path: spec_path.clone(),
+                })?)?;
             }
         }
 
