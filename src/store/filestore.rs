@@ -1,5 +1,5 @@
 use crate::{
-    error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
+    error::{FileExists, FileHasNoParent, NoAnnotationFound},
     model::{from_yaml, to_yaml, Annotation, Pod},
     util::get_struct_name,
 };
@@ -84,8 +84,8 @@ impl LocalFileStore {
     /// The return should be a vector of 1 assuming the path exits with the value of
     /// ```
     /// ItemInfo `{
-    ///     name: example-pod, 
-    ///     hash: 737f838cc457d833ff1dc01980aa56e9661304a26e33885defe995487e3306e7, 
+    ///     name: example-pod,
+    ///     hash: 737f838cc457d833ff1dc01980aa56e9661304a26e33885defe995487e3306e7,
     ///     version: 0.0.0
     /// }`
     /// ```
@@ -112,7 +112,7 @@ impl LocalFileStore {
             let cap = match re.captures(&path_str) {
                 Some(value) => value,
                 None => continue,
-            }
+            };
 
             matches.push(ItemInfo {
                 name: cap["name"].into(),
@@ -123,10 +123,9 @@ impl LocalFileStore {
         Ok(matches)
     }
 
-
     // Generic function for save load list delete
     /// Generic func to save all sorts of item
-    /// 
+    ///
     /// Example usage inside LocalFileStore
     /// ```
     /// let pod = Pod::new(); // For example doesn't actually work
