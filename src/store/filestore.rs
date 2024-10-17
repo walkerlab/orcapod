@@ -121,7 +121,13 @@ impl LocalFileStore {
         }
     }
 
-    fn make_annotation_path(&self, class: &str, hash: &str, name: &str, version: &str) -> PathBuf {
+    pub fn make_annotation_path(
+        &self,
+        class: &str,
+        hash: &str,
+        name: &str,
+        version: &str,
+    ) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}/{}-{}.yaml",
             self.directory.to_string_lossy(),
@@ -133,7 +139,7 @@ impl LocalFileStore {
         ))
     }
 
-    fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
+    pub fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
             self.directory.to_string_lossy(),

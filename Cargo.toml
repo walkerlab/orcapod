@@ -33,7 +33,7 @@ colored = "2.1.0"
 
 [lints.rust]
 non_ascii_idents = "deny"
-# missing_docs = "warn"     # add once we have docs
+# missing_docs = "warn"     # temporary: add once we have docs
 
 [lints.clippy]
 correctness = "deny"
@@ -89,6 +89,9 @@ todo = { level = "warn", priority = 127 }                              # warn to
 use_debug = { level = "warn", priority = 127 }                         # debug print
 
 
-# soon to be removed
-missing_errors_doc = { level = "allow", priority = 127 } # remove once we have docs
-single_call_fn = { level = "allow", priority = 127 }     # remove once other models are in
+# temporary
+missing_errors_doc = { level = "allow", priority = 127 }        # remove once we have docs
+single_call_fn = { level = "allow", priority = 127 }            # remove once other models are in
+tests_outside_test_module = { level = "allow", priority = 127 } # for now due to false-positive for integration tests: https://github.com/rust-lang/rust-clippy/pull/13038
+# expect_used = { level = "allow", priority = 127 }               # debugging...
+# unwrap_used = { level = "allow", priority = 127 }               # debugging...
