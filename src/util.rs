@@ -12,5 +12,5 @@ pub fn get_struct_name<T>() -> String {
 }
 
 pub fn hash(buffer: &str) -> String {
-    format!("{:X}", Sha256::digest(buffer))
+    format!("{:x}", Sha256::digest(buffer))
 }

@@ -33,7 +33,7 @@ impl Store for LocalFileStore {
     }
 
     fn save_pod_job(&self, pod_job: &crate::model::PodJob) -> Result<(), Box<dyn Error>> {
-        todo!()
+        self.save_item(pod_job, &pod_job.annotation, &pod_job.hash)
     }
 
     fn load_pod_job(
@@ -115,21 +115,19 @@ impl LocalFileStore {
         let mut matches = Vec::new();
 
         let re = Regex::new(
-            r"
-                (?x)
-                ^.*
-                \/(?<name>[0-9a-zA-Z\-]+)
-                \/(?<hash>[0-9a-f]+)
-                -
-                (?<version>[0-9]+\.[0-9]+\.[0-9]+)
-                \.yaml
-                $",
+            r"\/(?<name>[0-9a-zA-Z\- ]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
         )?;
 
+        println!("{:?}", glob_pattern);
         for path in glob::glob(glob_pattern)? {
             let path_str = path?.to_string_lossy().to_string();
+            println!("{:?}", path_str);
 
-            let cap = re.captures(&path_str).ok_or(NoRegexMatch {})?;
+            // Try to match, if fail to match continue
+            let cap = match re.captures(&path_str) {
+                Some(value) => value,
+                None => continue,
+            };
 
             matches.push(ItemInfo {
                 name: cap["name"].into(),

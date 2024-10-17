@@ -130,10 +130,17 @@ impl Display for NoAnnotationFound {
 
 /// Raise error when regex doesn't match
 #[derive(Debug)]
-pub struct NoRegexMatch {}
+pub struct NoRegexMatch {
+    pub string_to_match: String,
+}
 impl Error for NoRegexMatch {}
 impl Display for NoRegexMatch {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "No match for regex.")
+        write!(
+            f,
+            "{}{}",
+            "Failed to match regex against: ".bright_red(),
+            self.string_to_match.bright_cyan()
+        )
     }
 }

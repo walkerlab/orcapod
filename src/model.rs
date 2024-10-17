@@ -95,8 +95,8 @@ impl Pod {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PodJob {
-    annotation: Annotation,
-    hash: String,
+    pub annotation: Annotation,
+    pub hash: String,
     pod: Pod,
     input_volume_map: BTreeMap<PathBuf, PathBuf>,
     output_volume_map: BTreeMap<PathBuf, PathBuf>,
