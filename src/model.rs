@@ -45,7 +45,7 @@ pub fn from_yaml<T: DeserializeOwned>(
 
 // --- core model structs ---
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Pod {
     pub annotation: Annotation,
     pub hash: String,
@@ -95,27 +95,27 @@ impl Pod {
 
 // --- util types ---
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Annotation {
     pub name: String,
     pub version: String,
     pub description: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct GPURequirement {
     pub model: GPUModel,
     pub recommended_memory: u64,
     pub count: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum GPUModel {
     NVIDIA(String), // String will be the specific model of the gpu
     AMD(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct StreamInfo {
     pub path: PathBuf,
     pub match_pattern: String,
