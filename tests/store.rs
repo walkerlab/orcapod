@@ -1,4 +1,4 @@
-#![allow(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
+#![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 mod fixture;
 use core::error::Error;
@@ -27,7 +27,7 @@ fn is_dir_two_levels_up_empty(file: &Path) -> Result<bool, Box<dyn Error>> {
 
 #[test]
 fn verify_pod_save_and_delete() -> Result<(), Box<dyn Error>> {
-    let store_directory = tempdir()?.path().display().to_string();
+    let store_directory = String::from(tempdir()?.path().to_string_lossy());
     {
         let pod_style = pod_style()?;
         let store = store_test(Some(&store_directory))?; // new tests can just call store_test(None)?

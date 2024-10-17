@@ -38,7 +38,7 @@ impl Display for FileHasNoParent {
         write!(
             f,
             "File `{}` has no parent.",
-            self.path.display().to_string().bright_red()
+            self.path.to_string_lossy().bright_red()
         )
     }
 }
@@ -94,7 +94,7 @@ impl Display for FileExists {
         write!(
             f,
             "File `{}` already exists.",
-            self.path.display().to_string().bright_red()
+            self.path.to_string_lossy().bright_red()
         )
     }
 }

@@ -70,7 +70,7 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore, Box<d
             fs::remove_dir_all(self.store.directory.as_path()).expect("Failed to teardown store.");
         }
     }
-    let tmp_directory = tempdir()?.path().display().to_string();
+    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     let store =
         store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
     Ok(TestLocalStore { store })
