@@ -6,7 +6,7 @@ use serde_yaml::{Mapping, Value};
 use std::{
     fs,
     io::{BufRead, BufReader},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 extern crate alloc;
@@ -25,8 +25,8 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
 }
 
 pub fn from_yaml<T: DeserializeOwned>(
-    annotation_file: &PathBuf,
-    spec_file: &PathBuf,
+    annotation_file: &Path,
+    spec_file: &Path,
     hash: &str,
 ) -> Result<T, Box<dyn Error>> {
     let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(annotation_file)?)?;

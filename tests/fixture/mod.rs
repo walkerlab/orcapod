@@ -5,6 +5,7 @@ use orcapod::{
     store::{filestore::LocalFileStore, Store},
 };
 use std::{fs, path::PathBuf};
+use tempfile::tempdir;
 
 extern crate alloc;
 
@@ -57,7 +58,7 @@ pub struct TestLocalStore {
     clippy::expect_used,
     reason = "Required since can't modify drop signature."
 )]
-pub fn store_test(store_directory: &str) -> TestLocalStore {
+pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore, Box<dyn Error>> {
     impl Deref for TestLocalStore {
         type Target = LocalFileStore;
         fn deref(&self) -> &Self::Target {
@@ -69,9 +70,10 @@ pub fn store_test(store_directory: &str) -> TestLocalStore {
             fs::remove_dir_all(self.store.directory.as_path()).expect("Failed to teardown store.");
         }
     }
-    // todo: store_directory as option should use a /tmp-like directory
-    let store = LocalFileStore::new(store_directory);
-    TestLocalStore { store }
+    let tmp_directory = tempdir()?.path().display().to_string();
+    let store =
+        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
+    Ok(TestLocalStore { store })
 }
 
 #[derive(Debug)]

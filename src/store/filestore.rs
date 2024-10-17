@@ -192,18 +192,15 @@ impl LocalFileStore {
             .collect::<Result<BTreeMap<String, String>, _>>()
     }
 
-    fn save_file(
-        file: &PathBuf,
-        content: &str,
-        fail_if_exists: bool,
-    ) -> Result<(), Box<dyn Error>> {
-        fs::create_dir_all(
-            file.parent()
-                .ok_or(FileHasNoParent { path: file.clone() })?,
-        )?;
+    fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> Result<(), Box<dyn Error>> {
+        fs::create_dir_all(file.parent().ok_or(FileHasNoParent {
+            path: file.to_path_buf(),
+        })?)?;
         let file_exists = fs::exists(file)?;
         if file_exists && fail_if_exists {
-            return Err(Box::new(FileExists { path: file.clone() }));
+            return Err(Box::new(FileExists {
+                path: file.to_path_buf(),
+            }));
         } else if file_exists {
             println!(
                 "Skip saving `{}` since it is already stored.",
