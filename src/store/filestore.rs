@@ -1,6 +1,6 @@
 use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound},
-    model::{from_yaml, to_yaml, Annotation, Pod},
+    model::{from_yaml, to_yaml, Annotation, Pod, PodJob},
     util::get_type_name,
 };
 use colored::Colorize;
