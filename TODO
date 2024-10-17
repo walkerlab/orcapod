@@ -1,0 +1,32 @@
+- look into version crate
+- Look into regex libs maybe glob
+
+
+- check file permission -?
+- line 15, change ?
+- 175, change to result?
+
+
+- cargo test // might only run the first one (rapahjel will confirmed), add exact, nocapture
+- rm cargo.lock (save till release) - 
+- move compute_sha256, to common or util -
+- compute_hash to generic -
+- compute hash result instead -
+- change sha256 digest -
+- load pod, (name, version) vs (pod_hash, annotaiotn version) -
+- verify might not be needed immunateble  -
+- remove main.rs till cli -
+- is orca.rs needed for now, or save it later
+
+- box dyn Error -
+- extract error if possible orcaerrrors -
+
+
+move orca.rs
+- add an issue rather to keep the server alive
+- adding enum error
+- todo delete list
+
+
+// Changes
+- Changed save file to skip_if_exist to make it more general
