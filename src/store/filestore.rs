@@ -228,7 +228,10 @@ impl LocalFileStore {
 
             if matches.is_empty() {
                 // Okay to delete as no other annotation is pointing to it
-                fs::remove_dir_all(self.make_spec_path::<T>(&item_hash))?;
+                let spec_path = self.make_spec_path::<T>(&item_hash);
+                fs::remove_dir_all(spec_path.parent().ok_or(FileHasNoParent {
+                    path: spec_path.clone(),
+                })?)?;
             }
         }
 
