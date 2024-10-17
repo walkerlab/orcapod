@@ -1,7 +1,7 @@
 use crate::{
     error::{FileExists, FileHasNoParent, NoAnnotationFound},
     model::{from_yaml, to_yaml, Annotation, Pod},
-    util::get_struct_name,
+    util::get_type_name,
 };
 use colored::Colorize;
 use regex::Regex;
@@ -47,7 +47,7 @@ impl LocalFileStore {
             "{}/{}/{}/{}/{}-{}.yaml",
             self.directory.to_string_lossy(),
             "annotation",
-            get_struct_name::<T>(),
+            get_type_name::<T>(),
             name,
             hash,
             version,
@@ -59,7 +59,7 @@ impl LocalFileStore {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
             self.directory.to_string_lossy(),
-            get_struct_name::<T>(),
+            get_type_name::<T>(),
             hash,
             "spec.yaml",
         ))
@@ -167,7 +167,7 @@ impl LocalFileStore {
         )?
         .get(0)
         .ok_or(NoAnnotationFound {
-            class: get_struct_name::<T>(),
+            class: get_type_name::<T>(),
             name: name.to_string(),
             version: version.to_string(),
         })?
@@ -202,7 +202,7 @@ impl LocalFileStore {
         // If there is no matches, throw an error
         matches.is_empty().then(|| {
             return NoAnnotationFound {
-                class: get_struct_name::<T>(),
+                class: get_type_name::<T>(),
                 name: name.into(),
                 version: version.into(),
             };
