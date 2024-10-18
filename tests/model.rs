@@ -10,7 +10,7 @@ use orcapod::model::{to_yaml, Pod};
 fn verify_hash() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pod_style()?.hash,
-        "C0F16323C742E1F06B82AA5EA74730DE6F879DE56B3110F681B17A61167ACCE2"
+        "4A7CA5CEA3BC814B73ED0F5695F5AFB40E7762D9133BFCC9800A8A37FC8BBB96"
     );
     Ok(())
 }
@@ -30,15 +30,15 @@ fn verify_pod_to_yaml() -> Result<(), Box<dyn Error>> {
               painting:
                 path: /input/painting.png
                 match_pattern: /input/painting.png
-            min_cpus: 0.25
-            min_memory: 2147483648
+            minimum_cpus: 0.25
+            minimum_memory: 2147483648
             output_dir: /output
             output_stream_map:
               styled:
                 path: ./styled.png
                 match_pattern: ./styled.png
             required_gpu: null
-            source_commit: https://github.com/zenml-io/zenml/tree/0.67.0
+            source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
         "}
     );
     Ok(())

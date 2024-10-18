@@ -115,9 +115,9 @@ impl Store for LocalFileStore {
 }
 
 impl LocalFileStore {
-    pub fn new<T: Into<PathBuf>>(location: T) -> Self {
+    pub fn new<T: Into<PathBuf>>(directory: T) -> Self {
         Self {
-            directory: location.into(),
+            directory: directory.into(),
         }
     }
 

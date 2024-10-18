@@ -1,4 +1,4 @@
-use crate::util::{get_struct_name, hash};
+use crate::util::{get_type_name, hash};
 use alloc::collections::BTreeMap;
 use core::error::Error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -19,7 +19,7 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
             .filter(|(k, _)| k != "annotation" && k != "hash")
             .collect::<BTreeMap<_, _>>(),
     )?; // skip fields
-    yaml.insert_str(0, &format!("class: {}\n", get_struct_name::<T>())); // replace class at top
+    yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
 
     Ok(yaml)
 }
@@ -50,41 +50,41 @@ pub fn from_yaml<T: DeserializeOwned>(
 pub struct Pod {
     pub annotation: Annotation,
     pub hash: String,
-    source_commit: String,
+    source_commit_url: String,
     image: String,
     command: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
-    min_cpus: f32,
-    min_memory: u64,
+    minimum_cpus: f32,
+    minimum_memory: u64,
     required_gpu: Option<GPURequirement>,
 }
 
 impl Pod {
     pub fn new(
         annotation: Annotation,
-        source_commit: String,
+        source_commit_url: String,
         image: String,
         command: String,
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
-        recommended_cpus: f32,
-        min_memory: u64,
+        minimum_cpus: f32,
+        minimum_memory: u64,
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self, Box<dyn Error>> {
         let pod_no_hash = Self {
             annotation,
             hash: String::new(),
-            source_commit,
+            source_commit_url,
             image,
             command,
             input_stream_map,
             output_dir,
             output_stream_map,
-            min_cpus: recommended_cpus,
-            min_memory,
+            minimum_cpus,
+            minimum_memory,
             required_gpu,
         };
         Ok(Self {
