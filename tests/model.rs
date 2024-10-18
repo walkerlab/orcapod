@@ -1,6 +1,6 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
-use std::error::Error;
+use core::error::Error;
 pub mod fixture;
 use fixture::pod_style;
 use indoc::indoc;
