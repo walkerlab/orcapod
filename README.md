@@ -1,5 +1,15 @@
 # orcapod
 
+## Tests
+
+```bash
+#!/bin/bash
+set -e                                    # stop early on non-zero exit
+cargo clippy --all-targets -- -D warnings # syntax and style tests
+cargo fmt --check                         # formatting test
+cargo llvm-cov -- --nocapture             # integration tests w/ coverage report
+```
+
 ## Project Management
 
 Progress is tracked under GH project [orcapod](https://github.com/orgs/walkerlab/projects/2).

@@ -1,7 +1,7 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
-mod fixture;
 use core::error::Error;
+pub mod fixture;
 use fixture::{add_pod_storage, pod_style, store_test};
 use orcapod::{
     error::FileHasNoParent,
