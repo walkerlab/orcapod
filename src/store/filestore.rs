@@ -4,11 +4,17 @@ use crate::{
     util::get_type_name,
 };
 use colored::Colorize;
-use regex::Regex;
+use fs4::fs_std::FileExt;
 use serde::{de::DeserializeOwned, Serialize};
-use std::{collections::HashSet, error::Error, fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    fs,
+    io::{Read, Seek, Write},
+    path::PathBuf,
+};
 
-use super::{ItemInfo, Store};
+use super::Store;
 
 #[derive(Debug)]
 pub struct LocalFileStore {
@@ -17,15 +23,16 @@ pub struct LocalFileStore {
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
-        self.save_item(pod, &pod.annotation, &pod.hash)
+        self.save_item(pod, &pod.hash, pod.annotation.as_ref())
     }
 
     fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
         self.load_item::<Pod>(name, version)
     }
 
-    fn list_pod(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
-        self.list_item::<Pod>()
+    /// Return the name version index btree where key is name-version and value is hash of pod
+    fn list_pod(&self) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+        self.get_name_ver_index::<Pod>()
     }
 
     fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
@@ -40,87 +47,19 @@ impl LocalFileStore {
         }
     }
 
-    // Helper Functions
-    /// Create the full path for the annotation yaml file identify by hash-ver.yaml
-    fn make_annotation_path<T>(&self, name: &str, hash: &str, version: &str) -> PathBuf {
+    fn make_dir_path<T>(&self, hash: &str) -> PathBuf {
         PathBuf::from(format!(
-            "{}/{}/{}/{}/{}-{}.yaml",
-            self.directory.to_string_lossy(),
-            "annotation",
-            get_type_name::<T>(),
-            name,
-            hash,
-            version,
-        ))
-    }
-
-    /// Create the full path to the spec.yaml given a hash and type T
-    fn make_spec_path<T>(&self, hash: &str) -> PathBuf {
-        PathBuf::from(format!(
-            "{}/{}/{}/{}",
+            "{}/{}/{}",
             self.directory.to_string_lossy(),
             get_type_name::<T>(),
             hash,
-            "spec.yaml",
         ))
     }
 
-    /// Given a pattern to glob against (directory query), for every valid match,
-    /// perform regex on the return path splitting into 3 groups
-    /// - name
-    /// - hash
-    /// - version
-    ///
-    /// Returns a Result, where the Ok is a Vec<ItemInfo>.
-    ///
-    /// Error is a Box<dyn Error>
-    ///
-    /// # Examples
-    /// Given this pattern:
-    /// ``` markdown
-    /// /orca-data-storage/annotation/pod/example-pod/737f838cc457d833ff1dc01980aa56e9661304a26e33885defe995487e3306e7-0.0.0.yaml
-    /// ```
-    ///
-    /// The return should be a vector of 1 assuming the path exits with the value of
-    /// ``` markdown
-    /// ItemInfo `{
-    ///     name: example-pod,
-    ///     hash: 737f838cc457d833ff1dc01980aa56e9661304a26e33885defe995487e3306e7,
-    ///     version: 0.0.0
-    /// }`
-    /// ```
-    ///
-    ///
-    /// Given this pattern:
-    /// ``` markdown
-    /// /orca-data-storage/annotation/pod/*/*-*.yaml
-    /// ```
-    /// The return will be in the format will n of
-    /// <name, hash, version>
-    /// where n is the number of unique paths matching the glob pattern
-    ///
-    fn search_annotation(glob_pattern: &str) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
-        let mut matches = Vec::new();
-
-        let re = Regex::new(
-            r"\/(?<name>[0-9a-zA-Z\- ]+)\/(?<hash>[0-9a-f]+)-(?<version>[0-9]+\.[0-9]+\.[0-9]+)\.yaml$",
-        )?;
-
-        for path in glob::glob(glob_pattern)? {
-            let path_str = path?.to_string_lossy().to_string();
-
-            let cap = match re.captures(&path_str) {
-                Some(value) => value,
-                None => continue,
-            };
-
-            matches.push(ItemInfo {
-                name: cap["name"].into(),
-                hash: cap["hash"].into(),
-                version: cap["version"].into(),
-            });
-        }
-        Ok(matches)
+    fn make_path<T>(&self, hash: &str, file_name: &str) -> PathBuf {
+        let mut path = self.make_dir_path::<T>(hash);
+        path.push(file_name);
+        path
     }
 
     // Generic function for save load list delete
@@ -134,18 +73,35 @@ impl LocalFileStore {
     fn save_item<T: Serialize>(
         &self,
         item: &T,
-        annotation: &Annotation,
         hash: &str,
+        annotation: Option<&Annotation>,
     ) -> Result<(), Box<dyn Error>> {
-        // Save the annotation file and throw and error if exist
+        // Save the item first
         Self::save_file(
-            &self.make_annotation_path::<T>(&annotation.name, hash, &annotation.version),
-            &serde_yaml::to_string(annotation)?,
-            true,
+            &self.make_path::<T>(hash, "spec.yaml"),
+            &to_yaml::<T>(item)?,
+            false,
         )?;
 
-        // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        Self::save_file(&self.make_spec_path::<T>(hash), &to_yaml::<T>(item)?, false)?;
+        // Save the annotation file and throw and error if exist
+        if let Some(value) = annotation {
+            // Annotation exist, thus save it
+            Self::save_file(
+                &self.make_path::<T>(
+                    hash,
+                    &format!("{}-{}{}", value.name, value.version, ".yaml"),
+                ),
+                &serde_yaml::to_string(value)?,
+                true,
+            )?;
+
+            // Update name-ver index tree
+            self.insert_item_to_name_ver_index::<T>(&value.name, &value.version, hash)?;
+
+            let mut file = fs::File::open(self.make_name_ver_index_path::<T>())?;
+            let mut temp = Vec::new();
+            file.read_to_end(&mut temp)?;
+        }
 
         Ok(())
     }
@@ -156,128 +112,186 @@ impl LocalFileStore {
         name: &str,
         version: &str,
     ) -> Result<T, Box<dyn Error>> {
-        let hash = Self::search_annotation(
-            &self
-                .make_annotation_path::<T>(name, "*", version)
-                .to_string_lossy(),
-        )?
-        .first()
-        .ok_or(NoAnnotationFound {
-            class: get_type_name::<T>(),
-            name: name.to_string(),
-            version: version.to_string(),
-        })?
-        .hash
-        .clone();
+        // Search the name-ver index
+        let hash = self.search_name_ver_index::<T>(name, version)?;
 
-        from_yaml::<T>(
-            &self.make_annotation_path::<T>(name, &hash, version),
-            &self.make_spec_path::<T>(&hash),
-            &hash,
-        )
-    }
+        // Get the spec and annotation yaml
+        let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, "spec.yaml"))?;
+        let annotation_yaml =
+            fs::read_to_string(self.make_path::<T>(&hash, &format!("{}-{}.yaml", name, version,)))?;
 
-    fn list_item<T>(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>> {
-        Self::search_annotation(
-            &self
-                .make_annotation_path::<T>("*", "*", "*")
-                .to_string_lossy()
-                .clone(),
-        )
+        from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
     }
 
     fn delete_item<T>(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
-        // Search for all annotation files that the matching name and version for the item
-        let glob_pattern = self
-            .make_annotation_path::<T>(name, "*", version)
-            .to_string_lossy()
-            .into_owned();
+        // Search the name-ver index
+        let hash = self.search_name_ver_index::<T>(name, version)?;
 
-        let matches = Self::search_annotation(&glob_pattern)?;
+        // Remove actual annotation file
+        fs::remove_file(self.make_path::<T>(&hash, &format!("{}-{}.yaml", name, version)))?;
 
-        // If there is no matches, throw an error
-        matches.is_empty().then(|| NoAnnotationFound {
-            class: get_type_name::<T>(),
-            name: name.into(),
-            version: version.into(),
-        });
-
-        // Create buffer to store the parents path to check if it is empty after all delete
-        let mut annotation_parent_folder = HashSet::new();
-        let mut item_hashes_to_delete = HashSet::new();
-
-        for item in matches {
-            // Delete all annotation files that matches
-            let file_to_delete_path =
-                self.make_annotation_path::<T>(&item.name, &item.hash, &item.version);
-
-            // Extract parent and store it
-            annotation_parent_folder.insert(
-                file_to_delete_path
-                    .parent()
-                    .ok_or(FileHasNoParent {
-                        path: file_to_delete_path.clone(),
-                    })?
-                    .to_path_buf(),
-            );
-
-            // Add the item hash to the vec
-            item_hashes_to_delete.insert(item.hash.clone());
-
-            fs::remove_file(self.make_annotation_path::<T>(&item.name, &item.hash, &item.version))?;
-        }
-
-        // Go through and check if the parent folder is empty, if so delete it too
-        for parent_folder in annotation_parent_folder.iter() {
-            if parent_folder.read_dir()?.next().is_none() {
-                fs::remove_dir(parent_folder)?;
-            }
-        }
-
-        // Delete the item, but check if there is no other annotation referencing it
-        for item_hash in item_hashes_to_delete.iter() {
-            // Search annotation to see if there something pointing to it
-            let search_pattern = self
-                .make_annotation_path::<T>("*", item_hash, "*")
-                .to_string_lossy()
-                .into_owned();
-            let matches = Self::search_annotation(&search_pattern)?;
-
-            if matches.is_empty() {
-                // Okay to delete as no other annotation is pointing to it
-                let spec_path = self.make_spec_path::<T>(item_hash);
-                fs::remove_dir_all(spec_path.parent().ok_or(FileHasNoParent {
-                    path: spec_path.clone(),
-                })?)?;
-            }
+        // Remove the annotation from index tree and see if it is safe to also remove the item folder
+        // (Nothing else is reference the hash)
+        if self.remove_item_from_name_ver_index::<T>(name, version, &hash)? {
+            // No match was found, therefore safe to delete the entire folder
+            fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
         }
 
         Ok(())
     }
 
+    /// Get the name index btree where key is <name>-<ver> and content is hash of the item
+    fn get_name_ver_index<T>(&self) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+        // Get shared lock file
+        let mut file = fs::File::open(self.make_name_ver_index_path::<T>())?;
+        file.lock_shared()?;
+
+        // Get index_tree then unlock
+        let index_tree = Self::extract_index_tree(&mut file)?;
+        file.unlock()?;
+
+        Ok(index_tree)
+    }
+
+    fn insert_item_to_name_ver_index<T>(
+        &self,
+        name: &str,
+        version: &str,
+        hash: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        let index_file_path = self.make_name_ver_index_path::<T>();
+
+        if !index_file_path.exists() {
+            // TODO: Do the glob and regex to construct
+            // For no just create the file
+            fs::write(
+                &index_file_path,
+                bincode::serialize(&BTreeMap::<String, String>::new())?,
+            )?;
+        }
+
+        // Open file and lock exclusive lock it
+        let mut file = fs::File::options()
+            .read(true)
+            .write(true)
+            .append(false)
+            .open(index_file_path)?;
+        file.lock_exclusive()?;
+
+        let mut index_tree = Self::extract_index_tree(&mut file)?;
+
+        // Add item
+        index_tree.insert(format!("{}-{}", name, version), hash.into());
+
+        // Rewind to the start then, write
+        file.rewind()?;
+        file.write_all(&bincode::serialize(&index_tree)?)?;
+
+        file.unlock()?;
+        Ok(())
+    }
+
+    // Remove from index, and return if it is save to delete the item folder
+    fn remove_item_from_name_ver_index<T>(
+        &self,
+        name: &str,
+        version: &str,
+        hash: &str,
+    ) -> Result<bool, Box<dyn Error>> {
+        // Open file and lock exclusive lock it
+        let mut file = fs::File::options()
+            .read(true)
+            .write(true)
+            .open(self.make_name_ver_index_path::<T>())?;
+        file.lock_exclusive()?;
+
+        let mut index_tree = Self::extract_index_tree(&mut file)?;
+
+        // Remove the annotation file and error out if failed to remove from index_tree
+        index_tree
+            .remove(&format!("{}-{}", name, version))
+            .ok_or(NoAnnotationFound {
+                class: get_type_name::<T>(),
+                name: name.to_string(),
+                version: version.to_string(),
+            })?;
+
+        // Write it back to the file
+        file.rewind()?;
+        file.write_all(&bincode::serialize(&index_tree)?)?;
+
+        // Brute force search through index tree to see if there is another annotation pointing to same hash
+        // Maybe optimize this with a btreemap of <hash, vec<annotation_key>> later?
+        for (_, item_hash) in index_tree {
+            if hash == item_hash {
+                // Match found, thus exit
+                file.unlock()?;
+                return Ok(false);
+            }
+        }
+
+        file.unlock()?;
+        Ok(true)
+    }
+
+    fn extract_index_tree(file: &mut fs::File) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+        let mut buf = Vec::new();
+        file.read_to_end(&mut buf)?;
+        let index_tree: BTreeMap<String, String> = bincode::deserialize(&buf)?;
+        Ok(index_tree)
+    }
+
+    fn make_name_ver_index_path<T>(&self) -> PathBuf {
+        PathBuf::from(format!(
+            "{}/{}/name-ver.idx",
+            self.directory.to_string_lossy(),
+            get_type_name::<T>()
+        ))
+    }
+
+    /// Search the index BTree and return hash for the item or error out
+    fn search_name_ver_index<T>(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<String, Box<dyn Error>> {
+        // Search the name-ver index
+        let name_ver_idx = self.get_name_ver_index::<T>()?;
+
+        // Try to get hash from index, if fail throw error
+        Ok(name_ver_idx
+            .get(&format!("{}-{}", name, version))
+            .ok_or(NoAnnotationFound {
+                class: get_type_name::<T>(),
+                name: name.to_string(),
+                version: version.to_string(),
+            })?
+            .to_owned())
+    }
+
     // Help save file function
     fn save_file(
-        file: &PathBuf,
-        content: &str,
+        path: &PathBuf,
+        content: impl AsRef<[u8]>,
         fail_if_exists: bool,
     ) -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(
-            file.parent()
-                .ok_or(FileHasNoParent { path: file.clone() })?,
+            path.parent()
+                .ok_or(FileHasNoParent { path: path.clone() })?,
         )?;
-        let file_exists = fs::exists(file)?;
+        let file_exists = fs::exists(path)?;
         if file_exists {
             if !fail_if_exists {
                 println!(
                     "Skip saving `{}` since it is already stored.",
-                    file.to_string_lossy().bright_cyan(),
+                    path.to_string_lossy().bright_cyan(),
                 );
                 return Ok(());
             } else {
-                return Err(Box::new(FileExists { path: file.clone() }));
+                return Err(Box::new(FileExists { path: path.clone() }));
             }
         } else {
-            fs::write(file, content)?;
+            fs::write(path, content.as_ref())?;
         }
         Ok(())
     }

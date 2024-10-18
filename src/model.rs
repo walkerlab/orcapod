@@ -1,13 +1,7 @@
 use crate::util::{get_type_name, hash};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::{
-    collections::BTreeMap,
-    error::Error,
-    fs,
-    io::{BufRead, BufReader},
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, error::Error, path::PathBuf};
 
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
@@ -22,31 +16,31 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
     Ok(yaml)
 }
 
+/// Deserialize struct with optional annotation
 pub fn from_yaml<T: DeserializeOwned>(
-    annotation_file: &PathBuf,
-    spec_file: &PathBuf,
+    spec_yaml: &str,
     hash: &str,
+    annotation_yaml: Option<&str>,
 ) -> Result<T, Box<dyn Error>> {
-    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(annotation_file)?)?;
-    let spec_yaml = BufReader::new(fs::File::open(spec_file)?)
-        .lines()
-        .skip(1)
-        .collect::<Result<Vec<_>, _>>()?
-        .join("\n");
+    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
 
-    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&spec_yaml)?;
-    spec_mapping.insert("annotation".to_string(), Value::from(annotation));
+    // Insert annotation if there is something
+    if let Some(yaml) = annotation_yaml {
+        let annotation_map: Mapping = serde_yaml::from_str(yaml)?;
+        spec_mapping.insert("annotation".into(), Value::from(annotation_map));
+    }
     spec_mapping.insert("hash".to_string(), Value::from(hash));
 
-    let instance: T = serde_yaml::from_str(&serde_yaml::to_string(&spec_mapping)?)?;
-    Ok(instance)
+    Ok(serde_yaml::from_str(&serde_yaml::to_string(
+        &spec_mapping,
+    )?)?)
 }
 
 // --- core model structs ---
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Pod {
-    pub annotation: Annotation,
+    pub annotation: Option<Annotation>,
     pub hash: String,
     source_commit: String,
     image: String,
@@ -73,7 +67,7 @@ impl Pod {
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self, Box<dyn Error>> {
         let pod_no_hash = Self {
-            annotation,
+            annotation: Some(annotation),
             hash: String::new(),
             source_commit,
             image,
