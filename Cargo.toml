@@ -92,7 +92,6 @@ string_lit_chars_any = { level = "allow", priority = 127 }             # favor r
 todo = { level = "warn", priority = 127 }                              # warn todos
 use_debug = { level = "warn", priority = 127 }                         # debug print
 
-
 # temporary
 missing_errors_doc = { level = "allow", priority = 127 }        # remove once we have docs
 single_call_fn = { level = "allow", priority = 127 }            # remove once other models are in

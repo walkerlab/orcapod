@@ -52,7 +52,7 @@ impl Store for LocalFileStore {
         let (_, (hash, _)) =
             Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, version))?
                 .next()
-                .ok_or(NoAnnotationFound {
+                .ok_or_else(|| NoAnnotationFound {
                     class,
                     name: name.to_owned(),
                     version: version.to_owned(),
@@ -81,18 +81,18 @@ impl Store for LocalFileStore {
         // assumes propagate = false
         let class = "pod".to_owned();
         let versions = self.get_pod_version_map(name)?;
-        let hash = versions.get(version).ok_or(NoAnnotationFound {
+        let hash = versions.get(version).ok_or_else(|| NoAnnotationFound {
             class,
             name: name.to_owned(),
             version: version.to_owned(),
         })?;
 
         let annotation_file = self.make_annotation_path("pod", hash, name, version);
-        let annotation_dir = annotation_file.parent().ok_or(FileHasNoParent {
+        let annotation_dir = annotation_file.parent().ok_or_else(|| FileHasNoParent {
             path: annotation_file.clone(),
         })?;
         let spec_file = self.make_spec_path("pod", hash);
-        let spec_dir = spec_file.parent().ok_or(FileHasNoParent {
+        let spec_dir = spec_file.parent().ok_or_else(|| FileHasNoParent {
             path: spec_file.clone(),
         })?;
 
@@ -193,7 +193,7 @@ impl LocalFileStore {
     }
 
     fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> Result<(), Box<dyn Error>> {
-        fs::create_dir_all(file.parent().ok_or(FileHasNoParent {
+        fs::create_dir_all(file.parent().ok_or_else(|| FileHasNoParent {
             path: file.to_path_buf(),
         })?)?;
         let file_exists = fs::exists(file)?;

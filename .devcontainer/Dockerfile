@@ -1,5 +1,5 @@
 # DevContainer image
-FROM rust:1.81-slim
+FROM rust:1.82-slim
 RUN \
     adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
     # install docker
@@ -29,8 +29,8 @@ RUN \
     # rust auto formatting
     rustup component add rustfmt && \
     # rust style linter
-    rustup component add clippy --toolchain 1.81.0-x86_64-unknown-linux-gnu && \
+    rustup component add clippy && \
     # rust code coverage
     cargo install cargo-llvm-cov && \
-    rustup component add llvm-tools-preview --toolchain 1.81.0-x86_64-unknown-linux-gnu
+    rustup component add llvm-tools-preview
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

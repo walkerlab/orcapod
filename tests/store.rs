@@ -13,11 +13,11 @@ use tempfile::tempdir;
 fn is_dir_two_levels_up_empty(file: &Path) -> Result<bool, Box<dyn Error>> {
     Ok(file
         .parent()
-        .ok_or(FileHasNoParent {
+        .ok_or_else(|| FileHasNoParent {
             path: file.to_path_buf(),
         })?
         .parent()
-        .ok_or(FileHasNoParent {
+        .ok_or_else(|| FileHasNoParent {
             path: file.to_path_buf(),
         })?
         .read_dir()?
