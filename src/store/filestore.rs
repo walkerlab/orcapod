@@ -62,6 +62,13 @@ impl LocalFileStore {
         path
     }
 
+    fn make_anno_path<T>(&self, hash: &str, file_name: &str) -> PathBuf {
+        let mut path = self.make_dir_path::<T>(hash);
+        path.push("annotations");
+        path.push(file_name);
+        path
+    }
+
     // Generic function for save load list delete
     /// Generic func to save all sorts of item
     ///
@@ -87,10 +94,7 @@ impl LocalFileStore {
         if let Some(value) = annotation {
             // Annotation exist, thus save it
             Self::save_file(
-                &self.make_path::<T>(
-                    hash,
-                    &format!("{}-{}{}", value.name, value.version, ".yaml"),
-                ),
+                &self.make_anno_path::<T>(hash, &format!("{}-{}.yaml", value.name, value.version)),
                 &serde_yaml::to_string(value)?,
                 true,
             )?;
@@ -117,8 +121,9 @@ impl LocalFileStore {
 
         // Get the spec and annotation yaml
         let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, "spec.yaml"))?;
-        let annotation_yaml =
-            fs::read_to_string(self.make_path::<T>(&hash, &format!("{}-{}.yaml", name, version,)))?;
+        let annotation_yaml = fs::read_to_string(
+            self.make_anno_path::<T>(&hash, &format!("{}-{}.yaml", name, version,)),
+        )?;
 
         from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
     }
@@ -128,7 +133,7 @@ impl LocalFileStore {
         let hash = self.search_name_ver_index::<T>(name, version)?;
 
         // Remove actual annotation file
-        fs::remove_file(self.make_path::<T>(&hash, &format!("{}-{}.yaml", name, version)))?;
+        fs::remove_file(self.make_anno_path::<T>(&hash, &format!("{}-{}.yaml", name, version)))?;
 
         // Remove the annotation from index tree and see if it is safe to also remove the item folder
         // (Nothing else is reference the hash)
