@@ -3,17 +3,16 @@ use crate::{
     model::{from_yaml, to_yaml, Pod},
     store::Store,
 };
-use alloc::collections::BTreeMap;
 use colored::Colorize;
-use core::{error::Error, iter::Map};
 use glob::{GlobError, Paths};
 use regex::Regex;
 use std::{
+    collections::BTreeMap,
+    error::Error,
     fs,
+    iter::Map,
     path::{Path, PathBuf},
 };
-
-extern crate alloc;
 
 #[derive(Debug)]
 pub struct LocalFileStore {
@@ -115,7 +114,7 @@ impl Store for LocalFileStore {
 }
 
 impl LocalFileStore {
-    pub fn new<T: Into<PathBuf>>(directory: T) -> Self {
+    pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
         }
@@ -196,7 +195,7 @@ impl LocalFileStore {
         fs::create_dir_all(file.parent().ok_or_else(|| FileHasNoParent {
             path: file.to_path_buf(),
         })?)?;
-        let file_exists = fs::exists(file)?;
+        let file_exists = file.exists();
         if file_exists && fail_if_exists {
             return Err(Box::new(FileExists {
                 path: file.to_path_buf(),

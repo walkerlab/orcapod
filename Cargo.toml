@@ -62,6 +62,7 @@ exhaustive_enums = { level = "allow", priority = 127 }                 # revist 
 exhaustive_structs = { level = "allow", priority = 127 }               # revist once lib is ready to be used externally
 float_arithmetic = { level = "allow", priority = 127 }                 # allow float arithmatic
 host_endian_bytes = { level = "allow", priority = 127 }                # allow to_ne_bytes / from_ne_bytes
+impl_trait_in_params = { level = "allow", priority = 127 }             # impl in params ok
 implicit_return = { level = "allow", priority = 127 }                  # missing return ok
 indexing_slicing = { level = "allow", priority = 127 }                 # allow since guaranteed and error handling is overkill
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
@@ -87,6 +88,8 @@ semicolon_inside_block = { level = "allow", priority = 127 }           # ok to k
 separated_literal_suffix = { level = "allow", priority = 127 }         # literal suffixes should be separated by underscore
 single_char_lifetime_names = { level = "allow", priority = 127 }       # single char lifetimes ok
 single_component_path_imports = { level = "allow", priority = 127 }    # allow for readability
+std_instead_of_alloc = { level = "allow", priority = 127 }             # we should use std when possible
+std_instead_of_core = { level = "allow", priority = 127 }              # we should use std when possible
 string_add = { level = "allow", priority = 127 }                       # simple concat ok
 string_lit_chars_any = { level = "allow", priority = 127 }             # favor readability until a perf case comes up
 todo = { level = "warn", priority = 127 }                              # warn todos

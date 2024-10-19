@@ -1,6 +1,6 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
-use core::error::Error;
+use std::error::Error;
 pub mod fixture;
 use fixture::pod_style;
 use indoc::indoc;
@@ -10,7 +10,7 @@ use orcapod::model::{to_yaml, Pod};
 fn verify_hash() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pod_style()?.hash,
-        "4A7CA5CEA3BC814B73ED0F5695F5AFB40E7762D9133BFCC9800A8A37FC8BBB96"
+        "13D69656D396C272588DD875B2802FAEE1A56BD985E3C43C7DB276A373BC9DDB"
     );
     Ok(())
 }
@@ -30,13 +30,13 @@ fn verify_pod_to_yaml() -> Result<(), Box<dyn Error>> {
               painting:
                 path: /input/painting.png
                 match_pattern: /input/painting.png
-            minimum_cpus: 0.25
-            minimum_memory: 2147483648
             output_dir: /output
             output_stream_map:
               styled:
                 path: ./styled.png
                 match_pattern: ./styled.png
+            recommended_cpus: 0.25
+            recommended_memory: 2147483648
             required_gpu: null
             source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
         "}

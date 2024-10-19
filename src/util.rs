@@ -1,5 +1,5 @@
-use core::any::type_name;
 use sha2::{Digest, Sha256};
+use std::any::type_name;
 
 #[expect(
     clippy::unwrap_used,

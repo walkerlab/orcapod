@@ -1,8 +1,5 @@
 use crate::model::Pod;
-use alloc::collections::BTreeMap;
-use core::error::Error;
-
-extern crate alloc;
+use std::{collections::BTreeMap, error::Error};
 
 pub trait Store {
     fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;

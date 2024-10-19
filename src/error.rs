@@ -1,11 +1,12 @@
 use colored::Colorize;
-use core::{
+use serde_yaml;
+use std::{
     error::Error,
     fmt,
     fmt::{Display, Formatter},
+    io,
+    path::PathBuf,
 };
-use serde_yaml;
-use std::{io, path::PathBuf};
 
 /// Wrapper around `serde_yaml::from_str`
 #[derive(Debug)]

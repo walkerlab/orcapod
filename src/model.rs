@@ -1,15 +1,13 @@
 use crate::util::{get_type_name, hash};
-use alloc::collections::BTreeMap;
-use core::error::Error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::{
+    collections::BTreeMap,
+    error::Error,
     fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-
-extern crate alloc;
 
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
@@ -56,8 +54,8 @@ pub struct Pod {
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
-    minimum_cpus: f32,
-    minimum_memory: u64,
+    recommended_cpus: f32,
+    recommended_memory: u64,
     required_gpu: Option<GPURequirement>,
 }
 
@@ -70,8 +68,8 @@ impl Pod {
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
-        minimum_cpus: f32,
-        minimum_memory: u64,
+        recommended_cpus: f32,
+        recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self, Box<dyn Error>> {
         let pod_no_hash = Self {
@@ -83,8 +81,8 @@ impl Pod {
             input_stream_map,
             output_dir,
             output_stream_map,
-            minimum_cpus,
-            minimum_memory,
+            recommended_cpus,
+            recommended_memory,
             required_gpu,
         };
         Ok(Self {

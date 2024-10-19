@@ -1,13 +1,9 @@
-use alloc::collections::BTreeMap;
-use core::{error::Error, ops::Deref};
 use orcapod::{
     model::{Annotation, Pod, StreamInfo},
     store::{filestore::LocalFileStore, Store},
 };
-use std::{fs, path::PathBuf};
+use std::{collections::BTreeMap, error::Error, fs, ops::Deref, path::PathBuf};
 use tempfile::tempdir;
-
-extern crate alloc;
 
 pub fn pod_style() -> Result<Pod, Box<dyn Error>> {
     Pod::new(
