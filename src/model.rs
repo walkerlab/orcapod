@@ -1,4 +1,5 @@
 use crate::util::{get_type_name, hash};
+use crate::util::{get_type_name, hash};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::{collections::BTreeMap, error::Error, path::PathBuf};
@@ -42,41 +43,41 @@ pub fn from_yaml<T: DeserializeOwned>(
 pub struct Pod {
     pub annotation: Option<Annotation>,
     pub hash: String,
-    source_commit: String,
+    source_commit_url: String,
     image: String,
     command: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
-    min_cpus: f32,
-    min_memory: u64,
+    recommended_cpus: f32,
+    recommended_memory: u64,
     required_gpu: Option<GPURequirement>,
 }
 
 impl Pod {
     pub fn new(
         annotation: Annotation,
-        source_commit: String,
+        source_commit_url: String,
         image: String,
         command: String,
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
         recommended_cpus: f32,
-        min_memory: u64,
+        recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self, Box<dyn Error>> {
         let pod_no_hash = Self {
             annotation: Some(annotation),
             hash: String::new(),
-            source_commit,
+            source_commit_url,
             image,
             command,
             input_stream_map,
             output_dir,
             output_stream_map,
-            min_cpus: recommended_cpus,
-            min_memory,
+            recommended_cpus,
+            recommended_memory,
             required_gpu,
         };
         Ok(Self {
