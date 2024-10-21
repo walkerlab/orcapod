@@ -1,5 +1,15 @@
 # orcapod
 
+## Tests
+
+```bash
+#!/bin/bash
+set -e                                    # stop early on non-zero exit
+cargo clippy --all-targets -- -D warnings # syntax and style tests
+cargo fmt --check                         # formatting test
+cargo llvm-cov -- --nocapture             # integration tests w/ coverage report
+```
+
 ## Project Management
 
 Progress is tracked under GH project [orcapod](https://github.com/orgs/walkerlab/projects/2).
@@ -37,3 +47,11 @@ We track only issues in the project so don't add PRs.
 - Reopened issues will automatically update status to `Todo`
 - Issue will automatically close once their status is updated to `Done`
 - Manually closed issues will automatically update status to `Done`
+
+## Set permissions to system defaults
+
+```bash
+# based on debian
+chmod u=rwx,g=rx,o=rx $(find . -not -path "./.git*" -type d | sort)  # directories
+chmod u=rw,g=r,o=r $(find . -not -path "./.git/*" -type f | sort)  # files
+```

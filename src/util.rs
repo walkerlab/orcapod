@@ -1,15 +1,18 @@
-use crate::error::OutOfBounds;
 use sha2::{Digest, Sha256};
 use std::any::type_name;
 
-pub fn get_struct_name<T>() -> Result<String, OutOfBounds> {
-    Ok(type_name::<T>()
+#[expect(
+    clippy::unwrap_used,
+    reason = "`None` impossible since `type_name` always returns `&str`."
+)]
+pub fn get_type_name<T>() -> String {
+    type_name::<T>()
         .split("::")
-        .collect::<Vec<&str>>()
-        .get(2)
-        .ok_or(OutOfBounds {})?
-        .to_string()
-        .to_lowercase())
+        .map(str::to_string)
+        .collect::<Vec<String>>()
+        .last()
+        .unwrap()
+        .to_lowercase()
 }
 
 pub fn hash(buffer: &str) -> String {
