@@ -1,4 +1,7 @@
-use crate::util::{get_type_name, hash};
+use crate::{
+    error::NoRegexMatch,
+    util::{get_type_name, hash},
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 use std::{
@@ -9,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
+pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, NoRegexMatch> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
         &mapping
@@ -26,7 +29,7 @@ pub fn from_yaml<T: DeserializeOwned>(
     annotation_file: &Path,
     spec_file: &Path,
     hash: &str,
-) -> Result<T, Box<dyn Error>> {
+) -> Result<T, NoRegexMatch> {
     let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(annotation_file)?)?;
     let spec_yaml = BufReader::new(fs::File::open(spec_file)?)
         .lines()
@@ -71,7 +74,7 @@ impl Pod {
         recommended_cpus: f32,
         recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self, NoRegexMatch> {
         let pod_no_hash = Self {
             annotation,
             hash: String::new(),
