@@ -10,7 +10,7 @@ use orcapod::model::{to_yaml, Pod};
 fn verify_hash() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pod_style()?.hash,
-        "13D69656D396C272588DD875B2802FAEE1A56BD985E3C43C7DB276A373BC9DDB"
+        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb"
     );
     Ok(())
 }

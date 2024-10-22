@@ -1,5 +1,6 @@
 use crate::model::Pod;
-use std::{collections::BTreeMap, error::Error};
+use anyhow::Result;
+use std::collections::BTreeMap;
 
 pub struct ItemInfo {
     pub name: String,
@@ -8,10 +9,11 @@ pub struct ItemInfo {
 }
 
 pub trait Store {
-    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
-    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
-    fn list_pod(&self) -> Result<BTreeMap<String, String>, Box<dyn Error>>;
-    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
+    fn save_pod(&mut self, pod: &Pod) -> Result<()>;
+    fn load_pod(&mut self, name: &str, version: &str) -> Result<Pod>;
+    fn list_pod(&mut self) -> Result<&BTreeMap<String, String>>;
+    fn delete_pod(&mut self, name: &str, version: &str) -> Result<()>;
+    fn delete_pod_annotation(&mut self, name: &str, version: &str) -> Result<()>;
 }
 
 pub mod filestore;

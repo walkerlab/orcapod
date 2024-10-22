@@ -1,10 +1,10 @@
 use crate::util::{get_type_name, hash};
-use crate::util::{get_type_name, hash};
+use anyhow::Result;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::{collections::BTreeMap, error::Error, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf};
 
-pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
+pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
         &mapping
@@ -22,7 +22,7 @@ pub fn from_yaml<T: DeserializeOwned>(
     spec_yaml: &str,
     hash: &str,
     annotation_yaml: Option<&str>,
-) -> Result<T, Box<dyn Error>> {
+) -> Result<T> {
     let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
 
     // Insert annotation if there is something
@@ -30,7 +30,7 @@ pub fn from_yaml<T: DeserializeOwned>(
         let annotation_map: Mapping = serde_yaml::from_str(yaml)?;
         spec_mapping.insert("annotation".into(), Value::from(annotation_map));
     }
-    spec_mapping.insert("hash".to_string(), Value::from(hash));
+    spec_mapping.insert("hash".to_owned(), Value::from(hash));
 
     Ok(serde_yaml::from_str(&serde_yaml::to_string(
         &spec_mapping,
@@ -66,7 +66,7 @@ impl Pod {
         recommended_cpus: f32,
         recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self> {
         let pod_no_hash = Self {
             annotation: Some(annotation),
             hash: String::new(),
@@ -89,27 +89,27 @@ impl Pod {
 
 // --- util types ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Annotation {
     pub name: String,
     pub version: String,
     pub description: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
     pub model: GPUModel,
     pub recommended_memory: u64,
     pub count: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
     NVIDIA(String), // String will be the specific model of the gpu
     AMD(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
     pub path: PathBuf,
     pub match_pattern: String,

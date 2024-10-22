@@ -116,3 +116,21 @@ impl Display for NoAnnotationFound {
         )
     }
 }
+
+#[derive(Debug)]
+pub struct KeyMissingFromBTree {
+    pub key: String,
+}
+
+impl Error for KeyMissingFromBTree {}
+
+impl Display for KeyMissingFromBTree {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}{}",
+            "Fail to get key ".bright_red(),
+            self.key.bright_cyan(),
+        )
+    }
+}
