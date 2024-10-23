@@ -1,4 +1,5 @@
-use colored::Colorize;
+use glob;
+use regex;
 use serde_yaml;
 use std::{
     error::Error,
@@ -8,122 +9,66 @@ use std::{
     path::PathBuf,
 };
 
-/// Wrapper around `serde_yaml::from_str`
+pub type OrcaResult<T> = Result<T, OrcaError>;
+
 #[derive(Debug)]
-pub struct DeserializeFailure {
-    pub path: PathBuf,
-    pub error: serde_yaml::Error,
+pub enum OrcaError {
+    FileExists(PathBuf),
+    FileHasNoParent(PathBuf),
+    NoAnnotationFound(String, String, String),
+    NoRegexMatch,
+    GlobError(glob::GlobError),
+    GlobPaternError(glob::PatternError),
+    RegexError(regex::Error),
+    SerdeYamlError(serde_yaml::Error),
+    IoError(io::Error),
 }
-impl Error for DeserializeFailure {}
-impl Display for DeserializeFailure {
+impl Error for OrcaError {}
+impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{}{}{}",
-            "Failed to deserialize with error ".bright_red(),
-            self.error.to_string().bright_red(),
-            " for ".bright_red(),
-            self.path.to_string_lossy().bright_cyan()
-        )
+        match self {
+            Self::FileExists(path) => {
+                write!(f, "File `{}` already exists.", path.to_string_lossy())
+            }
+            Self::FileHasNoParent(path) => {
+                write!(f, "File `{}` has no parent.", path.to_string_lossy())
+            }
+            Self::NoAnnotationFound(class, name, version) => {
+                write!(f, "No annotation found for `{name}:{version}` {class}.")
+            }
+            Self::NoRegexMatch => {
+                write!(f, "No match for regex.")
+            }
+            Self::GlobError(error) => write!(f, "{error}"),
+            Self::GlobPaternError(error) => write!(f, "{error}"),
+            Self::SerdeYamlError(error) => write!(f, "{error}"),
+            Self::RegexError(error) => write!(f, "{error}"),
+            Self::IoError(error) => write!(f, "{error}"),
+        }
     }
 }
-
-/// Wrapper around getting None when trying to find parent
-#[derive(Debug)]
-pub struct FileHasNoParent {
-    pub path: PathBuf,
-}
-impl Error for FileHasNoParent {}
-impl Display for FileHasNoParent {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "File `{}` has no parent.",
-            self.path.to_string_lossy().bright_red()
-        )
+impl From<glob::GlobError> for OrcaError {
+    fn from(error: glob::GlobError) -> Self {
+        Self::GlobError(error)
     }
 }
-
-/// Wrapper around `serde_yaml::to_string`
-#[derive(Debug)]
-pub struct SerializeFailure {
-    pub item_debug_string: String,
-    pub error: serde_yaml::Error,
-}
-impl Error for SerializeFailure {}
-impl Display for SerializeFailure {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{}{}{}",
-            "Failed to seralize ".bright_red(),
-            self.item_debug_string.bright_cyan(),
-            " with error  ".bright_red(),
-            self.error.to_string().bright_red(),
-        )
+impl From<glob::PatternError> for OrcaError {
+    fn from(error: glob::PatternError) -> Self {
+        Self::GlobPaternError(error)
     }
 }
-
-/// Wrapper around `fs::read_to_string` and `fs::write`
-#[derive(Debug)]
-pub struct IOFailure {
-    pub path: PathBuf,
-    pub error: io::Error,
-}
-impl Error for IOFailure {}
-impl Display for IOFailure {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{}{}{}",
-            "IO Error: ".bright_red(),
-            &self.error.to_string().bright_red(),
-            " at ".bright_red(),
-            &self.path.to_string_lossy().cyan(),
-        )
+impl From<serde_yaml::Error> for OrcaError {
+    fn from(error: serde_yaml::Error) -> Self {
+        Self::SerdeYamlError(error)
     }
 }
-
-/// Raise error when file exists but unexpected
-#[derive(Debug)]
-pub struct FileExists {
-    pub path: PathBuf,
-}
-impl Error for FileExists {}
-impl Display for FileExists {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "File `{}` already exists.",
-            self.path.to_string_lossy().bright_red()
-        )
+impl From<regex::Error> for OrcaError {
+    fn from(error: regex::Error) -> Self {
+        Self::RegexError(error)
     }
 }
-
-/// Raise error when glob doesn't match on an annotation
-#[derive(Debug)]
-pub struct NoAnnotationFound {
-    pub class: String,
-    pub name: String,
-    pub version: String,
-}
-impl Error for NoAnnotationFound {}
-impl Display for NoAnnotationFound {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "No annotation found for `{}:{}` {}.",
-            self.name, self.version, self.class
-        )
-    }
-}
-
-/// Raise error when regex doesn't match
-#[derive(Debug)]
-pub struct NoRegexMatch;
-impl Error for NoRegexMatch {}
-impl Display for NoRegexMatch {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "No match for regex.")
+impl From<io::Error> for OrcaError {
+    fn from(error: io::Error) -> Self {
+        Self::IoError(error)
     }
 }

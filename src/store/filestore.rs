@@ -1,16 +1,13 @@
 use crate::{
-    error::{FileExists, FileHasNoParent, NoAnnotationFound, NoRegexMatch},
+    error::{OrcaError, OrcaResult},
     model::{from_yaml, to_yaml, Pod},
     store::Store,
 };
 use colored::Colorize;
-use glob::{GlobError, Paths};
 use regex::Regex;
 use std::{
     collections::BTreeMap,
-    error::Error,
     fs,
-    iter::Map,
     path::{Path, PathBuf},
 };
 
@@ -20,7 +17,7 @@ pub struct LocalFileStore {
 }
 
 impl Store for LocalFileStore {
-    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>> {
+    fn save_pod(&self, pod: &Pod) -> OrcaResult<()> {
         let class = "pod";
 
         // Save the annotation file and throw and error if exist
@@ -45,16 +42,14 @@ impl Store for LocalFileStore {
         Ok(())
     }
 
-    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>> {
+    fn load_pod(&self, name: &str, version: &str) -> OrcaResult<Pod> {
         let class = "pod".to_owned();
 
         let (_, (hash, _)) =
             Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, version))?
                 .next()
-                .ok_or_else(|| NoAnnotationFound {
-                    class,
-                    name: name.to_owned(),
-                    version: version.to_owned(),
+                .ok_or_else(|| {
+                    OrcaError::NoAnnotationFound(class, name.to_owned(), version.to_owned())
                 })??;
 
         from_yaml::<Pod>(
@@ -64,7 +59,7 @@ impl Store for LocalFileStore {
         )
     }
 
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>> {
+    fn list_pod(&self) -> OrcaResult<BTreeMap<String, Vec<String>>> {
         let (names, (hashes, versions)) =
             Self::parse_annotation_path(&self.make_annotation_path("pod", "*", "*", "*"))?
                 .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>)), _>>()?;
@@ -76,24 +71,22 @@ impl Store for LocalFileStore {
         ]))
     }
 
-    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>> {
+    fn delete_pod(&self, name: &str, version: &str) -> OrcaResult<()> {
         // assumes propagate = false
         let class = "pod".to_owned();
         let versions = self.get_pod_version_map(name)?;
-        let hash = versions.get(version).ok_or_else(|| NoAnnotationFound {
-            class,
-            name: name.to_owned(),
-            version: version.to_owned(),
+        let hash = versions.get(version).ok_or_else(|| {
+            OrcaError::NoAnnotationFound(class, name.to_owned(), version.to_owned())
         })?;
 
         let annotation_file = self.make_annotation_path("pod", hash, name, version);
-        let annotation_dir = annotation_file.parent().ok_or_else(|| FileHasNoParent {
-            path: annotation_file.clone(),
-        })?;
+        let annotation_dir = annotation_file
+            .parent()
+            .ok_or_else(|| OrcaError::FileHasNoParent(annotation_file.clone()))?;
         let spec_file = self.make_spec_path("pod", hash);
-        let spec_dir = spec_file.parent().ok_or_else(|| FileHasNoParent {
-            path: spec_file.clone(),
-        })?;
+        let spec_dir = spec_file
+            .parent()
+            .ok_or_else(|| OrcaError::FileHasNoParent(spec_file.clone()))?;
 
         fs::remove_file(&annotation_file)?;
         if !versions
@@ -150,13 +143,7 @@ impl LocalFileStore {
 
     fn parse_annotation_path(
         path: &Path,
-    ) -> Result<
-        Map<
-            Paths,
-            impl FnMut(Result<PathBuf, GlobError>) -> Result<(String, (String, String)), Box<dyn Error>>,
-        >,
-        Box<dyn Error>,
-    > {
+    ) -> OrcaResult<impl Iterator<Item = OrcaResult<(String, (String, String))>>> {
         let paths = glob::glob(&path.to_string_lossy())?.map(|filepath| {
             let re = Regex::new(
                 r"(?x)
@@ -170,19 +157,20 @@ impl LocalFileStore {
                 $",
             )?;
             let filepath_string = String::from(filepath?.to_string_lossy());
-            let group = re.captures(&filepath_string).ok_or(NoRegexMatch {})?;
+            let group = re
+                .captures(&filepath_string)
+                .ok_or_else(|| OrcaError::NoRegexMatch)?;
             Ok((
                 group["name"].to_string(),
                 (group["hash"].to_string(), group["version"].to_string()),
             ))
         });
-
         Ok(paths)
     }
 
-    fn get_pod_version_map(&self, name: &str) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+    fn get_pod_version_map(&self, name: &str) -> OrcaResult<BTreeMap<String, String>> {
         Self::parse_annotation_path(&self.make_annotation_path("pod", "*", name, "*"))?
-            .map(|metadata| -> Result<(String, String), Box<dyn Error>> {
+            .map(|metadata| -> OrcaResult<(String, String)> {
                 let resolved_metadata = metadata?;
                 let hash = resolved_metadata.1 .0;
                 let version = resolved_metadata.1 .1;
@@ -191,15 +179,13 @@ impl LocalFileStore {
             .collect::<Result<BTreeMap<String, String>, _>>()
     }
 
-    fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> Result<(), Box<dyn Error>> {
-        fs::create_dir_all(file.parent().ok_or_else(|| FileHasNoParent {
-            path: file.to_path_buf(),
-        })?)?;
+    pub fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> OrcaResult<()> {
+        if let Some(parent) = file.parent() {
+            fs::create_dir_all(parent)?;
+        }
         let file_exists = file.exists();
         if file_exists && fail_if_exists {
-            return Err(Box::new(FileExists {
-                path: file.to_path_buf(),
-            }));
+            return Err(OrcaError::FileExists(file.to_path_buf()));
         } else if file_exists {
             println!(
                 "Skip saving `{}` since it is already stored.",
