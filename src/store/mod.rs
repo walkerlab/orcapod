@@ -2,12 +2,6 @@ use crate::model::Pod;
 use anyhow::Result;
 use std::collections::BTreeMap;
 
-pub struct ItemInfo {
-    pub name: String,
-    pub hash: String,
-    pub version: String,
-}
-
 pub trait Store {
     fn save_pod(&mut self, pod: &Pod) -> Result<()>;
     fn load_pod(&mut self, name: &str, version: &str) -> Result<Pod>;
