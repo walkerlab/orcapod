@@ -10,7 +10,7 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-
+/// Converts a model instance into a consistent yaml.
 pub fn to_yaml<T: Serialize>(instance: &T) -> OrcaResult<String> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
@@ -23,7 +23,7 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> OrcaResult<String> {
 
     Ok(yaml)
 }
-
+/// Instantiates a model from from yaml content and its unique hash.
 pub fn from_yaml<T: DeserializeOwned>(
     annotation_file: &Path,
     spec_file: &Path,
@@ -46,9 +46,12 @@ pub fn from_yaml<T: DeserializeOwned>(
 
 // --- core model structs ---
 
+/// A reusable, containerized computational unit.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Pod {
+    /// Metadata that doesn't affect reproducibility.
     pub annotation: Annotation,
+    /// Unique id based on reproducibility.
     pub hash: String,
     source_commit_url: String,
     image: String,
@@ -62,6 +65,7 @@ pub struct Pod {
 }
 
 impl Pod {
+    /// Construct a new pod instance.
     pub fn new(
         annotation: Annotation,
         source_commit_url: String,
@@ -96,28 +100,40 @@ impl Pod {
 
 // --- util types ---
 
+/// Standard metadata structure for all model instances.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Annotation {
+    /// A unique name.
     pub name: String,
+    /// A unique semantic version.
     pub version: String,
+    /// A long form description.
     pub description: String,
 }
-
+/// Specification for GPU requirements in computation.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GPURequirement {
+    /// GPU model specification.
     pub model: GPUModel,
+    /// Manufacturer recommended memory.
     pub recommended_memory: u64,
+    /// Number of GPU cards required.
     pub count: u16,
 }
-
+/// GPU model specification.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum GPUModel {
-    NVIDIA(String), // String will be the specific model of the gpu
+    /// NVIDIA-manufactured card where `String` is the specific model e.g. ???
+    NVIDIA(String),
+    /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
-
+/// Streams are named and represent an abstration for the file(s) that represent some particular
+/// data.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamInfo {
+    /// Path to stream file.
     pub path: PathBuf,
+    /// Naming pattern for the stream.
     pub match_pattern: String,
 }

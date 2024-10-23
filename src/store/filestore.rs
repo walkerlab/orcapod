@@ -10,16 +10,16 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-
+/// Support for a storage backend on a local filesystem directory.
 #[derive(Debug)]
 pub struct LocalFileStore {
+    /// A local path to a directory where store will be located.
     pub directory: PathBuf,
 }
 
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> OrcaResult<()> {
         let class = "pod";
-
         // Save the annotation file and throw and error if exist
         Self::save_file(
             &self.make_annotation_path(
@@ -31,7 +31,6 @@ impl Store for LocalFileStore {
             &serde_yaml::to_string(&pod.annotation)?,
             true,
         )?;
-
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
         Self::save_file(
             &self.make_spec_path(class, &pod.hash),
@@ -107,12 +106,13 @@ impl Store for LocalFileStore {
 }
 
 impl LocalFileStore {
+    /// Construct a local file store instance.
     pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
         }
     }
-
+    /// Path where annotation file is located.
     pub fn make_annotation_path(
         &self,
         class: &str,
@@ -130,7 +130,7 @@ impl LocalFileStore {
             version,
         ))
     }
-
+    /// Path where specification file is located.
     pub fn make_spec_path(&self, class: &str, hash: &str) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",

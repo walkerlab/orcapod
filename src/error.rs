@@ -8,19 +8,28 @@ use std::{
     io,
     path::PathBuf,
 };
-
+/// Shorthand for a Result that returns an `OrcaError`.
 pub type OrcaResult<T> = Result<T, OrcaError>;
-
+/// Possiable errors you may encounter.
 #[derive(Debug)]
 pub enum OrcaError {
+    /// Returned if a file is not expected to exist.
     FileExists(PathBuf),
+    /// Returned if a file is expected to have a parent.
     FileHasNoParent(PathBuf),
+    /// Returned if an annotation was expected to exist.
     NoAnnotationFound(String, String, String),
+    /// Returned if a regular expression was expected to match.
     NoRegexMatch,
+    /// Wrapper around `glob::GlobError`
     GlobError(glob::GlobError),
+    /// Wrapper around `glob::PatternError`
     GlobPaternError(glob::PatternError),
+    /// Wrapper around `regex::Error`
     RegexError(regex::Error),
+    /// Wrapper around `serde_yaml::Error`
     SerdeYamlError(serde_yaml::Error),
+    /// Wrapper around `io::Error`
     IoError(io::Error),
 }
 impl Error for OrcaError {}
