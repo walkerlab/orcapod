@@ -179,7 +179,7 @@ impl LocalFileStore {
             .collect::<Result<BTreeMap<String, String>, _>>()
     }
 
-    pub fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> OrcaResult<()> {
+    fn save_file(file: &Path, content: &str, fail_if_exists: bool) -> OrcaResult<()> {
         if let Some(parent) = file.parent() {
             fs::create_dir_all(parent)?;
         }
