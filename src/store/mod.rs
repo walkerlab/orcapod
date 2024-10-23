@@ -13,7 +13,7 @@ pub trait Store {
     fn load_pod(&mut self, name: &str, version: &str) -> Result<Pod>;
     fn list_pod(&mut self) -> Result<&BTreeMap<String, String>>;
     fn delete_pod(&mut self, name: &str, version: &str) -> Result<()>;
-    fn delete_pod_annotation(&mut self, name: &str, version: &str) -> Result<()>;
+    fn delete_annotation<T>(&mut self, name: &str, version: &str) -> Result<()>;
 }
 
 pub mod filestore;

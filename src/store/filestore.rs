@@ -46,8 +46,20 @@ impl Store for LocalFileStore {
         self.delete_item::<Pod>(name, version)
     }
 
-    fn delete_pod_annotation(&mut self, name: &str, version: &str) -> Result<()> {
-        self.delete_annotation::<Pod>(name, version)
+    fn delete_annotation<T>(&mut self, name: &str, version: &str) -> Result<()> {
+        // Search the name ver index for the hash
+        let hash = self.get_hash_from_cache::<T>(name, version)?;
+
+        fs::remove_file(self.make_annotation_path::<T>(&hash, name, version))?;
+
+        // Remove from cache
+        self.name_ver_cache
+            .get_mut(&get_type_name::<T>())
+            .ok_or_else(|| KeyMissingFromBTree {
+                key: get_type_name::<T>(),
+            })?
+            .remove(&Self::make_name_ver_cache_key(name, version));
+        Ok(())
     }
 }
 
@@ -133,22 +145,6 @@ impl LocalFileStore {
             fs::read_to_string(self.make_annotation_path::<T>(&hash, name, version))?;
 
         from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
-    }
-
-    fn delete_annotation<T>(&mut self, name: &str, version: &str) -> Result<()> {
-        // Search the name ver index for the hash
-        let hash = self.get_hash_from_cache::<T>(name, version)?;
-
-        fs::remove_file(self.make_annotation_path::<T>(&hash, name, version))?;
-
-        // Remove from cache
-        self.name_ver_cache
-            .get_mut(&get_type_name::<T>())
-            .ok_or_else(|| KeyMissingFromBTree {
-                key: get_type_name::<T>(),
-            })?
-            .remove(&Self::make_name_ver_cache_key(name, version));
-        Ok(())
     }
 
     fn delete_item<T>(&mut self, name: &str, version: &str) -> Result<()> {

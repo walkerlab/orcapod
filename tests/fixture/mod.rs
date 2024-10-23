@@ -177,7 +177,7 @@ impl TestLocalStore {
         version: &str,
     ) -> Result<()> {
         match item_type {
-            ItemType::Pod => self.store.delete_pod_annotation(name, version),
+            ItemType::Pod => self.store.delete_annotation::<Pod>(name, version),
         }
     }
 }
