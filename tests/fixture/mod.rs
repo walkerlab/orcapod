@@ -1,11 +1,73 @@
+use anyhow::Result;
 use orcapod::{
-    model::{Annotation, Pod, StreamInfo},
-    store::{filestore::LocalFileStore, Store},
+    model::{to_yaml, Annotation, Pod, StreamInfo},
+    store::{filestore::LocalFileStore, ItemKey, Store},
 };
-use std::{collections::BTreeMap, error::Error, fs, ops::Deref, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+};
 use tempfile::tempdir;
 
-pub fn pod_style() -> Result<Pod, Box<dyn Error>> {
+#[derive(PartialEq, Clone)]
+pub enum Item {
+    Pod(Pod),
+}
+
+pub enum ItemType {
+    Pod,
+}
+
+impl Item {
+    #[expect(clippy::unwrap_used, reason = "test")]
+    pub fn get_name(&self) -> &str {
+        match self {
+            Self::Pod(pod) => &pod.annotation.as_ref().unwrap().name,
+        }
+    }
+
+    pub fn get_hash(&self) -> &str {
+        match self {
+            Self::Pod(pod) => &pod.hash,
+        }
+    }
+
+    #[expect(clippy::unwrap_used, reason = "test")]
+    pub fn get_version(&self) -> &str {
+        match self {
+            Self::Pod(pod) => &pod.annotation.as_ref().unwrap().version,
+        }
+    }
+
+    pub const fn is_annotation_none(&self) -> bool {
+        match self {
+            Self::Pod(pod) => pod.annotation.is_none(),
+        }
+    }
+
+    pub fn to_yaml(&self) -> Result<String> {
+        match self {
+            Self::Pod(pod) => to_yaml(pod),
+        }
+    }
+
+    #[expect(clippy::unwrap_used, reason = "test")]
+    pub fn set_name(&mut self, name: &str) {
+        match self {
+            Self::Pod(pod) => name.clone_into(&mut pod.annotation.as_mut().unwrap().name),
+        }
+    }
+}
+
+pub fn get_test_item(item_type: &ItemType) -> Result<Item> {
+    match item_type {
+        ItemType::Pod => Ok(Item::Pod(get_test_pod()?)),
+    }
+}
+
+pub fn get_test_pod() -> Result<Pod> {
     Pod::new(
         Annotation {
             name: "style-transfer".to_owned(),
@@ -50,56 +112,85 @@ pub struct TestLocalStore {
     store: LocalFileStore,
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Required since can't modify drop signature."
-)]
-pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore, Box<dyn Error>> {
-    impl Deref for TestLocalStore {
-        type Target = LocalFileStore;
-        fn deref(&self) -> &Self::Target {
-            &self.store
+impl Deref for TestLocalStore {
+    type Target = LocalFileStore;
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+
+impl DerefMut for TestLocalStore {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.store
+    }
+}
+
+#[expect(clippy::expect_used, reason = "test")]
+impl Drop for TestLocalStore {
+    fn drop(&mut self) {
+        fs::remove_dir_all(self.store.directory.as_path()).expect("Failed to teardown store.");
+    }
+}
+
+#[expect(clippy::unwrap_used, reason = "test")]
+impl TestLocalStore {
+    /// # Panics
+    /// Will panic if fail to fetch stuff related to annotation
+    pub fn make_annotation_path(&self, item: &Item) -> PathBuf {
+        match item {
+            Item::Pod(pod) => self.store.make_annotation_path::<Pod>(
+                &pod.hash,
+                &pod.annotation.as_ref().unwrap().name,
+                &pod.annotation.as_ref().unwrap().version,
+            ),
         }
     }
-    impl Drop for TestLocalStore {
-        fn drop(&mut self) {
-            fs::remove_dir_all(self.store.directory.as_path()).expect("Failed to teardown store.");
+
+    pub fn make_path(&self, item_type: &ItemType, hash: &str, file_name: &str) -> PathBuf {
+        match item_type {
+            ItemType::Pod => self.store.make_path::<Pod>(hash, file_name),
         }
     }
+
+    pub fn save_item(&mut self, item: &Item) -> Result<()> {
+        match item {
+            Item::Pod(pod) => self.store.save_pod(pod),
+        }
+    }
+
+    pub fn load_item(&mut self, item_type: &ItemType, item_key: &ItemKey) -> Result<Item> {
+        match item_type {
+            ItemType::Pod => Ok(Item::Pod(self.store.load_pod(item_key)?)),
+        }
+    }
+
+    pub fn list_item(&mut self, item_type: &ItemType) -> Result<&BTreeMap<String, String>> {
+        match item_type {
+            ItemType::Pod => self.store.list_pod(),
+        }
+    }
+
+    pub fn delete_item(&mut self, item_type: &ItemType, item_key: &ItemKey) -> Result<()> {
+        match item_type {
+            ItemType::Pod => self.store.delete_pod(item_key),
+        }
+    }
+
+    pub fn delete_item_annotation(
+        &mut self,
+        item_type: &ItemType,
+        name: &str,
+        version: &str,
+    ) -> Result<()> {
+        match item_type {
+            ItemType::Pod => self.store.delete_annotation::<Pod>(name, version),
+        }
+    }
+}
+
+pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     let store =
         store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
     Ok(TestLocalStore { store })
-}
-
-#[derive(Debug)]
-pub struct TestLocallyStoredPod<'base> {
-    pub store: &'base TestLocalStore,
-    pod: Pod,
-}
-
-#[expect(
-    clippy::expect_used,
-    reason = "Required since can't modify drop signature."
-)]
-pub fn add_pod_storage(
-    pod: Pod,
-    store: &TestLocalStore,
-) -> Result<TestLocallyStoredPod, Box<dyn Error>> {
-    impl<'base> Deref for TestLocallyStoredPod<'base> {
-        type Target = Pod;
-        fn deref(&self) -> &Self::Target {
-            &self.pod
-        }
-    }
-    impl<'base> Drop for TestLocallyStoredPod<'base> {
-        fn drop(&mut self) {
-            self.store
-                .delete_pod(&self.pod.annotation.name, &self.pod.annotation.version)
-                .expect("Failed to teardown pod.");
-        }
-    }
-    let pod_with_storage = TestLocallyStoredPod { store, pod };
-    pod_with_storage.store.save_pod(&pod_with_storage)?;
-    Ok(pod_with_storage)
 }

@@ -8,13 +8,12 @@ use std::any::type_name;
 pub fn get_type_name<T>() -> String {
     type_name::<T>()
         .split("::")
-        .map(str::to_string)
-        .collect::<Vec<String>>()
+        .collect::<Vec<&str>>()
         .last()
         .unwrap()
         .to_lowercase()
 }
 
 pub fn hash(buffer: &str) -> String {
-    format!("{:X}", Sha256::digest(buffer))
+    format!("{:x}", Sha256::digest(buffer))
 }
