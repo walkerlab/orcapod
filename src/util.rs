@@ -3,7 +3,7 @@ use std::any::type_name;
 
 #[expect(
     clippy::unwrap_used,
-    reason = "Won't ever panic, unless something is really wrong"
+    reason = "`None` impossible since `type_name` always returns `&str`."
 )]
 pub fn get_type_name<T>() -> String {
     type_name::<T>()
