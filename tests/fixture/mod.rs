@@ -188,34 +188,3 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
         store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
     Ok(TestLocalStore { store })
 }
-
-#[derive(Debug)]
-pub struct TestLocallyStoredPod<'base> {
-    pub store: &'base mut TestLocalStore,
-    pub pod: Pod,
-}
-
-pub fn store_pod(pod: Pod, store: &mut TestLocalStore) -> Result<TestLocallyStoredPod> {
-    impl<'base> Deref for TestLocallyStoredPod<'base> {
-        type Target = Pod;
-        fn deref(&self) -> &Self::Target {
-            &self.pod
-        }
-    }
-
-    #[expect(clippy::unwrap_used)]
-    impl<'base> Drop for TestLocallyStoredPod<'base> {
-        fn drop(&mut self) {
-            self.store
-                .delete_pod(
-                    &self.pod.annotation.as_ref().unwrap().name,
-                    &self.pod.annotation.as_ref().unwrap().version,
-                )
-                .unwrap();
-        }
-    }
-
-    let pod_with_storage = TestLocallyStoredPod { store, pod };
-    pod_with_storage.store.save_pod(&pod_with_storage.pod)?;
-    Ok(pod_with_storage)
-}

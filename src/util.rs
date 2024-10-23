@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::any::type_name;
 
-#[expect(clippy::unwrap_used, clippy::missing_panics_doc)]
+#[expect(clippy::unwrap_used)]
 pub fn get_type_name<T>() -> String {
     type_name::<T>()
         .split("::")
