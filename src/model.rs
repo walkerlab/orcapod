@@ -39,7 +39,7 @@ pub fn from_yaml<T: DeserializeOwned>(
 
 // --- core model structs ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Pod {
     pub annotation: Option<Annotation>,
     pub hash: String,
@@ -89,7 +89,7 @@ impl Pod {
 
 // --- util types ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     pub name: String,
     pub version: String,

@@ -72,7 +72,7 @@ impl LocalFileStore {
         self.make_dir_path::<T>(hash).join(file_name)
     }
 
-    pub fn make_anno_path<T>(&self, hash: &str, name: &str, version: &str) -> PathBuf {
+    pub fn make_annotation_path<T>(&self, hash: &str, name: &str, version: &str) -> PathBuf {
         self.make_dir_path::<T>(hash)
             .join("annotations")
             .join(format!("{name}-{version}.yaml"))
@@ -103,7 +103,7 @@ impl LocalFileStore {
         if let Some(value) = annotation {
             // Annotation exist, thus save it
             Self::save_file(
-                &self.make_anno_path::<T>(hash, &value.name, &value.version),
+                &self.make_annotation_path::<T>(hash, &value.name, &value.version),
                 &serde_yaml::to_string(value)?,
                 true,
             )?;
@@ -129,7 +129,8 @@ impl LocalFileStore {
         // Get the spec and annotation yaml
         let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, "spec.yaml"))?;
 
-        let annotation_yaml = fs::read_to_string(self.make_anno_path::<T>(&hash, name, version))?;
+        let annotation_yaml =
+            fs::read_to_string(self.make_annotation_path::<T>(&hash, name, version))?;
 
         from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
     }
@@ -138,7 +139,7 @@ impl LocalFileStore {
         // Search the name ver index for the hash
         let hash = self.get_hash_from_cache::<T>(name, version)?;
 
-        fs::remove_file(self.make_anno_path::<T>(&hash, name, version))?;
+        fs::remove_file(self.make_annotation_path::<T>(&hash, name, version))?;
 
         // Remove from cache
         self.name_ver_cache
@@ -156,6 +157,29 @@ impl LocalFileStore {
 
         // Remove the entire item based on hash
         fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
+
+        // Delete everyting from cache that has the same hash
+        let cache = self
+            .name_ver_cache
+            .get_mut(&get_type_name::<T>())
+            .ok_or_else(|| KeyMissingFromBTree {
+                key: get_type_name::<T>(),
+            })?;
+
+        // Remove the target key first
+        cache.remove(&Self::make_name_ver_cache_key(name, version));
+
+        let mut keys_to_delete: Vec<String> = Vec::new();
+        // Search through the remaining values and make sure there is no occurance of hash left
+        for (annotation_key, item_hash) in cache.clone() {
+            if hash == *item_hash {
+                keys_to_delete.push(annotation_key);
+            }
+        }
+
+        for key in keys_to_delete {
+            cache.remove(&key);
+        }
 
         Ok(())
     }

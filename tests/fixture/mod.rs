@@ -1,18 +1,67 @@
 use anyhow::Result;
 use orcapod::{
-    model::{Annotation, Pod, StreamInfo},
+    model::{to_yaml, Annotation, Pod, StreamInfo},
     store::{filestore::LocalFileStore, Store},
 };
 use std::{
     collections::BTreeMap,
-    error::Error,
     fs,
     ops::{Deref, DerefMut},
     path::PathBuf,
 };
 use tempfile::tempdir;
 
-pub fn pod_style() -> Result<Pod> {
+#[derive(PartialEq, Clone)]
+pub enum Item {
+    Pod(Pod),
+}
+
+pub enum ItemType {
+    Pod,
+}
+
+impl Item {
+    #[expect(clippy::unwrap_used)]
+    pub fn get_name(&self) -> &str {
+        match self {
+            Self::Pod(pod) => &pod.annotation.as_ref().unwrap().name,
+        }
+    }
+
+    pub fn get_hash(&self) -> &str {
+        match self {
+            Self::Pod(pod) => &pod.hash,
+        }
+    }
+
+    #[expect(clippy::unwrap_used)]
+    pub fn get_version(&self) -> &str {
+        match self {
+            Self::Pod(pod) => &pod.annotation.as_ref().unwrap().version,
+        }
+    }
+
+    pub fn to_yaml(&self) -> Result<String> {
+        match self {
+            Self::Pod(pod) => to_yaml(pod),
+        }
+    }
+
+    #[expect(clippy::unwrap_used)]
+    pub fn set_name(&mut self, name: &str) {
+        match self {
+            Self::Pod(pod) => name.clone_into(&mut pod.annotation.as_mut().unwrap().name),
+        }
+    }
+}
+
+pub fn get_test_item(item_type: &ItemType) -> Result<Item> {
+    match item_type {
+        ItemType::Pod => Ok(Item::Pod(get_test_pod()?)),
+    }
+}
+
+pub fn get_test_pod() -> Result<Pod> {
     Pod::new(
         Annotation {
             name: "style-transfer".to_owned(),
@@ -77,6 +126,62 @@ impl Drop for TestLocalStore {
     }
 }
 
+#[expect(clippy::unwrap_used)]
+impl TestLocalStore {
+    /// # Panics
+    /// Will panic if fail to fetch stuff related to annotation
+    pub fn make_annotation_path(&self, item: &Item) -> PathBuf {
+        match item {
+            Item::Pod(pod) => self.store.make_annotation_path::<Pod>(
+                &pod.hash,
+                &pod.annotation.as_ref().unwrap().name,
+                &pod.annotation.as_ref().unwrap().version,
+            ),
+        }
+    }
+
+    pub fn make_path(&self, item_type: &ItemType, hash: &str, file_name: &str) -> PathBuf {
+        match item_type {
+            ItemType::Pod => self.store.make_path::<Pod>(hash, file_name),
+        }
+    }
+
+    pub fn save_item(&mut self, item: &Item) -> Result<()> {
+        match item {
+            Item::Pod(pod) => self.store.save_pod(pod),
+        }
+    }
+
+    pub fn load_item(&mut self, item_type: &ItemType, name: &str, version: &str) -> Result<Item> {
+        match item_type {
+            ItemType::Pod => Ok(Item::Pod(self.store.load_pod(name, version)?)),
+        }
+    }
+
+    pub fn list_item(&mut self, item_type: &ItemType) -> Result<&BTreeMap<String, String>> {
+        match item_type {
+            ItemType::Pod => self.store.list_pod(),
+        }
+    }
+
+    pub fn delete_item(&mut self, item_type: &ItemType, name: &str, version: &str) -> Result<()> {
+        match item_type {
+            ItemType::Pod => self.store.delete_pod(name, version),
+        }
+    }
+
+    pub fn delete_item_annotation(
+        &mut self,
+        item_type: &ItemType,
+        name: &str,
+        version: &str,
+    ) -> Result<()> {
+        match item_type {
+            ItemType::Pod => self.store.delete_pod_annotation(name, version),
+        }
+    }
+}
+
 pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     let store =
@@ -87,10 +192,10 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore> {
 #[derive(Debug)]
 pub struct TestLocallyStoredPod<'base> {
     pub store: &'base mut TestLocalStore,
-    pod: Pod,
+    pub pod: Pod,
 }
 
-pub fn add_pod_storage(pod: Pod, store: &mut TestLocalStore) -> Result<TestLocallyStoredPod> {
+pub fn store_pod(pod: Pod, store: &mut TestLocalStore) -> Result<TestLocallyStoredPod> {
     impl<'base> Deref for TestLocallyStoredPod<'base> {
         type Target = Pod;
         fn deref(&self) -> &Self::Target {

@@ -101,6 +101,7 @@ verbose_file_reads = { level = "allow", priority = 127 }
 use_debug = { level = "warn", priority = 127 }                         # debug print
 unseparated_literal_suffix = { level = "allow", priority = 127 }
 # temporary
+missing_panics_doc = { level = "allow", priority = 127 }
 missing_errors_doc = { level = "allow", priority = 127 }        # remove once we have docs
 single_call_fn = { level = "allow", priority = 127 }            # remove once other models are in
 tests_outside_test_module = { level = "allow", priority = 127 } # for now due to false-positive for integration tests: https://github.com/rust-lang/rust-clippy/pull/13038

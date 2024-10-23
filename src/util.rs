@@ -1,10 +1,7 @@
 use sha2::{Digest, Sha256};
 use std::any::type_name;
 
-#[expect(
-    clippy::unwrap_used,
-    reason = "This would never fail, it just a by product of vector operation"
-)]
+#[expect(clippy::unwrap_used, clippy::missing_panics_doc)]
 pub fn get_type_name<T>() -> String {
     type_name::<T>()
         .split("::")
