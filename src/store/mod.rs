@@ -1,11 +1,16 @@
-use crate::model::Pod;
-use std::{collections::BTreeMap, error::Error};
+use crate::{error::OrcaResult, model::Pod};
+use std::collections::BTreeMap;
 
+/// Standard behavior of any store backend supported.
 pub trait Store {
-    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
-    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>, Box<dyn Error>>;
-    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
+    /// How a pod is stored.
+    fn save_pod(&self, pod: &Pod) -> OrcaResult<()>;
+    /// How to load a stored pod into a model instance.
+    fn load_pod(&self, name: &str, version: &str) -> OrcaResult<Pod>;
+    /// How to query stored pods.
+    fn list_pod(&self) -> OrcaResult<BTreeMap<String, Vec<String>>>;
+    /// How to delete a stored pod (does not propagate).
+    fn delete_pod(&self, name: &str, version: &str) -> OrcaResult<()>;
 }
-
+/// Store implementation on a local filesystem.
 pub mod filestore;

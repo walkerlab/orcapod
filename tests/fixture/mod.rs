@@ -1,11 +1,12 @@
 use orcapod::{
+    error::OrcaResult,
     model::{Annotation, Pod, StreamInfo},
     store::{filestore::LocalFileStore, Store},
 };
-use std::{collections::BTreeMap, error::Error, fs, ops::Deref, path::PathBuf};
+use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf};
 use tempfile::tempdir;
 
-pub fn pod_style() -> Result<Pod, Box<dyn Error>> {
+pub fn pod_style() -> OrcaResult<Pod> {
     Pod::new(
         Annotation {
             name: "style-transfer".to_owned(),
@@ -50,11 +51,7 @@ pub struct TestLocalStore {
     store: LocalFileStore,
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Required since can't modify drop signature."
-)]
-pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore, Box<dyn Error>> {
+pub fn store_test(store_directory: Option<&str>) -> OrcaResult<TestLocalStore> {
     impl Deref for TestLocalStore {
         type Target = LocalFileStore;
         fn deref(&self) -> &Self::Target {
@@ -62,6 +59,10 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestLocalStore, Box<d
         }
     }
     impl Drop for TestLocalStore {
+        #[expect(
+            clippy::expect_used,
+            reason = "Required since can't modify drop signature."
+        )]
         fn drop(&mut self) {
             fs::remove_dir_all(self.store.directory.as_path()).expect("Failed to teardown store.");
         }
@@ -78,14 +79,7 @@ pub struct TestLocallyStoredPod<'base> {
     pod: Pod,
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Required since can't modify drop signature."
-)]
-pub fn add_pod_storage(
-    pod: Pod,
-    store: &TestLocalStore,
-) -> Result<TestLocallyStoredPod, Box<dyn Error>> {
+pub fn add_pod_storage(pod: Pod, store: &TestLocalStore) -> OrcaResult<TestLocallyStoredPod> {
     impl<'base> Deref for TestLocallyStoredPod<'base> {
         type Target = Pod;
         fn deref(&self) -> &Self::Target {
@@ -93,6 +87,10 @@ pub fn add_pod_storage(
         }
     }
     impl<'base> Drop for TestLocallyStoredPod<'base> {
+        #[expect(
+            clippy::expect_used,
+            reason = "Required since can't modify drop signature."
+        )]
         fn drop(&mut self) {
             self.store
                 .delete_pod(&self.pod.annotation.name, &self.pod.annotation.version)

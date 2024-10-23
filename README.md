@@ -7,7 +7,14 @@
 set -e                                    # stop early on non-zero exit
 cargo clippy --all-targets -- -D warnings # syntax and style tests
 cargo fmt --check                         # formatting test
-cargo llvm-cov -- --nocapture             # integration tests w/ coverage report
+cargo llvm-cov -- --nocapture             # integration tests w/ coverage summary
+cargo llvm-cov --html -- --nocapture      # integration tests w/ coverage report (target/llvm-cov/html/index.html)
+```
+
+## Docs
+
+```bash
+cargo doc --no-deps                       # gen api docs (target/doc/orcapod/index.html)
 ```
 
 ## Project Management
