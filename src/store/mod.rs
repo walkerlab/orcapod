@@ -1,22 +1,18 @@
-use crate::model::{Pod, PodJob};
-use std::error::Error;
+use crate::model::Pod;
+use anyhow::Result;
+use std::collections::BTreeMap;
 
-pub struct ItemInfo {
-    pub name: String,
-    pub hash: String,
-    pub version: String,
+pub enum ItemKey {
+    NameVer(String, String),
+    Hash(String),
 }
 
 pub trait Store {
-    fn save_pod(&self, pod: &Pod) -> Result<(), Box<dyn Error>>;
-    fn load_pod(&self, name: &str, version: &str) -> Result<Pod, Box<dyn Error>>;
-    fn list_pod(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>>;
-    fn delete_pod(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
-
-    fn save_pod_job(&self, pod_job: &PodJob) -> Result<(), Box<dyn Error>>;
-    fn load_pod_job(&self, name: &str, version: &str) -> Result<PodJob, Box<dyn Error>>;
-    fn list_pod_job(&self) -> Result<Vec<ItemInfo>, Box<dyn Error>>;
-    fn delete_pod_job(&self, name: &str, version: &str) -> Result<(), Box<dyn Error>>;
+    fn save_pod(&mut self, pod: &Pod) -> Result<()>;
+    fn load_pod(&mut self, item_key: &ItemKey) -> Result<Pod>;
+    fn list_pod(&mut self) -> Result<&BTreeMap<String, String>>;
+    fn delete_pod(&mut self, item_key: &ItemKey) -> Result<()>;
+    fn delete_annotation<T>(&mut self, name: &str, version: &str) -> Result<()>;
 }
 
 pub mod filestore;

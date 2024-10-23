@@ -1,15 +1,10 @@
 use crate::util::{get_type_name, hash};
+use anyhow::Result;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::{
-    collections::BTreeMap,
-    error::Error,
-    fs,
-    io::{BufRead, BufReader},
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
-pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
+pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
         &mapping
@@ -22,68 +17,67 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
     Ok(yaml)
 }
 
+/// Deserialize struct with optional annotation
 pub fn from_yaml<T: DeserializeOwned>(
-    annotation_file: &PathBuf,
-    spec_file: &PathBuf,
+    spec_yaml: &str,
     hash: &str,
-) -> Result<T, Box<dyn Error>> {
-    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(&annotation_file)?)?;
-    let spec_yaml = BufReader::new(fs::File::open(&spec_file)?)
-        .lines()
-        .skip(1)
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?
-        .join("\n");
+    annotation_yaml: Option<&str>,
+) -> Result<T> {
+    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
 
-    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&spec_yaml)?;
-    spec_mapping.insert("annotation".to_string(), Value::from(annotation));
-    spec_mapping.insert("hash".to_string(), Value::from(hash));
+    // Insert annotation if there is something
+    if let Some(yaml) = annotation_yaml {
+        let annotation_map: Mapping = serde_yaml::from_str(yaml)?;
+        spec_mapping.insert("annotation".into(), Value::from(annotation_map));
+    }
+    spec_mapping.insert("hash".to_owned(), Value::from(hash));
 
-    let instance: T = serde_yaml::from_str(&serde_yaml::to_string(&spec_mapping)?)?;
-    Ok(instance)
+    Ok(serde_yaml::from_str(&serde_yaml::to_string(
+        &spec_mapping,
+    )?)?)
 }
 
 // --- core model structs ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Pod {
-    pub annotation: Annotation,
+    pub annotation: Option<Annotation>,
     pub hash: String,
-    source_commit: String,
+    source_commit_url: String,
     image: String,
     command: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
-    min_cpus: f32,
-    min_memory: u64,
+    recommended_cpus: f32,
+    recommended_memory: u64,
     required_gpu: Option<GPURequirement>,
 }
 
 impl Pod {
     pub fn new(
         annotation: Annotation,
-        source_commit: String,
+        source_commit_url: String,
         image: String,
         command: String,
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
         recommended_cpus: f32,
-        min_memory: u64,
+        recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self> {
         let pod_no_hash = Self {
-            annotation,
+            annotation: Some(annotation),
             hash: String::new(),
-            source_commit,
+            source_commit_url,
             image,
             command,
             input_stream_map,
             output_dir,
             output_stream_map,
-            min_cpus: recommended_cpus,
-            min_memory,
+            recommended_cpus,
+            recommended_memory,
             required_gpu,
         };
         Ok(Self {
@@ -141,27 +135,27 @@ impl PodJob {
 
 // --- util types ---
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     pub name: String,
     pub version: String,
     pub description: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
     pub model: GPUModel,
     pub recommended_memory: u64,
     pub count: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
     NVIDIA(String), // String will be the specific model of the gpu
     AMD(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
     pub path: PathBuf,
     pub match_pattern: String,
