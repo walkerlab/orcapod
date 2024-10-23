@@ -51,7 +51,6 @@ restriction = "deny"
 nursery = "deny"
 cargo = "deny"
 
-allow-attributes-without-reason = { level = "allow", priority = 127 }
 arithmetic_side_effects = { level = "allow", priority = 127 }          # allow arithmatic for convenience though it could overflow
 as_conversions = { level = "allow", priority = 127 }                   # allow casting
 assertions_on_result_states = { level = "allow", priority = 127 }      # allow checking is_ok/is_err

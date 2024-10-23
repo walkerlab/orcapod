@@ -21,7 +21,7 @@ pub enum ItemType {
 }
 
 impl Item {
-    #[expect(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used, reason = "test")]
     pub fn get_name(&self) -> &str {
         match self {
             Self::Pod(pod) => &pod.annotation.as_ref().unwrap().name,
@@ -34,7 +34,7 @@ impl Item {
         }
     }
 
-    #[expect(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used, reason = "test")]
     pub fn get_version(&self) -> &str {
         match self {
             Self::Pod(pod) => &pod.annotation.as_ref().unwrap().version,
@@ -47,7 +47,7 @@ impl Item {
         }
     }
 
-    #[expect(clippy::unwrap_used)]
+    #[expect(clippy::unwrap_used, reason = "test")]
     pub fn set_name(&mut self, name: &str) {
         match self {
             Self::Pod(pod) => name.clone_into(&mut pod.annotation.as_mut().unwrap().name),
@@ -119,14 +119,14 @@ impl DerefMut for TestLocalStore {
     }
 }
 
-#[expect(clippy::expect_used)]
+#[expect(clippy::expect_used, reason = "test")]
 impl Drop for TestLocalStore {
     fn drop(&mut self) {
         fs::remove_dir_all(self.store.directory.as_path()).expect("Failed to teardown store.");
     }
 }
 
-#[expect(clippy::unwrap_used)]
+#[expect(clippy::unwrap_used, reason = "test")]
 impl TestLocalStore {
     /// # Panics
     /// Will panic if fail to fetch stuff related to annotation
