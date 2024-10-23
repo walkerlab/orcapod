@@ -37,7 +37,7 @@ impl Store for LocalFileStore {
         Ok(self
             .name_ver_cache
             .get(&get_type_name::<Pod>())
-            .ok_or(KeyMissingFromBTree {
+            .ok_or_else(|| KeyMissingFromBTree {
                 key: get_type_name::<Pod>(),
             })?)
     }
@@ -69,16 +69,13 @@ impl LocalFileStore {
     }
 
     pub fn make_path<T>(&self, hash: &str, file_name: &str) -> PathBuf {
-        let mut path = self.make_dir_path::<T>(hash);
-        path.push(file_name);
-        path
+        self.make_dir_path::<T>(hash).join(file_name)
     }
 
     pub fn make_anno_path<T>(&self, hash: &str, name: &str, version: &str) -> PathBuf {
-        let mut path = self.make_dir_path::<T>(hash);
-        path.push("annotations");
-        path.push(format!("{name}-{version}.yaml"));
-        path
+        self.make_dir_path::<T>(hash)
+            .join("annotations")
+            .join(format!("{name}-{version}.yaml"))
     }
 
     // Generic function for save load list delete
@@ -115,7 +112,7 @@ impl LocalFileStore {
             self.build_cache_if_not_exist::<T>()?;
             self.name_ver_cache
                 .get_mut(&get_type_name::<T>())
-                .ok_or(KeyMissingFromBTree {
+                .ok_or_else(|| KeyMissingFromBTree {
                     key: get_type_name::<T>(),
                 })?
                 .insert(format!("{}-{}", value.name, value.version), hash.to_owned());
@@ -146,7 +143,7 @@ impl LocalFileStore {
         // Remove from cache
         self.name_ver_cache
             .get_mut(&get_type_name::<T>())
-            .ok_or(KeyMissingFromBTree {
+            .ok_or_else(|| KeyMissingFromBTree {
                 key: get_type_name::<T>(),
             })?
             .remove(&Self::make_name_ver_cache_key(name, version));
@@ -175,8 +172,8 @@ impl LocalFileStore {
         self.name_ver_cache
             .insert(type_name.clone(), BTreeMap::new());
 
-        let mut search_pattern = self.make_dir_path::<T>("*");
-        search_pattern.push("annotations/*");
+        let search_pattern = self.make_dir_path::<T>("*").join("annotations/*");
+
         for path in glob::glob(&search_pattern.to_string_lossy())? {
             let path_str: String = path?.to_string_lossy().to_string();
 
@@ -187,7 +184,7 @@ impl LocalFileStore {
             // Insert into the cache
             self.name_ver_cache
                 .get_mut(&type_name)
-                .ok_or(KeyMissingFromBTree {
+                .ok_or_else(|| KeyMissingFromBTree {
                     key: get_type_name::<T>(),
                 })?
                 .insert(
@@ -210,11 +207,11 @@ impl LocalFileStore {
         let hash = self
             .name_ver_cache
             .get(&get_type_name::<T>())
-            .ok_or(KeyMissingFromBTree {
+            .ok_or_else(|| KeyMissingFromBTree {
                 key: get_type_name::<T>(),
             })?
             .get(&format!("{name}-{version}"))
-            .ok_or(NoAnnotationFound {
+            .ok_or_else(|| NoAnnotationFound {
                 class: get_type_name::<T>(),
                 name: name.into(),
                 version: version.into(),
@@ -231,7 +228,7 @@ impl LocalFileStore {
     fn save_file(path: &PathBuf, content: impl AsRef<[u8]>, fail_if_exists: bool) -> Result<()> {
         fs::create_dir_all(
             path.parent()
-                .ok_or(FileHasNoParent { path: path.clone() })?,
+                .ok_or_else(|| FileHasNoParent { path: path.clone() })?,
         )?;
         let file_exists = fs::exists(path)?;
         if file_exists {
