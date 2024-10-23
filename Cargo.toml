@@ -95,7 +95,6 @@ std_instead_of_core = { level = "allow", priority = 127 }              # we shou
 string_add = { level = "allow", priority = 127 }                       # simple concat ok
 string_lit_chars_any = { level = "allow", priority = 127 }             # favor readability until a perf case comes up
 todo = { level = "warn", priority = 127 }                              # warn todos
-verbose_file_reads = { level = "allow", priority = 127 }
 use_debug = { level = "warn", priority = 127 }                         # debug print
 unseparated_literal_suffix = { level = "allow", priority = 127 }
 # temporary
