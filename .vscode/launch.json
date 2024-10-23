@@ -33,6 +33,8 @@
                     "test",
                     "--no-run",
                     "--package=orcapod",
+                    "--test",
+                    "model"
                 ],
                 "filter": {
                     "kind": "test"
