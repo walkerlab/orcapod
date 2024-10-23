@@ -1,7 +1,7 @@
 use anyhow::Result;
 use orcapod::{
     model::{to_yaml, Annotation, Pod, StreamInfo},
-    store::{filestore::LocalFileStore, Store},
+    store::{filestore::LocalFileStore, ItemKey, Store},
 };
 use std::{
     collections::BTreeMap,
@@ -38,6 +38,12 @@ impl Item {
     pub fn get_version(&self) -> &str {
         match self {
             Self::Pod(pod) => &pod.annotation.as_ref().unwrap().version,
+        }
+    }
+
+    pub const fn is_annotation_none(&self) -> bool {
+        match self {
+            Self::Pod(pod) => pod.annotation.is_none(),
         }
     }
 
@@ -152,9 +158,9 @@ impl TestLocalStore {
         }
     }
 
-    pub fn load_item(&mut self, item_type: &ItemType, name: &str, version: &str) -> Result<Item> {
+    pub fn load_item(&mut self, item_type: &ItemType, item_key: &ItemKey) -> Result<Item> {
         match item_type {
-            ItemType::Pod => Ok(Item::Pod(self.store.load_pod(name, version)?)),
+            ItemType::Pod => Ok(Item::Pod(self.store.load_pod(item_key)?)),
         }
     }
 
@@ -164,9 +170,9 @@ impl TestLocalStore {
         }
     }
 
-    pub fn delete_item(&mut self, item_type: &ItemType, name: &str, version: &str) -> Result<()> {
+    pub fn delete_item(&mut self, item_type: &ItemType, item_key: &ItemKey) -> Result<()> {
         match item_type {
-            ItemType::Pod => self.store.delete_pod(name, version),
+            ItemType::Pod => self.store.delete_pod(item_key),
         }
     }
 

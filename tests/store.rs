@@ -3,6 +3,7 @@
 pub mod fixture;
 use anyhow::Result;
 use fixture::{get_test_item, store_test, ItemType};
+use orcapod::store::ItemKey;
 use std::fs;
 use tempfile::tempdir;
 
@@ -38,11 +39,22 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         );
 
         // Test load
-        let loaded_item = store.load_item(item_type, item.get_name(), item.get_version())?;
+        let loaded_item = store.load_item(
+            item_type,
+            &ItemKey::NameVer(item.get_name().into(), item.get_version().into()),
+        )?;
 
         assert!(
             loaded_item == item,
             "Loaded item does not match the item was saved"
+        );
+
+        let loaded_item_by_hash =
+            store.load_item(item_type, &ItemKey::Hash(item.get_hash().into()))?;
+
+        assert!(
+            loaded_item_by_hash.is_annotation_none(),
+            "Annotation should be empty"
         );
 
         // Test list pod
@@ -72,7 +84,10 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         );
 
         // Delete the first pod
-        store.delete_item(item_type, item.get_name(), item.get_version())?;
+        store.delete_item(
+            item_type,
+            &ItemKey::NameVer(item.get_name().into(), item.get_version().into()),
+        )?;
 
         assert!(
             store.list_item(item_type)?.is_empty(),
@@ -89,7 +104,25 @@ fn test_item_store_with_annotation(item_type: &ItemType) -> Result<()> {
         );
 
         // Delete the entire pod which should get rid of annotation
-        store.delete_item(item_type, item.get_name(), item.get_version())?;
+        store.delete_item(
+            item_type,
+            &ItemKey::NameVer(item.get_name().into(), item.get_version().into()),
+        )?;
+
+        assert!(store.list_item(item_type)?.is_empty(), "List item should be empty after deleting the object itself regardless of how many annotations there are");
+
+        // Test the hash version
+        // Test the case with where delete wipes out all annotation
+        store.save_item(&item)?;
+        store.save_item(&item_2)?;
+
+        assert!(
+            store.list_item(item_type)?.len() == 2,
+            "List item should be length of 2"
+        );
+
+        // Delete the entire pod which should get rid of annotation
+        store.delete_item(item_type, &ItemKey::Hash(item.get_hash().into()))?;
 
         assert!(store.list_item(item_type)?.is_empty(), "List item should be empty after deleting the object itself regardless of how many annotations there are");
 

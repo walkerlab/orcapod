@@ -1,4 +1,5 @@
 use colored::Colorize;
+use serde_yaml;
 use std::{
     error::Error,
     fmt,

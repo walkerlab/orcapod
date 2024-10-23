@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::Store;
+use super::{ItemKey, Store};
 
 #[derive(Debug)]
 pub struct LocalFileStore {
@@ -27,8 +27,8 @@ impl Store for LocalFileStore {
         self.save_item(pod, &pod.hash, pod.annotation.as_ref())
     }
 
-    fn load_pod(&mut self, name: &str, version: &str) -> Result<Pod> {
-        self.load_item::<Pod>(name, version)
+    fn load_pod(&mut self, item_key: &ItemKey) -> Result<Pod> {
+        self.load_item::<Pod>(item_key)
     }
 
     /// Return the name version index btree where key is name-version and value is hash of pod
@@ -42,8 +42,8 @@ impl Store for LocalFileStore {
             })?)
     }
 
-    fn delete_pod(&mut self, name: &str, version: &str) -> Result<()> {
-        self.delete_item::<Pod>(name, version)
+    fn delete_pod(&mut self, item_key: &ItemKey) -> Result<()> {
+        self.delete_item::<Pod>(item_key)
     }
 
     fn delete_annotation<T>(&mut self, name: &str, version: &str) -> Result<()> {
@@ -134,49 +134,83 @@ impl LocalFileStore {
     }
 
     /// Generic function for loading spec.yaml into memory
-    fn load_item<T: DeserializeOwned>(&mut self, name: &str, version: &str) -> Result<T> {
-        // Search the name-ver index
-        let hash = self.get_hash_from_cache::<T>(name, version)?;
+    fn load_item<T: DeserializeOwned>(&mut self, item_key: &ItemKey) -> Result<T> {
+        match item_key {
+            ItemKey::NameVer(name, version) => {
+                // Search the name-ver index
+                let hash = self.get_hash_from_cache::<T>(name, version)?;
 
-        // Get the spec and annotation yaml
-        let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, "spec.yaml"))?;
+                // Get the spec and annotation yaml
+                let spec_yaml = fs::read_to_string(self.make_path::<T>(&hash, "spec.yaml"))?;
 
-        let annotation_yaml =
-            fs::read_to_string(self.make_annotation_path::<T>(&hash, name, version))?;
+                let annotation_yaml =
+                    fs::read_to_string(self.make_annotation_path::<T>(&hash, name, version))?;
 
-        from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
-    }
-
-    fn delete_item<T>(&mut self, name: &str, version: &str) -> Result<()> {
-        // Search the name-ver index
-        let hash = self.get_hash_from_cache::<T>(name, version)?;
-
-        // Remove the entire item based on hash
-        fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
-
-        // Delete everyting from cache that has the same hash
-        let cache = self
-            .name_ver_cache
-            .get_mut(&get_type_name::<T>())
-            .ok_or_else(|| KeyMissingFromBTree {
-                key: get_type_name::<T>(),
-            })?;
-
-        // Remove the target key first
-        cache.remove(&Self::make_name_ver_cache_key(name, version));
-
-        let mut keys_to_delete: Vec<String> = Vec::new();
-        // Search through the remaining values and make sure there is no occurance of hash left
-        for (annotation_key, item_hash) in cache.clone() {
-            if hash == *item_hash {
-                keys_to_delete.push(annotation_key);
+                from_yaml::<T>(&spec_yaml, &hash, Some(&annotation_yaml))
+            }
+            ItemKey::Hash(hash) => {
+                // Get the spec and annotation yaml
+                let spec_yaml = fs::read_to_string(self.make_path::<T>(hash, "spec.yaml"))?;
+                from_yaml::<T>(&spec_yaml, hash, None)
             }
         }
+    }
 
-        for key in keys_to_delete {
-            cache.remove(&key);
+    fn delete_item<T>(&mut self, item_key: &ItemKey) -> Result<()> {
+        match item_key {
+            ItemKey::NameVer(name, version) => {
+                // Search the name-ver index
+                let hash = self.get_hash_from_cache::<T>(name, version)?;
+
+                // Remove the entire item based on hash
+                fs::remove_dir_all(self.make_dir_path::<T>(&hash))?;
+
+                // Delete everyting from cache that has the same hash
+                let cache = self
+                    .name_ver_cache
+                    .get_mut(&get_type_name::<T>())
+                    .ok_or_else(|| KeyMissingFromBTree {
+                        key: get_type_name::<T>(),
+                    })?;
+
+                // Remove the target key first
+                cache.remove(&Self::make_name_ver_cache_key(name, version));
+
+                let mut keys_to_delete: Vec<String> = Vec::new();
+                // Search through the remaining values and make sure there is no occurance of hash left
+                for (annotation_key, item_hash) in cache.clone() {
+                    if hash == *item_hash {
+                        keys_to_delete.push(annotation_key);
+                    }
+                }
+
+                for key in keys_to_delete {
+                    cache.remove(&key);
+                }
+            }
+            ItemKey::Hash(hash) => {
+                fs::remove_dir_all(self.make_dir_path::<T>(hash))?;
+
+                let cache = self
+                    .name_ver_cache
+                    .get_mut(&get_type_name::<T>())
+                    .ok_or_else(|| KeyMissingFromBTree {
+                        key: get_type_name::<T>(),
+                    })?;
+
+                let mut keys_to_delete: Vec<String> = Vec::new();
+                // Search through the remaining values and make sure there is no occurance of hash left
+                for (annotation_key, item_hash) in cache.clone() {
+                    if *hash == *item_hash {
+                        keys_to_delete.push(annotation_key);
+                    }
+                }
+
+                for key in keys_to_delete {
+                    cache.remove(&key);
+                }
+            }
         }
-
         Ok(())
     }
 
