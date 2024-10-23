@@ -30,6 +30,7 @@ sha2 = "0.10.8"
 glob = "0.3.1"
 regex = "1.11.0"
 colored = "2.1.0"
+anyhow = "1.0.90"
 
 [dev-dependencies]
 tempfile = "3.13.0"
@@ -72,6 +73,7 @@ missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing
 missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok
 missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
 missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
+multiple_crate_versions = { level = "allow", priority = 127 }          # This is to deal with colorized using an older dependency vs fs4
 must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
 mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok
 non_ascii_literal = { level = "allow", priority = 127 }                # non-ascii char in string literal ok
@@ -94,8 +96,8 @@ string_add = { level = "allow", priority = 127 }                       # simple 
 string_lit_chars_any = { level = "allow", priority = 127 }             # favor readability until a perf case comes up
 todo = { level = "warn", priority = 127 }                              # warn todos
 use_debug = { level = "warn", priority = 127 }                         # debug print
-
 # temporary
+missing_panics_doc = { level = "allow", priority = 127 }        # remove because of constant panic in test due to unwrap
 missing_errors_doc = { level = "allow", priority = 127 }        # remove once we have docs
 single_call_fn = { level = "allow", priority = 127 }            # remove once other models are in
 tests_outside_test_module = { level = "allow", priority = 127 } # for now due to false-positive for integration tests: https://github.com/rust-lang/rust-clippy/pull/13038

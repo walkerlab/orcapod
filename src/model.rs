@@ -1,15 +1,10 @@
 use crate::util::{get_type_name, hash};
+use anyhow::Result;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
-use std::{
-    collections::BTreeMap,
-    error::Error,
-    fs,
-    io::{BufRead, BufReader},
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
-pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
+pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
     let mut yaml = serde_yaml::to_string(
         &mapping
@@ -22,31 +17,31 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String, Box<dyn Error>> {
     Ok(yaml)
 }
 
+/// Deserialize struct with optional annotation
 pub fn from_yaml<T: DeserializeOwned>(
-    annotation_file: &Path,
-    spec_file: &Path,
+    spec_yaml: &str,
     hash: &str,
-) -> Result<T, Box<dyn Error>> {
-    let annotation: Mapping = serde_yaml::from_str(&fs::read_to_string(annotation_file)?)?;
-    let spec_yaml = BufReader::new(fs::File::open(spec_file)?)
-        .lines()
-        .skip(1)
-        .collect::<Result<Vec<_>, _>>()?
-        .join("\n");
+    annotation_yaml: Option<&str>,
+) -> Result<T> {
+    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
 
-    let mut spec_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&spec_yaml)?;
-    spec_mapping.insert("annotation".to_owned(), Value::from(annotation));
+    // Insert annotation if there is something
+    if let Some(yaml) = annotation_yaml {
+        let annotation_map: Mapping = serde_yaml::from_str(yaml)?;
+        spec_mapping.insert("annotation".into(), Value::from(annotation_map));
+    }
     spec_mapping.insert("hash".to_owned(), Value::from(hash));
 
-    let instance: T = serde_yaml::from_str(&serde_yaml::to_string(&spec_mapping)?)?;
-    Ok(instance)
+    Ok(serde_yaml::from_str(&serde_yaml::to_string(
+        &spec_mapping,
+    )?)?)
 }
 
 // --- core model structs ---
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Pod {
-    pub annotation: Annotation,
+    pub annotation: Option<Annotation>,
     pub hash: String,
     source_commit_url: String,
     image: String,
@@ -71,9 +66,9 @@ impl Pod {
         recommended_cpus: f32,
         recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<Self> {
         let pod_no_hash = Self {
-            annotation,
+            annotation: Some(annotation),
             hash: String::new(),
             source_commit_url,
             image,
@@ -86,35 +81,81 @@ impl Pod {
             required_gpu,
         };
         Ok(Self {
-            hash: hash(&to_yaml::<Self>(&pod_no_hash)?),
+            hash: hash(&to_yaml(&pod_no_hash)?),
             ..pod_no_hash
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PodJob {
+    pub annotation: Annotation,
+    pub hash: String,
+    pub pod: Pod,
+    input_volume_map: BTreeMap<PathBuf, PathBuf>,
+    output_volume_map: BTreeMap<PathBuf, PathBuf>,
+    cpu_limit: f32, // Num of cpu to limit the pod from
+    mem_limit: u64, // Bytes to limit memory
+    retry_policy: PodRetryPolicy,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum PodRetryPolicy {
+    NoRetry,
+    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
+}
+
+impl PodJob {
+    pub fn new(
+        annotation: Annotation,
+        pod: Pod,
+        input_volume_map: BTreeMap<PathBuf, PathBuf>,
+        output_volume_map: BTreeMap<PathBuf, PathBuf>,
+        cpu_limit: f32,
+        mem_limit: u64,
+        retry_policy: PodRetryPolicy,
+    ) -> Result<Self, Box<dyn Error>> {
+        let pod_job_no_hash = PodJob {
+            annotation,
+            hash: String::new(),
+            pod,
+            input_volume_map,
+            output_volume_map,
+            cpu_limit,
+            mem_limit,
+            retry_policy,
+        };
+
+        Ok(Self {
+            hash: hash(&to_yaml(&pod_job_no_hash)?),
+            ..pod_job_no_hash
         })
     }
 }
 
 // --- util types ---
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     pub name: String,
     pub version: String,
     pub description: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
     pub model: GPUModel,
     pub recommended_memory: u64,
     pub count: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
     NVIDIA(String), // String will be the specific model of the gpu
     AMD(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
     pub path: PathBuf,
     pub match_pattern: String,

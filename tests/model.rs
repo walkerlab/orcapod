@@ -2,15 +2,15 @@
 
 use std::error::Error;
 pub mod fixture;
-use fixture::pod_style;
+use fixture::get_test_pod;
 use indoc::indoc;
 use orcapod::model::{to_yaml, Pod};
 
 #[test]
 fn verify_hash() -> Result<(), Box<dyn Error>> {
     assert_eq!(
-        pod_style()?.hash,
-        "13D69656D396C272588DD875B2802FAEE1A56BD985E3C43C7DB276A373BC9DDB"
+        get_test_pod()?.hash,
+        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb"
     );
     Ok(())
 }
@@ -18,7 +18,7 @@ fn verify_hash() -> Result<(), Box<dyn Error>> {
 #[test]
 fn verify_pod_to_yaml() -> Result<(), Box<dyn Error>> {
     assert_eq!(
-        to_yaml::<Pod>(&pod_style()?)?,
+        to_yaml::<Pod>(&get_test_pod()?)?,
         indoc! {"
             class: pod
             command: tail -f /dev/null

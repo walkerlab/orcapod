@@ -118,12 +118,20 @@ impl Display for NoAnnotationFound {
     }
 }
 
-/// Raise error when regex doesn't match
 #[derive(Debug)]
-pub struct NoRegexMatch;
-impl Error for NoRegexMatch {}
-impl Display for NoRegexMatch {
+pub struct KeyMissingFromBTree {
+    pub key: String,
+}
+
+impl Error for KeyMissingFromBTree {}
+
+impl Display for KeyMissingFromBTree {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "No match for regex.")
+        write!(
+            f,
+            "{}{}",
+            "Fail to get key ".bright_red(),
+            self.key.bright_cyan(),
+        )
     }
 }
