@@ -38,4 +38,3 @@ pub trait Orchestrator {
 
 /// Orchestration implementation for Docker backend.
 pub mod docker;
-pub mod test;
