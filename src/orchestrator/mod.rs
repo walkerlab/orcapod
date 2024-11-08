@@ -1,6 +1,7 @@
 // use crate::error::Result;
-use std::{collections::BTreeMap, error::Error};
+use std::error::Error;
 
+#[expect(dead_code, reason = "debug")]
 #[derive(Debug)]
 pub(crate) struct ContainerInfo {
     name: String,

@@ -1,6 +1,6 @@
 // docker run --rm -d --entrypoint tail -v /tmp/stuff-outer:/tmp/stuff-inner:ro --cpus=0.5 --memory=500m alpine:3.14 -f /dev/null
 use crate::orchestrator::{ContainerInfo, Orchestrator};
-use bollard::{container::ListContainersOptions, secret::ContainerSummary, Docker};
+use bollard::{container::ListContainersOptions, Docker};
 use std::{collections::HashMap, default::Default, error::Error};
 use tokio::runtime::Runtime;
 
@@ -75,6 +75,7 @@ impl Orchestrator for LocalDockerOrchestrator {
     //     Ok(())
     // }
     #[expect(clippy::string_slice, reason = "debug")]
+    #[expect(clippy::use_debug, reason = "debug")]
     fn list() -> Result<(), Box<dyn Error>> {
         let docker = Docker::connect_with_local_defaults()?;
         let tokio_runtime = Runtime::new()?;
