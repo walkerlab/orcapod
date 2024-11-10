@@ -8,7 +8,6 @@ use colored::Colorize;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
-    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -34,7 +33,7 @@ impl Store for LocalFileStore {
         self.load_model(model_id)
     }
 
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>> {
+    fn list_pod(&self) -> Result<Vec<ModelInfo>> {
         self.list_model::<Pod>()
     }
 
@@ -204,24 +203,9 @@ impl LocalFileStore {
         }
     }
 
-    fn list_model<T>(&self) -> Result<BTreeMap<String, Vec<String>>> {
-        let (names, (hashes, versions)) = Self::find_annotation(
-            &self.make_path::<T>("*", &Self::make_annotation_relpath("*", "*")),
-        )?
-        .map(|model_info| {
-            let resolved_model_info = model_info?;
-            Ok((
-                resolved_model_info.name,
-                (resolved_model_info.hash, resolved_model_info.version),
-            ))
-        })
-        .collect::<Result<(Vec<_>, (Vec<_>, Vec<_>))>>()?;
-
-        Ok(BTreeMap::from([
-            (String::from("name"), names),
-            (String::from("hash"), hashes),
-            (String::from("version"), versions),
-        ]))
+    fn list_model<T>(&self) -> Result<Vec<ModelInfo>> {
+        Self::find_annotation(&self.make_path::<T>("*", &Self::make_annotation_relpath("*", "*")))?
+            .collect()
     }
 
     fn delete_model<T>(&self, model_id: &ModelID) -> Result<()> {

@@ -48,6 +48,8 @@ pub fn from_yaml<T: DeserializeOwned>(
 /// A reusable, containerized computational unit.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Pod {
+    /// Metadata that doesn't affect reproducibility.
+    pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
     pub hash: String,
     source_commit_url: String,
@@ -58,8 +60,6 @@ pub struct Pod {
     output_stream_map: BTreeMap<String, StreamInfo>,
     recommended_cpus: f32,
     recommended_memory: u64,
-    /// Metadata that doesn't affect reproducibility.
-    pub annotation: Option<Annotation>,
     required_gpu: Option<GPURequirement>,
 }
 
@@ -70,6 +70,7 @@ impl Pod {
     ///
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
+        annotation: Option<Annotation>,
         source_commit_url: String,
         image: String,
         command: String,
@@ -78,10 +79,10 @@ impl Pod {
         output_stream_map: BTreeMap<String, StreamInfo>,
         recommended_cpus: f32,
         recommended_memory: u64,
-        annotation: Option<Annotation>,
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
+            annotation,
             hash: String::new(),
             source_commit_url,
             image,
@@ -91,7 +92,6 @@ impl Pod {
             output_stream_map,
             recommended_cpus,
             recommended_memory,
-            annotation,
             required_gpu,
         };
         Ok(Self {

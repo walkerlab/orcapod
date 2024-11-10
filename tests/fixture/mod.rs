@@ -20,6 +20,11 @@ use tempfile::tempdir;
 
 pub fn pod_style() -> Result<Pod> {
     Pod::new(
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod.".to_owned(),
+            version: "0.67.0".to_owned(),
+        }),
         "https://github.com/zenml-io/zenml/tree/0.67.0".to_owned(),
         "zenmldocker/zenml-server:0.67.0".to_owned(),
         "tail -f /dev/null".to_owned(),
@@ -49,27 +54,11 @@ pub fn pod_style() -> Result<Pod> {
         )]),
         0.25,                // 250 millicores as frac cores
         (2_u64) * (1 << 30), // 2GiB in bytes
-        Some(Annotation {
-            name: "style-transfer".to_owned(),
-            description: "This is an example pod.".to_owned(),
-            version: "0.67.0".to_owned(),
-        }),
         None,
     )
 }
 
 pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
-    impl Deref for TestStore {
-        type Target = LocalFileStore;
-        fn deref(&self) -> &Self::Target {
-            &self.store
-        }
-    }
-    impl Drop for TestStore {
-        fn drop(&mut self) {
-            fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
-        }
-    }
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     let store =
         store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
@@ -80,13 +69,6 @@ pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
 // --- helper functions ---
 
 pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
-    impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
-        fn drop(&mut self) {
-            self.model
-                .delete(self.store)
-                .expect("Failed to teardown model.");
-        }
-    }
     model.save(store)?;
     let model_with_storage = TestStoredModel { store, model };
     Ok(model_with_storage)
@@ -103,6 +85,27 @@ pub struct TestStore {
 pub struct TestStoredModel<'base, T: TestSetup> {
     pub store: &'base TestStore,
     pub model: T,
+}
+
+impl Deref for TestStore {
+    type Target = LocalFileStore;
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+
+impl Drop for TestStore {
+    fn drop(&mut self) {
+        fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
+    }
+}
+
+impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
+    fn drop(&mut self) {
+        self.model
+            .delete(self.store)
+            .expect("Failed to teardown model.");
+    }
 }
 
 pub trait TestSetup {

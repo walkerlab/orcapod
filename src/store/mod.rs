@@ -1,5 +1,4 @@
 use crate::{error::Result, model::Pod};
-use std::collections::BTreeMap;
 
 /// Options for identifying a model.
 pub enum ModelID {
@@ -9,10 +8,15 @@ pub enum ModelID {
     Annotation(String, String),
 }
 
-pub(crate) struct ModelInfo {
-    name: String,
-    version: String,
-    hash: String,
+/// Metadata for a model.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ModelInfo {
+    /// A model's name.
+    pub name: String,
+    /// A model's version.
+    pub version: String,
+    /// A model's hash.
+    pub hash: String,
 }
 
 /// Standard behavior of any store backend supported.
@@ -35,7 +39,7 @@ pub trait Store {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from existing pods in the store.
-    fn list_pod(&self) -> Result<BTreeMap<String, Vec<String>>>;
+    fn list_pod(&self) -> Result<Vec<ModelInfo>>;
     /// How to explicitly delete a stored pod and all associated annotations (does not propagate).
     ///
     /// # Errors

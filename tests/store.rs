@@ -6,9 +6,9 @@ use fixture::{add_storage, pod_style, store_test, TestSetup};
 use orcapod::{
     error::Result,
     model::{Annotation, Pod},
-    store::{filestore::LocalFileStore, ModelID, Store},
+    store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
 };
-use std::{collections::BTreeMap, fmt::Debug, fs, path::Path};
+use std::{fmt::Debug, fs, path::Path};
 use tempfile::tempdir;
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
@@ -34,14 +34,11 @@ where
         .expect("Annotation missing from `pod_style`");
     assert_eq!(
         store.list_pod()?,
-        BTreeMap::from([
-            (
-                "hash".to_owned(),
-                vec![stored_model.model.get_hash().to_owned()],
-            ),
-            ("name".to_owned(), vec![annotation.name.clone()],),
-            ("version".to_owned(), vec![annotation.version.clone()],),
-        ]),
+        vec![ModelInfo {
+            name: annotation.name.clone(),
+            version: annotation.version.clone(),
+            hash: stored_model.model.get_hash().to_owned()
+        }],
         "List didn't match."
     );
     let loaded_model = stored_model.model.load(&store)?;
@@ -98,15 +95,7 @@ fn pod_files() -> Result<()> {
 #[test]
 fn pod_list_empty() -> Result<()> {
     let store = store_test(None)?;
-    assert_eq!(
-        store.list_pod()?,
-        BTreeMap::from([
-            ("hash".to_owned(), vec![],),
-            ("name".to_owned(), vec![],),
-            ("version".to_owned(), vec![],),
-        ]),
-        "Pod list is not empty."
-    );
+    assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
 
@@ -137,36 +126,28 @@ fn pod_annotation_delete() -> Result<()> {
     store.save_pod(&stored_model.model)?;
     assert_eq!(
         store.list_pod()?,
-        BTreeMap::from([
-            (
-                "hash".to_owned(),
-                vec![
-                    "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb".to_owned(),
-                    "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb".to_owned()
-                ],
-            ),
-            (
-                "name".to_owned(),
-                vec!["new-name".to_owned(), "style-transfer".to_owned()],
-            ),
-            (
-                "version".to_owned(),
-                vec!["0.5.0".to_owned(), "0.67.0".to_owned()],
-            ),
-        ]),
+        vec![
+            ModelInfo {
+                name: "new-name".to_owned(),
+                version: "0.5.0".to_owned(),
+                hash: "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb".to_owned()
+            },
+            ModelInfo {
+                name: "style-transfer".to_owned(),
+                version: "0.67.0".to_owned(),
+                hash: "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb".to_owned()
+            }
+        ],
         "Pod list didn't return 2 expected entries."
     );
     store.delete_annotation::<Pod>("new-name", "0.5.0")?;
     assert_eq!(
         store.list_pod()?,
-        BTreeMap::from([
-            (
-                "hash".to_owned(),
-                vec!["13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb".to_owned()],
-            ),
-            ("name".to_owned(), vec!["style-transfer".to_owned()],),
-            ("version".to_owned(), vec!["0.67.0".to_owned()],),
-        ]),
+        vec![ModelInfo {
+            name: "style-transfer".to_owned(),
+            version: "0.67.0".to_owned(),
+            hash: "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb".to_owned()
+        }],
         "Pod list didn't return 1 expected entry."
     );
     assert!(
