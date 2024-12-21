@@ -23,7 +23,8 @@
 		"--cpus=2",
 		"--memory=8gb",
 		"--privileged",
-		"--gpus=all"
+		"--gpus=all",
+		"--cgroupns=host"
 	],
 	"customizations": {
 		"vscode": {
