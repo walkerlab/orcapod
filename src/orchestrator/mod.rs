@@ -26,7 +26,7 @@ pub trait Orchestrator {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from containers.
-    fn list() -> Result<(), Box<dyn Error>>;
+    fn list(&self) -> Result<(), Box<dyn Error>>;
     // fn metrics() -> OrchestratorMetrics;
 }
 

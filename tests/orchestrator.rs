@@ -3,6 +3,7 @@ use std::error::Error;
 
 #[test]
 fn docker_smoke() -> Result<(), Box<dyn Error>> {
-    LocalDockerOrchestrator::list()?;
+    let orchestrator = LocalDockerOrchestrator::new()?;
+    orchestrator.list()?;
     Ok(())
 }

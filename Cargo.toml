@@ -54,7 +54,7 @@ restriction = "deny"
 nursery = "deny"
 cargo = "deny"
 
-arithmetic_side_effects = { level = "allow", priority = 127 }          # allow arithmatic for convenience though it could overflow
+arithmetic_side_effects = { level = "allow", priority = 127 }          # allow arithmetic for convenience though it could overflow
 as_conversions = { level = "allow", priority = 127 }                   # allow casting
 assertions_on_result_states = { level = "allow", priority = 127 }      # allow checking is_ok/is_err
 big_endian_bytes = { level = "allow", priority = 127 }                 # allow to_be_bytes / from_be_bytes
@@ -62,9 +62,9 @@ blanket_clippy_restriction_lints = { level = "allow", priority = 127 } # allow s
 default_numeric_fallback = { level = "allow", priority = 127 }         # allow type inferred by numeric literal
 disallowed_script_idents = { level = "allow", priority = 127 }         # skip since we use only ascii
 else_if_without_else = { level = "allow", priority = 127 }             # missing else ok
-exhaustive_enums = { level = "allow", priority = 127 }                 # revist once lib is ready to be used externally
-exhaustive_structs = { level = "allow", priority = 127 }               # revist once lib is ready to be used externally
-float_arithmetic = { level = "allow", priority = 127 }                 # allow float arithmatic
+exhaustive_enums = { level = "allow", priority = 127 }                 # revisit once lib is ready to be used externally
+exhaustive_structs = { level = "allow", priority = 127 }               # revisit once lib is ready to be used externally
+float_arithmetic = { level = "allow", priority = 127 }                 # allow float arithmetic
 host_endian_bytes = { level = "allow", priority = 127 }                # allow to_ne_bytes / from_ne_bytes
 impl_trait_in_params = { level = "allow", priority = 127 }             # impl in params ok
 implicit_return = { level = "allow", priority = 127 }                  # missing return ok

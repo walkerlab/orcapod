@@ -1,14 +1,44 @@
 {
-    "ignoreWords": [
-        "relpath",
+    "words": [
         "filestore",
         "cpus",
         "orcapod",
+        "zenml",
+        "clippy",
+        "idents",
+        "serde",
+        "cuda"
+    ],
+    "ignoreWords": [
+        "relpath",
         "tempfile",
         "tempdir",
         "millicores",
         "zenmldocker",
-        "zenml",
-        "indoc"
+        "indoc",
+        "rustc",
+        "println",
+        "eprintln",
+        "nocapture",
+        "hashbrown",
+        "indexmap",
+        "gnullvm",
+        "msvc",
+        "taiki",
+        "keyrings",
+        "dearmor",
+        "dpkg",
+        "usermod",
+        "NOPASSWD",
+        "rustup",
+        "adduser",
+        "vadimcn",
+        "hexeditor",
+        "tamasfe",
+        "eamodio",
+        "cgroupns",
+        "cudnn",
+        "tlsv1",
+        "chsh"
     ]
 }
