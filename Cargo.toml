@@ -33,8 +33,7 @@ heck = "0.5.0"
 colored = "2.1.0"
 image = "0.25.5"
 anyhow = "1.0.93"
-hashes = "0.1.9"
-rs_merkle = "1.4.2"
+serde_with = { version = "3.12.0", features = ["chrono"] }
 
 
 [dev-dependencies]
@@ -82,6 +81,7 @@ missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing
 missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
 missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
 module_name_repetitions = { level = "allow", priority = 127 }          # name should be explicit to avoid confusion
+multiple_crate_versions = { level = "allow", priority = 127 }          # deal with the case where dependencies have different dependencies crate versions
 must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
 mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok
 non_ascii_literal = { level = "allow", priority = 127 }                # non-ascii char in string literal ok

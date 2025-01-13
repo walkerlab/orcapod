@@ -39,6 +39,7 @@ pub(crate) enum Kind {
     InvalidIndex(usize),
     DeletingAnnotationForStorePointerNotAllowed,
     UnsupportedPath(PathBuf),
+    PathDoesNotExist(PathBuf),
 }
 
 /// A stable error API interface.
@@ -86,6 +87,7 @@ impl Display for OrcaError {
             Kind::InvalidIndex(idx) => write!(f, "Invalid idx {idx} while trying to access vector"),
             Kind::DeletingAnnotationForStorePointerNotAllowed => write!(f, "Deletion store pointer annotation is not allowed"),
             Kind::UnsupportedPath(path) => write!(f, "Unsupported path type for path {}. Currently only support dir and file", path.to_string_lossy()),
+            Kind::PathDoesNotExist(path) => write!(f, "{} does not exist or inaccessible", path.to_string_lossy()),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     crypto::{hash_buf_reader, hash_bytes, HASH_SIZE_IN_BYTES},
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Pod, PodJob},
+    model::{to_yaml, Annotation, Pod, PodJob, PodResult},
     store::{ModelID, ModelInfo, ModelStore},
     util::get_type_name,
 };
@@ -84,6 +84,22 @@ impl LocalStore {
             })
         });
         Ok(paths)
+    }
+
+    fn get_key_from_yaml(path: impl AsRef<Path>, key: &str) -> Result<String> {
+        // Target Yaml
+        let target_yaml = fs::read_to_string(path)?;
+
+        // Pull out pod hash from yaml
+        let yaml_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&target_yaml)?;
+        let value = yaml_mapping.get(key).ok_or_else(|| {
+            OrcaError::from(Kind::MissingPodHashFromPodJobYaml(target_yaml.clone()))
+        })?;
+
+        Ok(value
+            .as_str()
+            .ok_or_else(|| OrcaError::from(Kind::FailedToCovertValueToString))?
+            .to_owned())
     }
 
     fn lookup_hash<T>(
@@ -271,6 +287,10 @@ impl DataStore for LocalStore {
     fn compute_checksum_for_path(&self, path: impl AsRef<Path>) -> Result<String> {
         let full_path = self.make_data_path().join(path.as_ref());
 
+        if !full_path.exists() {
+            return Err(OrcaError::from(Kind::PathDoesNotExist(full_path)));
+        }
+
         if full_path.is_file() {
             // Read and hash in chunks
             let file = File::open(full_path)?;
@@ -362,21 +382,11 @@ impl ModelStore for LocalStore {
         pod_job.annotation = annotation;
         // Load annotation first if model_id was type annotation
 
-        // Deal with pod
-        let pod_job_yaml =
-            fs::read_to_string(self.make_hash_rel_path::<PodJob>(&pod_job.hash, SPEC_FILENAME))?;
-
-        // Pull out pod hash from yaml
-        let pod_job_yaml_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&pod_job_yaml)?;
-        let pod_hash_value = pod_job_yaml_mapping.get("pod_hash").ok_or_else(|| {
-            OrcaError::from(Kind::MissingPodHashFromPodJobYaml(pod_job_yaml.clone()))
-        })?;
-        let pod_hash = pod_hash_value
-            .as_str()
-            .ok_or_else(|| OrcaError::from(Kind::FailedToCovertValueToString))?;
-
         // Get the pod
-        pod_job.pod = self.load_pod(&ModelID::Hash(pod_hash.to_owned()))?;
+        pod_job.pod = self.load_pod(&ModelID::Hash(Self::get_key_from_yaml(
+            self.make_hash_rel_path::<PodJob>(&pod_job.hash, SPEC_FILENAME),
+            "pod_hash",
+        )?))?;
 
         Ok(pod_job)
     }
@@ -450,5 +460,31 @@ impl ModelStore for LocalStore {
 
     fn wipe(&self) -> Result<()> {
         Ok(fs::remove_dir_all(&self.directory)?)
+    }
+
+    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()> {
+        self.save_model(pod_result, &pod_result.hash, &None)
+    }
+
+    fn load_pod_result(&self, hash: &str) -> Result<PodResult> {
+        let mut pod_result = self.load_model::<PodResult>(hash)?;
+
+        hash.clone_into(&mut pod_result.hash);
+
+        // Load the pod job
+        pod_result.pod_job = self.load_pod_job(&ModelID::Hash(Self::get_key_from_yaml(
+            self.make_hash_rel_path::<PodResult>(hash, SPEC_FILENAME),
+            "pod_job_hash",
+        )?))?;
+
+        Ok(pod_result)
+    }
+
+    fn list_pod_result(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<PodResult>()
+    }
+
+    fn delete_pod_result(&self, hash: &str) -> Result<()> {
+        self.delete_model::<PodResult>(&ModelID::Hash(hash.to_owned()))
     }
 }

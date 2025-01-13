@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     error::Result,
-    model::{Pod, PodJob, StorePointer},
+    model::{Pod, PodJob, PodResult, StorePointer},
 };
 
 /// Options for identifying a model.
@@ -88,6 +88,30 @@ pub trait ModelStore: Sized + DataStore {
     /// # Errors
     /// Will return error if failed to delete the pod job
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
+
+    /// Save ``pod_job`` to storage
+    ///
+    /// # Errors
+    /// Return error if failed to save pod for some reason, either encoding or ioerror
+    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()>;
+
+    /// Load ``pod_job`` from storage given an ``model_id``
+    ///
+    /// # Errors
+    /// Will return error if fail to load pod
+    fn load_pod_result(&self, hash: &str) -> Result<PodResult>;
+
+    /// List all ``pod_job``
+    ///
+    /// # Errors
+    /// Will return error if fail to get all pods annotations
+    fn list_pod_result(&self) -> Result<Vec<ModelInfo>>;
+
+    /// Delete job by ``model_id``
+    ///
+    /// # Errors
+    /// Will return error if failed to delete the pod job
+    fn delete_pod_result(&self, hash: &str) -> Result<()>;
 
     ///
     /// # Errors

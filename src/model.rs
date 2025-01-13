@@ -5,6 +5,7 @@ use crate::{
     util::{get_type_name, hash},
 };
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde_with::chrono::NaiveDateTime;
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -291,7 +292,140 @@ impl Serialize for PodJob {
     }
 }
 
+// Pod Run
+/// Struct to store the active run in memory, does not get saved to store
+pub struct PodRun {
+    /// UID of the run which is hash of ``pod_job`` hash + date time)
+    pub hash: String,
+    /// Info about the pod job
+    pub pod_job: PodJob,
+    /// Status of the ``PodRun``
+    pub status: Status,
+    /// Current most up to date metrics of the job
+    pub metrics: RunMetrics,
+}
+
+impl PodRun {
+    /// Function to get the current logs
+    /// # Errors
+    /// TODO
+    pub const fn get_logs() -> Result<String> {
+        // TODO
+        Ok(String::new())
+    }
+}
+
+// Pod Result
+/// Output of Pod Run once it is completed
+#[derive(Deserialize, Debug, PartialEq, Default)]
+pub struct PodResult {
+    /// UID of the run which is hash of ``pod_job`` hash + date time)
+    #[serde(skip)]
+    pub hash: String,
+    /// Image used
+    pub image_used: String,
+    /// Output logs of the system
+    pub logs: String,
+    /// Historical logs of resource usage
+    pub metrics: RunMetrics,
+    /// Depending on the status, there may or may not be an output
+    pub output: Option<PodOutput>,
+    /// Info about the pod job
+    #[serde(skip)]
+    pub pod_job: PodJob,
+    /// Status of the current run
+    pub status: Status,
+}
+
+impl PodResult {
+    /// # Errors
+    /// Return serialization error if serialize failed
+    pub fn new(
+        image_used: String,
+        logs: String,
+        metrics: RunMetrics,
+        output: Option<PodOutput>,
+        pod_job: PodJob,
+        status: Status,
+    ) -> Result<Self> {
+        let pod_result_no_hash = Self {
+            image_used,
+            logs,
+            metrics,
+            output,
+            pod_job,
+            status,
+            ..Default::default()
+        };
+
+        Ok(Self {
+            hash: hash(&to_yaml(&pod_result_no_hash)?),
+            ..pod_result_no_hash
+        })
+    }
+}
+
+impl Serialize for PodResult {
+    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("PodResult", 6)?;
+        state.serialize_field("image_used", &self.image_used)?;
+        state.serialize_field("logs", &self.logs)?;
+        state.serialize_field("metrics", &self.metrics)?;
+        state.serialize_field("output", &self.output)?;
+        state.serialize_field("pod_job_hash", &self.pod_job.hash)?;
+        state.serialize_field("status", &self.status)?;
+
+        state.end()
+    }
+}
+
+/// Metrics storage for the run
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
+pub struct RunMetrics {
+    /// Time that the job was queued
+    pub queued_time: NaiveDateTime,
+    /// Time that the job began execution
+    pub start_time: NaiveDateTime,
+    /// Time that the job completed or failed
+    pub completed_time: NaiveDateTime,
+    /// History of cpu usage of the process or entire host (Have to figure out total cpu usage of only container)
+    pub cpu_usage_history: Vec<(NaiveDateTime, u16)>,
+    /// History of memory usage by the container
+    pub mem_usage_history: Vec<(NaiveDateTime, u16)>,
+}
+
+/// Struct that contains info about the output of a run
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
+pub struct PodOutput {
+    /// Unique name for the folder which should be format as (completion time) Year-month-day-hour-minute-second
+    /// Note: In event of collision, an additional dash will be added with format -1, -2, etc
+    /// During running, the folder name will be random then it will get renamed upon completion
+    pub output_folder_name: String,
+    /// Checksum of the output for checking if it was modified at some point
+    pub checksum: String,
+    /// List of files that was output with full path
+    pub file_list: Vec<PathBuf>,
+}
+
 // --- util types ---
+/// Generic status type use by various models
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
+pub enum Status {
+    /// Item has been created, but is on standby
+    #[default]
+    StandBy,
+    /// Item has been queued into the orchestrator
+    Queued,
+    /// Item is currently being executed
+    Running,
+    /// Item has failed to execute for some reason
+    Failed,
+    /// Item hsa completed execution
+    Completed,
+}
 
 /// Standard metadata structure for all model instances.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]

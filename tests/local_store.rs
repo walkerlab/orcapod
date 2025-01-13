@@ -81,6 +81,17 @@ fn delete_pod_job_annotation() -> Result<()> {
     delete_annotation(&ModelType::PodJob)
 }
 
+// Pod Result test
+#[test]
+fn list_pod_result() -> Result<()> {
+    list_model(&ModelType::PodResult)
+}
+
+#[test]
+fn load_pod_result() -> Result<()> {
+    load_model(&ModelType::PodResult)
+}
+
 #[test]
 fn load_store_pointer() -> Result<()> {
     // Special case where annotation cannot be None
@@ -141,14 +152,21 @@ fn list_model(model_type: &ModelType) -> Result<()> {
         list_result[0].hash == model.get_hash(),
         "Model hash didn't match what was put in"
     );
-    assert!(
-        list_result[0].name == model.get_annotation().name,
-        "Model name didn't match what was put in"
-    );
-    assert!(
-        list_result[0].version == model.get_annotation().version,
-        "Model version didn't match what was put in"
-    );
+
+    // If it is type Pod Result, skip the annotation check
+    match model_type {
+        ModelType::PodResult => (),
+        ModelType::Pod | ModelType::PodJob | ModelType::StorePointer => {
+            assert!(
+                list_result[0].name == model.get_annotation().name,
+                "Model name didn't match what was put in"
+            );
+            assert!(
+                list_result[0].version == model.get_annotation().version,
+                "Model version didn't match what was put in"
+            );
+        }
+    };
 
     Ok(())
 }
@@ -156,25 +174,30 @@ fn list_model(model_type: &ModelType) -> Result<()> {
 fn load_model(model_type: &ModelType) -> Result<()> {
     let temp_dir = tempdir()?.into_path();
     let (mut model, store) = scaffold_store_with_model(model_type, temp_dir)?;
-
     model.set_sub_models_annotation_to_none()?;
 
-    // By name and version
-    assert!(
-        model
-            == store.load_model(
-                &ModelID::Annotation(
-                    model.get_annotation().name.clone(),
-                    model.get_annotation().version.clone()
-                ),
-                model_type
-            )?,
-        "model loaded from store didn't match what was put in"
-    );
+    match model_type {
+        ModelType::PodResult => (),
+        ModelType::Pod | ModelType::PodJob | ModelType::StorePointer => {
+            // By name and version
+            assert!(
+                model
+                    == store.load_model(
+                        &ModelID::Annotation(
+                            model.get_annotation().name.clone(),
+                            model.get_annotation().version.clone()
+                        ),
+                        model_type
+                    )?,
+                "model loaded from store didn't match what was put in"
+            );
 
-    // Test Load by hash
-    // Set annotation to None
-    model.set_annotation(None);
+            // Test Load by hash
+            // Set annotation to None
+            model.set_annotation(None);
+        }
+    }
+
     assert!(
         model == store.load_model(&ModelID::Hash(model.get_hash().to_owned()), model_type)?,
         "model loaded from store didn't match what was put in"

@@ -4,16 +4,22 @@
     clippy::missing_errors_doc,
     reason = "Integration tests won't be included in documentation."
 )]
+#![expect(
+    clippy::panic,
+    reason = "Expect test to panic if incorrect usage for certain situation due to the annotation design"
+)]
 
 use anyhow::{anyhow, Result};
+use core::panic;
 use image::{DynamicImage, ImageFormat, RgbImage};
 use orcapod::{
     model::{
-        Annotation, Input, InputStoreMapping, OutputStoreMapping, Pod, PodJob, RetryPolicy,
-        StorePointer, StreamInfo,
+        Annotation, Input, InputStoreMapping, OutputStoreMapping, Pod, PodJob, PodOutput,
+        PodResult, RetryPolicy, RunMetrics, Status, StorePointer, StreamInfo,
     },
     store::{DataStore, ModelID, ModelInfo, ModelStore},
 };
+use serde_with::chrono::NaiveDate;
 use std::{collections::BTreeMap, io::Cursor, ops::Deref, path::PathBuf};
 
 // --- fixtures ---
@@ -73,9 +79,9 @@ pub fn pod_job_fixture<T: DataStore>(store: &T) -> Result<PodJob> {
     let img = DynamicImage::from(img_buffer);
     img.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)?;
 
-    // Store it in the store
+    // Store it in the store if it doesn't exists yet
     store.save_file("style.png", bytes.clone())?;
-    store.save_file("image.png", bytes)?;
+    store.save_file("image.png", bytes.clone())?;
 
     // Create the input volume map
     let mut input_volume_map = BTreeMap::new();
@@ -107,6 +113,78 @@ pub fn pod_job_fixture<T: DataStore>(store: &T) -> Result<PodJob> {
         2.0_f32,
         (4_u64) * (1 << 30),
         RetryPolicy::NoRetry,
+    )?)
+}
+
+/// # Panics
+/// Will panic if the date is invalid
+pub fn pod_result_fixture<T: ModelStore>(store: &T) -> Result<PodResult> {
+    // Generate random uniform image
+    let mut img_buffer = RgbImage::new(IMAGE_DIM, IMAGE_DIM);
+
+    for (_, _, pixel) in img_buffer.enumerate_pixels_mut() {
+        *pixel = image::Rgb([255, 255, 255]);
+    }
+
+    // Create the stylized image
+    let mut bytes = Vec::new();
+    let img = DynamicImage::from(img_buffer);
+    img.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)?;
+
+    let pod_output_image_path: PathBuf = PathBuf::from("stylized_image.png");
+    let output_folder_name = "2025_1_1-5-6_7";
+
+    let full_rel_save_path = PathBuf::from(&output_folder_name).join(&pod_output_image_path);
+
+    store.save_file(&full_rel_save_path, bytes)?;
+
+    // Run Metrics
+    let run_metrics = RunMetrics {
+        queued_time: NaiveDate::from_ymd_opt(2025, 1, 1)
+            .unwrap()
+            .and_hms_opt(1, 1, 1)
+            .unwrap(),
+        start_time: NaiveDate::from_ymd_opt(2025, 1, 1)
+            .unwrap()
+            .and_hms_opt(2, 3, 4)
+            .unwrap(),
+        completed_time: NaiveDate::from_ymd_opt(2025, 1, 1)
+            .unwrap()
+            .and_hms_opt(5, 6, 7)
+            .unwrap(),
+        cpu_usage_history: vec![(
+            NaiveDate::from_ymd_opt(2025, 1, 1)
+                .unwrap()
+                .and_hms_opt(5, 6, 7)
+                .unwrap(),
+            100,
+        )],
+        mem_usage_history: vec![(
+            NaiveDate::from_ymd_opt(2025, 1, 1)
+                .unwrap()
+                .and_hms_opt(5, 6, 7)
+                .unwrap(),
+            100,
+        )],
+    };
+
+    let mut pod_job = pod_job_fixture(store)?;
+    store.save_pod_job(&mut pod_job)?;
+
+    let pod_output = PodOutput {
+        output_folder_name: output_folder_name.to_owned(),
+        checksum: store.compute_checksum_for_path(&full_rel_save_path)?,
+        file_list: vec![pod_output_image_path],
+    };
+
+    // Create the pod result
+    Ok(PodResult::new(
+        "testing_orca_img".to_owned(),
+        "processing done".to_owned(),
+        run_metrics,
+        Some(pod_output),
+        pod_job,
+        Status::Completed,
     )?)
 }
 
@@ -145,16 +223,25 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model {
             Model::Pod(pod) => Ok(self.store.save_pod(pod)?),
             Model::PodJob(pod_job) => Ok(self.store.save_pod_job(pod_job)?),
+            Model::PodResult(pod_result) => Ok(self.store.save_pod_result(pod_result)?),
             Model::StorePointer(store_pointer) => {
                 Ok(self.store.save_store_pointer(store_pointer)?)
             }
         }
     }
 
+    /// # Panics
+    /// Panic if try to load model that doesn't have annotation by annotation
     pub fn load_model(&self, model_id: &ModelID, model_type: &ModelType) -> Result<Model> {
         match model_type {
             ModelType::Pod => Ok(Model::Pod(self.store.load_pod(model_id)?)),
             ModelType::PodJob => Ok(Model::PodJob(self.store.load_pod_job(model_id)?)),
+            ModelType::PodResult => match model_id {
+                ModelID::Hash(hash) => Ok(Model::PodResult(self.load_pod_result(hash)?)),
+                ModelID::Annotation(_, _) => {
+                    panic!("Invalid use case of load by annotation for pod result")
+                }
+            },
             ModelType::StorePointer => {
                 let store_name = match model_id {
                     ModelID::Hash(_) => {
@@ -173,14 +260,23 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model_type {
             ModelType::Pod => Ok(self.store.list_pod()?),
             ModelType::PodJob => Ok(self.store.list_pod_job()?),
+            ModelType::PodResult => Ok(self.store.list_pod_result()?),
             ModelType::StorePointer => Ok(self.store.list_store_pointer()?),
         }
     }
 
+    /// # Panics
+    /// panics if the type doesn't support delete by annotation and usage attempts to do that
     pub fn delete_item(&self, model_id: &ModelID, model_type: &ModelType) -> Result<()> {
         match model_type {
             ModelType::Pod => Ok(self.store.delete_pod(model_id)?),
             ModelType::PodJob => Ok(self.store.delete_pod_job(model_id)?),
+            ModelType::PodResult => match model_id {
+                ModelID::Hash(hash) => Ok(self.store.delete_pod_result(hash)?),
+                ModelID::Annotation(_, _) => {
+                    panic!("Invalid use case of delete by annotation for pod result")
+                }
+            },
             ModelType::StorePointer => Ok(self.store.delete_store_pointer(model_id)?),
         }
     }
@@ -194,6 +290,7 @@ impl<T: ModelStore> StoreScaffold<T> {
         match model_type {
             ModelType::Pod => Ok(self.store.delete_annotation::<Pod>(name, version)?),
             ModelType::PodJob => Ok(self.store.delete_annotation::<PodJob>(name, version)?),
+            ModelType::PodResult => Ok(self.store.delete_annotation::<PodResult>(name, version)?),
             ModelType::StorePointer => Ok(self
                 .store
                 .delete_annotation::<StorePointer>(name, version)?),
@@ -205,6 +302,7 @@ impl<T: ModelStore> StoreScaffold<T> {
 pub enum Model {
     Pod(Pod),
     PodJob(PodJob),
+    PodResult(PodResult),
     StorePointer(StorePointer),
 }
 
@@ -219,6 +317,7 @@ impl Model {
                 .annotation
                 .as_ref()
                 .expect("Pod job has empty annotation"),
+            Self::PodResult(_) => panic!("Pod Result does not have annotation"),
             Self::StorePointer(store_pointer) => &store_pointer.annotation,
         }
     }
@@ -227,6 +326,7 @@ impl Model {
         match self {
             Self::Pod(pod) => &pod.hash,
             Self::PodJob(pod_job) => &pod_job.hash,
+            Self::PodResult(pod_result) => &pod_result.hash,
             Self::StorePointer(store_pointer) => &store_pointer.hash,
         }
     }
@@ -237,6 +337,7 @@ impl Model {
         match self {
             Self::Pod(pod) => pod.annotation = annotation,
             Self::PodJob(pod_job) => pod_job.annotation = annotation,
+            Self::PodResult(_) => panic!("Pod Result does not have annotation"),
             // Store pointer cannot have an empty annotation
             Self::StorePointer(store_pointer) => store_pointer.annotation = annotation.unwrap(),
         }
@@ -249,6 +350,11 @@ impl Model {
                 pod_job.pod.annotation = None;
                 Ok(())
             }
+            Self::PodResult(pod_result) => {
+                pod_result.pod_job.annotation = None;
+                pod_result.pod_job.pod.annotation = None;
+                Ok(())
+            }
             Self::StorePointer(_) => Err(anyhow!("Store pointer cannot have None annotation")),
         }
     }
@@ -259,6 +365,7 @@ impl ModelType {
         match self {
             Self::Pod => Ok(Model::Pod(pod_fixture()?)),
             Self::PodJob => Ok(Model::PodJob(pod_job_fixture(&store.store)?)),
+            Self::PodResult => Ok(Model::PodResult(pod_result_fixture(&store.store)?)),
             Self::StorePointer => Ok(Model::StorePointer(store_pointer_fixture(&store.store)?)),
         }
     }
@@ -267,5 +374,6 @@ impl ModelType {
 pub enum ModelType {
     Pod,
     PodJob,
+    PodResult,
     StorePointer,
 }
