@@ -93,6 +93,11 @@ fn load_pod_result() -> Result<()> {
 }
 
 #[test]
+fn delete_pod_result() -> Result<()> {
+    delete_model_by_hash(&ModelType::PodResult)
+}
+
+#[test]
 fn load_store_pointer() -> Result<()> {
     // Special case where annotation cannot be None
     let temp_dir = tempdir()?.into_path();
