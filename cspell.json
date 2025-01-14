@@ -39,6 +39,7 @@
         "cgroupns",
         "cudnn",
         "tlsv1",
-        "chsh"
+        "chsh",
+        "altimage"
     ]
 }
