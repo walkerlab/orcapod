@@ -4,10 +4,12 @@ use bollard::{
         Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
         StartContainerOptions,
     },
+    image::CreateImageOptions,
     models::HostConfig,
     secret::{ContainerInspectResponse, ContainerSummary},
     Docker,
 };
+use futures::stream::TryStreamExt;
 use std::{collections::HashMap, default::Default, error::Error};
 use tokio::runtime::Runtime;
 
@@ -113,7 +115,19 @@ impl Orchestrator for LocalDockerOrchestrator {
 
     fn start(&self) -> Result<(), Box<dyn Error>> {
         // e.g. docker run --rm -d --entrypoint tail -v /tmp/stuff-outer:/tmp/stuff-inner:ro --cpus=0.5 --memory=500m alpine:3.14 -f /dev/null
-        let options = Some(CreateContainerOptions {
+
+        let image_options = Some(CreateImageOptions {
+            from_image: "alpine:3.14",
+            ..Default::default()
+        });
+
+        self.async_driver.block_on(
+            self.api
+                .create_image(image_options, None, None)
+                .try_collect::<Vec<_>>(),
+        )?;
+
+        let container_options = Some(CreateContainerOptions {
             name: "test",
             platform: None,
         });
@@ -121,7 +135,6 @@ impl Orchestrator for LocalDockerOrchestrator {
             "{}:{}:{}",
             "/tmp/stuff-outer", "/tmp/stuff-inner", "ro"
         )];
-
         let config = Config {
             image: Some("alpine:3.14"),
             entrypoint: Some(vec!["tail"]),
@@ -135,7 +148,7 @@ impl Orchestrator for LocalDockerOrchestrator {
             ..Default::default()
         };
         self.async_driver
-            .block_on(self.api.create_container(options, config))?;
+            .block_on(self.api.create_container(container_options, config))?;
         self.async_driver.block_on(
             self.api
                 .start_container("test", None::<StartContainerOptions<String>>),
