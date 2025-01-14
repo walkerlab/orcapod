@@ -1,7 +1,10 @@
-// docker run --rm -d --entrypoint tail -v /tmp/stuff-outer:/tmp/stuff-inner:ro --cpus=0.5 --memory=500m alpine:3.14 -f /dev/null
 use crate::orchestrator::{ContainerInfo, Orchestrator};
 use bollard::{
-    container::ListContainersOptions,
+    container::{
+        Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
+        StartContainerOptions,
+    },
+    models::HostConfig,
     secret::{ContainerInspectResponse, ContainerSummary},
     Docker,
 };
@@ -105,6 +108,47 @@ impl Orchestrator for LocalDockerOrchestrator {
             })
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
         println!("{containers:?}");
+        Ok(())
+    }
+
+    fn start(&self) -> Result<(), Box<dyn Error>> {
+        // e.g. docker run --rm -d --entrypoint tail -v /tmp/stuff-outer:/tmp/stuff-inner:ro --cpus=0.5 --memory=500m alpine:3.14 -f /dev/null
+        let options = Some(CreateContainerOptions {
+            name: "test",
+            platform: None,
+        });
+        let binds = vec![format!(
+            "{}:{}:{}",
+            "/tmp/stuff-outer", "/tmp/stuff-inner", "ro"
+        )];
+
+        let config = Config {
+            image: Some("alpine:3.14"),
+            entrypoint: Some(vec!["tail"]),
+            cmd: Some(vec!["-f", "/dev/null"]),
+            host_config: Some(HostConfig {
+                nano_cpus: Some(500 * 10_i64.pow(6)), // ncpu, ucores=3, mcores=6, cores=9
+                memory: Some(500_i64 << 20),          // bytes, KiB=<<10, MiB=<<20, GiB=<<30
+                binds: Some(binds),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        self.async_driver
+            .block_on(self.api.create_container(options, config))?;
+        self.async_driver.block_on(
+            self.api
+                .start_container("test", None::<StartContainerOptions<String>>),
+        )?;
+        Ok(())
+    }
+    fn delete(&self) -> Result<(), Box<dyn Error>> {
+        let options = Some(RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        });
+        self.async_driver
+            .block_on(self.api.remove_container("test", options))?;
         Ok(())
     }
 }

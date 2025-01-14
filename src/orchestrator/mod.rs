@@ -17,8 +17,18 @@ pub(crate) struct ContainerInfo {
 
 /// Standard behavior of any container orchestration engine supported.
 pub trait Orchestrator {
-    // fn start(p: PodJob) -> Result<PodRun, OrchestrationError>;
-    // fn delete(p: &PodRun) -> Result<(), OrchestrationError>;
+    /// How to start containers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue querying metadata from containers.
+    fn start(&self) -> Result<(), Box<dyn Error>>;
+    /// How to delete containers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue querying metadata from containers.
+    fn delete(&self) -> Result<(), Box<dyn Error>>;
     // fn get_logs(p: &PodRun) -> Result<String, OrchestrationError>;
     // fn list() -> Result<BTreeMap<String, Vec<String>>>;
     /// How to query containers.

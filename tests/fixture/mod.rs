@@ -52,8 +52,8 @@ pub fn pod_style() -> Result<Pod> {
                 match_pattern: "./styled.png".to_owned(),
             },
         )]),
-        0.25,                // 250 millicores as frac cores
-        (2_u64) * (1 << 30), // 2GiB in bytes
+        0.25,        // 250 millicores as frac cores
+        2_u64 << 30, // 2GiB in bytes
         None,
     )
 }
