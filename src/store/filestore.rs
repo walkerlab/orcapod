@@ -63,15 +63,24 @@ impl Store for LocalFileStore {
 }
 
 impl LocalFileStore {
-    /// Construct a local file store instance in a specific directory.
-    pub fn new(directory: impl AsRef<Path>) -> Self {
-        Self {
-            directory: directory.as_ref().into(),
-        }
-    }
     /// Get the directory where store is located.
     pub fn get_directory(&self) -> &Path {
         &self.directory
+    }
+    /// Construct a local file store instance in a specific directory.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue creating the default user data namespace.
+    pub fn new(directory: impl AsRef<Path>) -> Result<Self> {
+        fs::create_dir_all(format!(
+            "{}/{}",
+            directory.as_ref().display(),
+            Self::DEFAULT_DATA_NAMESPACE
+        ))?;
+        Ok(Self {
+            directory: directory.as_ref().into(),
+        })
     }
     /// Relative path where model specification is stored within the model directory.
     pub const SPEC_RELPATH: &str = "spec.yaml";
@@ -82,8 +91,9 @@ impl LocalFileStore {
     /// Build the storage path with the model directory (`hash`) and a file's relative path.
     pub fn make_path<T>(&self, hash: &str, relpath: impl AsRef<Path>) -> PathBuf {
         PathBuf::from(format!(
-            "{}/{}/{}",
+            "{}/{}/{}/{}",
             self.directory.to_string_lossy(),
+            Self::MODEL_NAMESPACE,
             get_type_name::<T>(),
             hash
         ))
@@ -94,14 +104,16 @@ impl LocalFileStore {
         let re = Regex::new(
             r"(?x)
             ^.*
-            \/(?<class>[a-z_]+)
-                \/(?<hash>[0-9a-f]+)
-                    \/annotation
-                        \/
-                        (?<name>[0-9a-zA-Z\-]+)
-                        -
-                        (?<version>[0-9]+\.[0-9]+\.[0-9]+)
-                        \.yaml
+            (?<store_directory>.*)
+                \/(?<namespace>[a-z_]+)
+                    \/(?<class>[a-z_]+)
+                        \/(?<hash>[0-9a-f]+)
+                            \/annotation
+                                \/
+                                (?<name>[0-9a-zA-Z\-]+)
+                                -
+                                (?<version>[0-9]+\.[0-9]+\.[0-9]+)
+                                \.yaml
             $",
         )?;
         let paths = glob::glob(&glob_pattern.to_string_lossy())?.map(move |filepath| {

@@ -30,30 +30,30 @@ pub fn pod_style() -> Result<Pod> {
         "tail -f /dev/null".to_owned(),
         BTreeMap::from([
             (
-                "painting".to_owned(),
+                "style".to_owned(),
                 StreamInfo {
-                    path: PathBuf::from("/input/painting.png"),
-                    match_pattern: "/input/painting.png".to_owned(),
+                    path: PathBuf::from("/input/style.png"),
+                    match_pattern: r".*\.png".to_owned(),
                 },
             ),
             (
                 "image".to_owned(),
                 StreamInfo {
                     path: PathBuf::from("/input/image.png"),
-                    match_pattern: "/input/image.png".to_owned(),
+                    match_pattern: r".*\.png".to_owned(),
                 },
             ),
         ]),
         PathBuf::from("/output"),
         BTreeMap::from([(
-            "styled".to_owned(),
+            "result".to_owned(),
             StreamInfo {
-                path: PathBuf::from("./styled.png"),
-                match_pattern: "./styled.png".to_owned(),
+                path: PathBuf::from("./result.png"),
+                match_pattern: r".*\.png".to_owned(),
             },
         )]),
-        0.25,                // 250 millicores as frac cores
-        (2_u64) * (1 << 30), // 2GiB in bytes
+        0.25,        // 250 millicores as frac cores
+        2_u64 << 30, // 2GiB in bytes
         None,
     )
 }
@@ -61,7 +61,7 @@ pub fn pod_style() -> Result<Pod> {
 pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     let store =
-        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
+        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new)?;
     fs::create_dir_all(store.get_directory())?;
     Ok(TestStore { store })
 }

@@ -21,6 +21,10 @@ pub struct ModelInfo {
 
 /// Standard behavior of any store backend supported.
 pub trait Store {
+    /// Default namespace where user data (inputs/outputs) will be stored.
+    const DEFAULT_DATA_NAMESPACE: &str = "orcapod_data";
+    /// Namespace where models will be stored.
+    const MODEL_NAMESPACE: &str = "orcapod_model";
     /// How a pod is stored.
     ///
     /// # Errors

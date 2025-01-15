@@ -130,12 +130,12 @@ fn pod_annotation_delete() -> Result<()> {
             ModelInfo {
                 name: "new-name".to_owned(),
                 version: "0.5.0".to_owned(),
-                hash: "c18841b375242ca10b166c11c9cb23f41aa9292e7f9115b290f759a44fd7db99".to_owned()
+                hash: "54ff593c1651ac21fb5c17846728eae39420056f505a8fdc3a32c995cc33ab67".to_owned()
             },
             ModelInfo {
                 name: "style-transfer".to_owned(),
                 version: "0.67.0".to_owned(),
-                hash: "c18841b375242ca10b166c11c9cb23f41aa9292e7f9115b290f759a44fd7db99".to_owned()
+                hash: "54ff593c1651ac21fb5c17846728eae39420056f505a8fdc3a32c995cc33ab67".to_owned()
             }
         ],
         "Pod list didn't return 2 expected entries."
@@ -146,7 +146,7 @@ fn pod_annotation_delete() -> Result<()> {
         vec![ModelInfo {
             name: "style-transfer".to_owned(),
             version: "0.67.0".to_owned(),
-            hash: "c18841b375242ca10b166c11c9cb23f41aa9292e7f9115b290f759a44fd7db99".to_owned()
+            hash: "54ff593c1651ac21fb5c17846728eae39420056f505a8fdc3a32c995cc33ab67".to_owned()
         }],
         "Pod list didn't return 1 expected entry."
     );
