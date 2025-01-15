@@ -12,7 +12,7 @@ use orcapod::{
 fn hash() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "13d69656d396c272588dd875b2802faee1a56bd985e3c43c7db276a373bc9ddb",
+        "c18841b375242ca10b166c11c9cb23f41aa9292e7f9115b290f759a44fd7db99",
         "Hash didn't match."
     );
     Ok(())
@@ -24,8 +24,8 @@ fn pod_to_yaml() -> Result<()> {
         to_yaml::<Pod>(&pod_style()?)?,
         indoc! {"
             class: pod
-            command: tail -f /dev/null
             image: zenmldocker/zenml-server:0.67.0
+            command: tail -f /dev/null
             input_stream_map:
               image:
                 path: /input/image.png
@@ -38,10 +38,10 @@ fn pod_to_yaml() -> Result<()> {
               styled:
                 path: ./styled.png
                 match_pattern: ./styled.png
+            source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
             recommended_cpus: 0.25
             recommended_memory: 2147483648
             required_gpu: null
-            source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
         "},
         "YAML serialization didn't match."
     );

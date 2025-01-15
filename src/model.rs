@@ -11,13 +11,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 ///
 /// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
-    let mapping: BTreeMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // sort
-    let mut yaml = serde_yaml::to_string(
-        &mapping
-            .into_iter()
-            .filter(|(k, _)| k != "annotation" && k != "hash")
-            .collect::<BTreeMap<_, _>>(),
-    )?; // skip fields
+    let mut yaml = serde_yaml::to_string(instance)?;
     yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
 
     Ok(yaml)
@@ -49,15 +43,17 @@ pub fn from_yaml<T: DeserializeOwned>(
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
+    #[serde(skip_serializing)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
+    #[serde(skip_serializing)]
     pub hash: String,
-    source_commit_url: String,
     image: String,
     command: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
+    source_commit_url: String,
     recommended_cpus: f32,
     recommended_memory: u64,
     required_gpu: Option<GPURequirement>,
@@ -95,7 +91,7 @@ impl Pod {
             required_gpu,
         };
         Ok(Self {
-            hash: hash(&to_yaml(&pod_no_hash)?),
+            hash: hash(to_yaml(&pod_no_hash)?),
             ..pod_no_hash
         })
     }
