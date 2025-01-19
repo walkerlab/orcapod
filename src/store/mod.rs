@@ -1,4 +1,7 @@
-use crate::{error::Result, model::Pod};
+use crate::{
+    error::Result,
+    model::{Pod, PodJob},
+};
 
 /// Options for identifying a model.
 pub enum ModelID {
@@ -51,6 +54,34 @@ pub trait Store {
     /// Will return `Err` if there is an issue deleting a pod from the store using `name` and
     /// `version`.
     fn delete_pod(&self, model_id: &ModelID) -> Result<()>;
+    /// How a pod job is stored.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue storing `pod_job`.
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()>;
+    /// How to load a stored pod job into a model instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue loading a pod job from the store using `name` and
+    /// `version`.
+    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob>;
+    /// How to query stored pod jobs.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue querying metadata from existing pod jobs in the
+    /// store.
+    fn list_pod_job(&self) -> Result<Vec<ModelInfo>>;
+    /// How to explicitly delete a stored pod job and all associated annotations (does not
+    /// propagate).
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue deleting a pod job from the store using `name` and
+    /// `version`.
+    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
     /// How to explicitly delete an annotation.
     ///
     /// # Errors

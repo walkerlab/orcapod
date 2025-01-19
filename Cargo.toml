@@ -35,6 +35,7 @@ colored = "2.1.0"
 [dev-dependencies]
 tempfile = "3.13.0"
 indoc = "2.0.5"
+anyhow = "1.0.95"
 
 [lints.rust]
 non_ascii_idents = "deny"

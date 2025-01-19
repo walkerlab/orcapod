@@ -8,10 +8,10 @@
     reason = "Integration tests won't be included in documentation."
 )]
 
+use anyhow::Result;
 use orcapod::{
-    error::Result,
-    model::{Annotation, Pod, StreamInfo},
-    store::{filestore::LocalFileStore, ModelID, Store},
+    model::{Annotation, Pod, PodJob, StreamInfo},
+    store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
 };
 use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf};
 use tempfile::tempdir;
@@ -19,7 +19,7 @@ use tempfile::tempdir;
 // --- fixtures ---
 
 pub fn pod_style() -> Result<Pod> {
-    Pod::new(
+    Ok(Pod::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod.".to_owned(),
@@ -53,9 +53,22 @@ pub fn pod_style() -> Result<Pod> {
             },
         )]),
         0.25,        // 250 millicores as frac cores
-        2_u64 << 30, // 2GiB in bytes
+        1_u64 << 30, // 1GiB in bytes
         None,
-    )
+    )?)
+}
+
+pub fn pod_job_style() -> Result<PodJob> {
+    Ok(PodJob::new(
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod job.".to_owned(),
+            version: "0.1.0".to_owned(),
+        }),
+        pod_style()?,
+        0.5,         // 500 millicores as frac cores
+        2_u64 << 30, // 2GiB in bytes
+    )?)
 }
 
 pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
@@ -115,27 +128,57 @@ pub trait TestSetup {
     fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
     fn get_annotation(&self) -> Option<&Annotation>;
     fn get_hash(&self) -> &str;
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>>;
 }
 
 impl TestSetup for Pod {
     type Target = Self;
     fn save(&self, store: &LocalFileStore) -> Result<()> {
-        store.save_pod(self)
+        Ok(store.save_pod(self)?)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {
-        store.delete_pod(&ModelID::Hash(self.hash.clone()))
+        Ok(store.delete_pod(&ModelID::Hash(self.hash.clone()))?)
     }
     fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
         let annotation = self.annotation.as_ref().expect("Annotation missing.");
-        store.load_pod(&ModelID::Annotation(
+        Ok(store.load_pod(&ModelID::Annotation(
             annotation.name.clone(),
             annotation.version.clone(),
-        ))
+        ))?)
     }
     fn get_annotation(&self) -> Option<&Annotation> {
         self.annotation.as_ref()
     }
     fn get_hash(&self) -> &str {
         &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        Ok(store.list_pod()?)
+    }
+}
+
+impl TestSetup for PodJob {
+    type Target = Self;
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        Ok(store.save_pod_job(self)?)
+    }
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        Ok(store.delete_pod_job(&ModelID::Hash(self.hash.clone()))?)
+    }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        Ok(store.load_pod_job(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))?)
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        Ok(store.list_pod_job()?)
     }
 }

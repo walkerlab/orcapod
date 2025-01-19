@@ -2,9 +2,8 @@ use crate::{
     error::Result,
     util::{get_type_name, hash},
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_yaml::{Mapping, Value};
-use std::{collections::BTreeMap, path::PathBuf};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::{collections::BTreeMap, path::PathBuf, result};
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -16,37 +15,17 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
 
     Ok(yaml)
 }
-/// Instantiates a model from from yaml content and its unique hash.
-///
-/// # Errors
-///
-/// Will return `Err` if there is an issue converting YAML files for spec+annotation into a model
-/// instance.
-pub fn from_yaml<T: DeserializeOwned>(
-    hash: &str,
-    spec_yaml: &str,
-    annotation_yaml: Option<&str>,
-) -> Result<T> {
-    let mut spec: BTreeMap<String, Value> = serde_yaml::from_str(spec_yaml)?;
-    spec.insert("hash".to_owned(), Value::from(hash));
-    if let Some(resolved_annotation_yaml) = annotation_yaml {
-        let annotation: Mapping = serde_yaml::from_str(resolved_annotation_yaml)?;
-        spec.insert("annotation".to_owned(), Value::from(annotation));
-    }
-
-    Ok(serde_yaml::from_str(&serde_yaml::to_string(&spec)?)?)
-}
 
 // --- core model structs ---
 
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pub hash: String,
     image: String,
     command: String,
@@ -97,10 +76,69 @@ impl Pod {
     }
 }
 
+fn serialize_pod<S>(pod: &Pod, serializer: S) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&pod.hash)
+}
+
+fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Pod, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Pod {
+        hash: String::deserialize(deserializer)?,
+        ..Pod::default()
+    })
+}
+
+/// A compute job that specifies resource requests and input/output targets.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct PodJob {
+    /// Metadata that doesn't affect reproducibility.
+    #[serde(skip)]
+    pub annotation: Option<Annotation>,
+    /// Unique id based on reproducibility.
+    #[serde(skip)]
+    pub hash: String,
+    /// A pod to base the pod job on.
+    #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
+    pub pod: Pod,
+    cpu_limit: f32,
+    memory_limit: u64,
+}
+
+impl PodJob {
+    /// Construct a new pod job instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `PodJob` instance.
+    pub fn new(
+        annotation: Option<Annotation>,
+        pod: Pod,
+        cpu_limit: f32,
+        memory_limit: u64,
+    ) -> Result<Self> {
+        let pod_job_no_hash = Self {
+            annotation,
+            hash: String::new(),
+            pod,
+            cpu_limit,
+            memory_limit,
+        };
+        Ok(Self {
+            hash: hash(to_yaml(&pod_job_no_hash)?),
+            ..pod_job_no_hash
+        })
+    }
+}
+
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,

@@ -1,6 +1,6 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{from_yaml, to_yaml, Annotation, Pod},
+    model::{to_yaml, Annotation, Pod, PodJob},
     store::{ModelID, ModelInfo, Store},
     util::get_type_name,
 };
@@ -30,7 +30,10 @@ impl Store for LocalFileStore {
     }
 
     fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
-        self.load_model(model_id)
+        let (mut pod, annotation, hash) = self.load_model::<Pod>(model_id)?;
+        pod.annotation = annotation;
+        pod.hash = hash;
+        Ok(pod)
     }
 
     fn list_pod(&self) -> Result<Vec<ModelInfo>> {
@@ -39,6 +42,34 @@ impl Store for LocalFileStore {
 
     fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<Pod>(model_id)
+    }
+
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
+        self.save_pod(&pod_job.pod)?; // debug: comment for an example unhandled error
+        self.save_model(
+            pod_job,
+            &pod_job.hash,
+            pod_job
+                .annotation
+                .as_ref()
+                .ok_or_else(|| OrcaError::from(Kind::MissingAnnotationOnSave))?,
+        )
+    }
+
+    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob> {
+        let (mut pod_job, annotation, hash) = self.load_model::<PodJob>(model_id)?;
+        pod_job.annotation = annotation;
+        pod_job.hash = hash;
+        pod_job.pod = self.load_pod(&ModelID::Hash(pod_job.pod.hash))?;
+        Ok(pod_job)
+    }
+
+    fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<PodJob>()
+    }
+
+    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<PodJob>(model_id)
     }
 
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
@@ -194,23 +225,29 @@ impl LocalFileStore {
         Ok(())
     }
 
-    fn load_model<T: DeserializeOwned>(&self, model_id: &ModelID) -> Result<T> {
+    fn load_model<T: DeserializeOwned>(
+        &self,
+        model_id: &ModelID,
+    ) -> Result<(T, Option<Annotation>, String)> {
         match model_id {
-            ModelID::Hash(hash) => from_yaml(
-                hash,
-                &fs::read_to_string(self.make_path::<T>(hash, Self::SPEC_RELPATH))?,
+            ModelID::Hash(hash) => Ok((
+                serde_yaml::from_str(&fs::read_to_string(
+                    self.make_path::<T>(hash, Self::SPEC_RELPATH),
+                )?)?,
                 None,
-            ),
+                hash.clone(),
+            )),
             ModelID::Annotation(name, version) => {
                 let hash = self.lookup_hash::<T>(name, version)?;
-                from_yaml(
-                    &hash,
-                    &fs::read_to_string(self.make_path::<T>(&hash, Self::SPEC_RELPATH))?,
-                    Some(&fs::read_to_string(self.make_path::<T>(
-                        &hash,
-                        &Self::make_annotation_relpath(name, version),
-                    ))?),
-                )
+                Ok((
+                    serde_yaml::from_str(&fs::read_to_string(
+                        self.make_path::<T>(&hash, Self::SPEC_RELPATH),
+                    )?)?,
+                    serde_yaml::from_str(&fs::read_to_string(
+                        self.make_path::<T>(&hash, &Self::make_annotation_relpath(name, version)),
+                    )?)?,
+                    hash,
+                ))
             }
         }
     }
