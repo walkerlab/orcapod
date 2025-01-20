@@ -9,7 +9,8 @@
 		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume"
 	],
 	"remoteEnv": {
-		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+		"RUST_BACKTRACE": "1"
 	},
 	"postStartCommand": "docker system prune -fa && docker volume prune -f",
 	"hostRequirements": {

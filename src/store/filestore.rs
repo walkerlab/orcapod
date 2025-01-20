@@ -45,7 +45,7 @@ impl Store for LocalFileStore {
     }
 
     fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
-        self.save_pod(&pod_job.pod)?; // debug: comment for an example unhandled error
+        self.save_pod(&pod_job.pod)?;
         self.save_model(
             pod_job,
             &pod_job.hash,
@@ -79,11 +79,11 @@ impl Store for LocalFileStore {
         )?
         .count();
         if count == 1 {
-            return Err(OrcaError::from(Kind::DeletingLastAnnotation(
-                get_type_name::<T>(),
-                name.to_owned(),
-                version.to_owned(),
-            )));
+            return Err(OrcaError::from(Kind::DeletingLastAnnotation {
+                class: get_type_name::<T>(),
+                name: name.to_owned(),
+                version: version.to_owned(),
+            }));
         }
         let annotation_file =
             self.make_path::<T>(&hash, &Self::make_annotation_relpath(name, version));
@@ -103,15 +103,10 @@ impl LocalFileStore {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating the default user data namespace.
-    pub fn new(directory: impl AsRef<Path>) -> Result<Self> {
-        fs::create_dir_all(format!(
-            "{}/{}",
-            directory.as_ref().display(),
-            Self::DEFAULT_DATA_NAMESPACE
-        ))?;
-        Ok(Self {
+    pub fn new(directory: impl AsRef<Path>) -> Self {
+        Self {
             directory: directory.as_ref().into(),
-        })
+        }
     }
     /// Relative path where model specification is stored within the model directory.
     pub const SPEC_RELPATH: &str = "spec.yaml";
@@ -167,11 +162,11 @@ impl LocalFileStore {
         )?
         .next()
         .ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound(
-                get_type_name::<T>(),
-                name.to_owned(),
-                version.to_owned(),
-            ))
+            OrcaError::from(Kind::NoAnnotationFound {
+                class: get_type_name::<T>(),
+                name: name.to_owned(),
+                version: version.to_owned(),
+            })
         })??;
         Ok(model_info.hash)
     }
@@ -186,9 +181,9 @@ impl LocalFileStore {
         }
         let file_exists = file.as_ref().exists();
         if file_exists && fail_if_exists {
-            return Err(OrcaError::from(Kind::FileExists(
-                file.as_ref().to_path_buf(),
-            )));
+            return Err(OrcaError::from(Kind::FileExists {
+                path: file.as_ref().to_path_buf(),
+            }));
         } else if file_exists {
             println!(
                 "Skip saving `{}` since it is already stored.",
