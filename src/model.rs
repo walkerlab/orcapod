@@ -1,6 +1,5 @@
 use crate::{
-    error::{Kind, OrcaError, Result},
-    store::{localstore::LocalStore, DataStore},
+    error::Result,
     util::{get_type_name, hash},
 };
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -17,53 +16,6 @@ pub fn to_yaml<T: Serialize>(item: &T) -> Result<String> {
     let mut yaml = serde_yaml::to_string(item)?;
     yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
     Ok(yaml)
-}
-
-/// Model object that contains a ``BTreeMap``that maps store names to the actual URI use to reconstruct the stores
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct StorePointer {
-    /// Version tag to uniquely identify
-    #[serde(skip)]
-    pub annotation: Annotation,
-    #[serde(skip)]
-    /// hash identity, for now it is just the uri
-    pub hash: String,
-    /// Uri path to the store
-    pub uri: String,
-}
-
-impl StorePointer {
-    /// Function to create new store pointer and compute the hash
-    ///
-    /// # Errors
-    /// Return serialization error if something went wrong.
-    pub fn new(annotation: Annotation, uri: String) -> Result<Self> {
-        let mut store_pointer = Self {
-            annotation,
-            uri,
-            hash: String::new(),
-        };
-
-        store_pointer.hash = hash(&to_yaml(&store_pointer)?);
-        Ok(store_pointer)
-    }
-
-    /// Function to rebuild the store based on self
-    ///
-    /// # Errors
-    /// Will fail if rebuilding of the store access struct fails
-    pub fn get_store(&self) -> Result<impl DataStore> {
-        // Load the yaml into a Btreemap, pull out the class, then build the store
-
-        let storage_class_name = self.uri.split("::").collect::<Vec<&str>>()[0];
-
-        match storage_class_name {
-            "LocalStore" => Ok(LocalStore::from_uri(&self.uri)?),
-            _ => Err(OrcaError::from(Kind::UnsupportedFileStorage(
-                storage_class_name.to_owned(),
-            ))),
-        }
-    }
 }
 
 /// A reusable, containerized computational unit.

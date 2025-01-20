@@ -17,8 +17,6 @@ pub type Result<T> = result::Result<T, OrcaError>;
 pub(crate) enum Kind {
     /// Returned if a file is not expected to exist.
     FileExists(PathBuf),
-    /// Returned if an annotation was expected to exist.
-    NoAnnotationFound(String, String, String),
     /// Returned if a regular expression was expected to match.
     NoRegexMatch,
     /// Wrapper around `glob::GlobError`
@@ -34,7 +32,6 @@ pub(crate) enum Kind {
     /// Wrapper around index error thrown by
     IndexingError(IndexingError),
     /// Wrapper around utf8 encoding error
-    UnsupportedFileStorage(String),
     InvalidURIForFileStore(String, String),
     MissingPodHashFromPodJobYaml(String),
     FailedToCovertValueToString,
@@ -58,9 +55,6 @@ impl Display for OrcaError {
                     path.to_string_lossy().bright_cyan()
                 )
             }
-            Kind::NoAnnotationFound(class, name, version) => {
-                write!(f, "No annotation found for `{name}:{version}` {class}.")
-            }
             Kind::NoRegexMatch => {
                 write!(f, "No match for regex.")
             }
@@ -70,9 +64,6 @@ impl Display for OrcaError {
             Kind::RegexError(error) => write!(f, "{error}"),
             Kind::IoError(error) => write!(f, "{error}"),
             Kind::IndexingError(error) => write!(f, "{error}"),
-            Kind::UnsupportedFileStorage(file_store_type) => {
-                write!(f, "Unsupported file store: {file_store_type}")
-            }
             Kind::InvalidURIForFileStore(error, uri) => {
                 write!(
                     f,

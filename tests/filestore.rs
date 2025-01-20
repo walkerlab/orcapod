@@ -78,41 +78,6 @@ fn delete_pod_job_annotation() -> Result<()> {
     delete_annotation(&ModelType::PodJob)
 }
 
-#[test]
-fn load_store_pointer() -> Result<()> {
-    // Special case where annotation cannot be None
-    let temp_dir = tempdir()?.into_path();
-    let (model, store) = scaffold_store_with_model(&ModelType::StorePointer, temp_dir)?;
-
-    assert!(
-        model
-            == store.load_model(
-                &ModelID::Annotation(
-                    model.get_annotation().name.clone(),
-                    model.get_annotation().version.clone()
-                ),
-                &ModelType::StorePointer,
-            )?
-    );
-
-    Ok(())
-}
-
-#[test]
-fn list_store_pointer() -> Result<()> {
-    list_model(&ModelType::StorePointer)
-}
-
-#[test]
-fn delete_store_pointer_by_hash() -> Result<()> {
-    delete_model_by_hash(&ModelType::StorePointer)
-}
-
-#[test]
-fn delete_store_pointer_by_annotation() -> Result<()> {
-    delete_model_by_annotation(&ModelType::StorePointer)
-}
-
 fn scaffold_store_with_model(
     model_type: &ModelType,
     store_dir: impl AsRef<Path>,
