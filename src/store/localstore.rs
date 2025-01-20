@@ -79,6 +79,23 @@ impl LocalStore {
         Ok(paths)
     }
 
+    /// Function to get a specific value from yaml given a key
+    fn get_key_from_yaml(path: impl AsRef<Path>, key: &str) -> Result<String> {
+        // Target Yaml
+        let target_yaml = fs::read_to_string(path)?;
+
+        // Pull out pod hash from yaml
+        let yaml_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&target_yaml)?;
+        let value = yaml_mapping.get(key).ok_or_else(|| {
+            OrcaError::from(Kind::MissingPodHashFromPodJobYaml(target_yaml.clone()))
+        })?;
+
+        Ok(value
+            .as_str()
+            .ok_or_else(|| OrcaError::from(Kind::FailedToCovertValueToString))?
+            .to_owned())
+    }
+
     fn lookup_hash<T>(
         &self,
         name_match_pattern: &str,
@@ -341,21 +358,11 @@ impl ModelStore for LocalStore {
         pod_job.annotation = annotation;
         // Load annotation first if model_id was type annotation
 
-        // Deal with pod
-        let pod_job_yaml =
-            fs::read_to_string(self.make_hash_rel_path::<PodJob>(&pod_job.hash, SPEC_FILENAME))?;
-
-        // Pull out pod hash from yaml
-        let pod_job_yaml_mapping: BTreeMap<String, Value> = serde_yaml::from_str(&pod_job_yaml)?;
-        let pod_hash_value = pod_job_yaml_mapping.get("pod_hash").ok_or_else(|| {
-            OrcaError::from(Kind::MissingPodHashFromPodJobYaml(pod_job_yaml.clone()))
-        })?;
-        let pod_hash = pod_hash_value
-            .as_str()
-            .ok_or_else(|| OrcaError::from(Kind::FailedToCovertValueToString))?;
-
         // Get the pod
-        pod_job.pod = self.load_pod(&ModelID::Hash(pod_hash.to_owned()))?;
+        pod_job.pod = self.load_pod(&ModelID::Hash(Self::get_key_from_yaml(
+            self.make_hash_rel_path::<PodJob>(&pod_job.hash, SPEC_FILENAME),
+            "pod_hash",
+        )?))?;
 
         Ok(pod_job)
     }
