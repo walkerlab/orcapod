@@ -95,10 +95,6 @@ impl LocalFileStore {
         &self.directory
     }
     /// Construct a local file store instance in a specific directory.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue creating the default user data namespace.
     pub fn new(directory: impl AsRef<Path>) -> Self {
         Self {
             directory: directory.as_ref().into(),
@@ -142,23 +138,17 @@ impl LocalFileStore {
             $
             ",
         )?;
-        let paths = glob(&glob_pattern.to_string_lossy())?
-            .filter_map(move |filepath| {
-                let filepath_string = String::from(filepath.ok()?.to_string_lossy());
-                let group = re.captures(&filepath_string)?;
-                Some((
-                    group.name("name").map(|name| name.as_str().to_owned()),
-                    group
-                        .name("version")
-                        .map(|version| version.as_str().to_owned()),
-                    group["hash"].to_string(),
-                ))
+        let paths = glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
+            let filepath_string = String::from(filepath.ok()?.to_string_lossy());
+            let group = re.captures(&filepath_string)?;
+            Some(ModelInfo {
+                name: group.name("name").map(|name| name.as_str().to_owned()),
+                version: group
+                    .name("version")
+                    .map(|version| version.as_str().to_owned()),
+                hash: group["hash"].to_string(),
             })
-            .map(|(name, version, hash)| ModelInfo {
-                name,
-                version,
-                hash,
-            });
+        });
         Ok(paths)
     }
 
