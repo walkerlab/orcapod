@@ -361,7 +361,7 @@ impl ModelStore for LocalStore {
         // Get the pod
         pod_job.pod = self.load_pod(&ModelID::Hash(Self::get_key_from_yaml(
             self.make_hash_rel_path::<PodJob>(&pod_job.hash, SPEC_FILENAME),
-            "pod_hash",
+            "pod",
         )?))?;
 
         Ok(pod_job)

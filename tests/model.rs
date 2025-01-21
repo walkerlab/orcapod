@@ -58,7 +58,7 @@ fn pod_job_to_yaml() -> Result<()> {
         to_yaml::<PodJob>(&pod_job_fixture(&LocalStore::new(temp_dir))?)?,
         indoc! {"
         class: pod_job
-        cpu_limit: 2.0
+        pod: 5c6d2467f5f1cbfc6b321208ae9628be6a61255a810a08ddad60a7abb8953e53
         input_store_mapping:
           image: !File
             path: image.png
@@ -68,11 +68,11 @@ fn pod_job_to_yaml() -> Result<()> {
             path: style.png
             store_name: null
             content_check_sum: ''
-        mem_limit: 4294967296
         output_store_mapping:
           path: stylized_image
           store_name: null
-        pod_hash: 5c6d2467f5f1cbfc6b321208ae9628be6a61255a810a08ddad60a7abb8953e53
+        cpu_limit: 2.0
+        mem_limit: 4294967296
         retry_policy: NoRetry
     "},
         "YAML serialization didn't match."

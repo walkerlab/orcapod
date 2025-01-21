@@ -2,7 +2,7 @@ use crate::{
     error::Result,
     util::{get_type_name, hash},
 };
-use serde::{ser::SerializeStruct, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -24,10 +24,10 @@ pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
     #[serde(skip)]
     pub annotation: Option<Annotation>,
+    command: String,
     /// Unique id based on reproducibility.
     #[serde(skip)]
     pub hash: String,
-    command: String,
     image: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
@@ -121,13 +121,14 @@ pub struct OutputStoreMapping {
     pub store_name: Option<String>,
 }
 /// Struct to represent ``PodJob``
-#[derive(Deserialize, PartialEq, Default, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Default, Debug)]
 pub struct PodJob {
     /// Optional annotation for pod job
     #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Computed by coverting it to yaml then hash
-    #[serde(skip)]
+    #[serde(serialize_with = "pod_to_pod_hash")]
+    #[serde(skip_deserializing)]
     pub pod: Pod,
     /// Hash of the yaml seraliziation of pod job
     #[serde(skip)]
@@ -138,6 +139,13 @@ pub struct PodJob {
     cpu_limit: f32, // Num of cpu to limit the pod from
     mem_limit: u64, // Bytes to limit memory
     retry_policy: RetryPolicy,
+}
+
+fn pod_to_pod_hash<S>(pod: &Pod, serializer: S) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&pod.hash)
 }
 
 impl PodJob {
@@ -169,23 +177,6 @@ impl PodJob {
             hash: hash(&to_yaml(&pod_job_no_hash)?),
             ..pod_job_no_hash
         })
-    }
-}
-
-impl Serialize for PodJob {
-    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("PodJob", 6)?;
-        state.serialize_field("cpu_limit", &self.cpu_limit)?;
-        state.serialize_field("input_store_mapping", &self.input_store_mapping)?;
-        state.serialize_field("mem_limit", &self.mem_limit)?;
-        state.serialize_field("output_store_mapping", &self.output_store_mapping)?;
-        state.serialize_field("pod_hash", &self.pod.hash)?;
-        state.serialize_field("retry_policy", &self.retry_policy)?;
-
-        state.end()
     }
 }
 
