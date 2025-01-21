@@ -1,8 +1,8 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Pod, PodJob},
+    model::{to_yaml, Annotation, Blob, BlobInterface, FileOrFolder, Pod, PodJob},
     store::{ModelID, ModelInfo, Store},
-    util::get_type_name,
+    util::{get_type_name, hash},
 };
 use colored::Colorize;
 use regex::Regex;
@@ -90,6 +90,25 @@ impl Store for LocalFileStore {
         fs::remove_file(&annotation_file)?;
 
         Ok(())
+    }
+}
+
+impl BlobInterface for LocalFileStore {
+    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
+        Ok(match &blob.kind {
+            FileOrFolder::File => Blob {
+                checksum: Some(hash(&fs::read(
+                    PathBuf::from(format!(
+                        "{}/{}",
+                        self.directory.to_string_lossy(),
+                        Self::DEFAULT_DATA_NAMESPACE,
+                    ))
+                    .join(&blob.location),
+                )?)),
+                ..blob
+            },
+            FileOrFolder::Folder => todo!(),
+        })
     }
 }
 

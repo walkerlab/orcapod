@@ -2,7 +2,7 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{add_storage, pod_job_style, pod_style, store_test, TestSetup};
+use fixture::{add_storage, pod_job_style, pod_style, store_test, TestSetup, TestStore};
 use orcapod::{
     error::Result,
     model::{Annotation, Pod},
@@ -22,18 +22,17 @@ fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     )
 }
 
-fn basic_test<T: TestSetup + Debug + Clone>(model: T) -> Result<(T::Target, T)>
+fn basic_test<T: TestSetup + Debug + Clone>(model: T, store: &TestStore) -> Result<(T::Target, T)>
 where
     T::Target: PartialEq<T> + Debug,
 {
-    let store = store_test(None)?;
-    let stored_model = add_storage(model, &store)?;
+    let stored_model = add_storage(model, store)?;
     let annotation = stored_model
         .model
         .get_annotation()
         .expect("Annotation missing from `pod_style`");
     assert_eq!(
-        stored_model.model.list(&store)?,
+        stored_model.model.list(store)?,
         vec![ModelInfo {
             name: annotation.name.clone(),
             version: annotation.version.clone(),
@@ -41,19 +40,21 @@ where
         }],
         "List didn't match."
     );
-    Ok((stored_model.model.load(&store)?, stored_model.model.clone()))
+    Ok((stored_model.model.load(store)?, stored_model.model.clone()))
 }
 
 #[test]
 fn pod_basic() -> Result<()> {
-    let (loaded_model, stored_model) = basic_test(pod_style()?)?;
+    let store = store_test(None, false)?;
+    let (loaded_model, stored_model) = basic_test(pod_style()?, &store)?;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
 }
 
 #[test]
 fn pod_job_basic() -> Result<()> {
-    let (loaded_model, mut stored_model) = basic_test(pod_job_style()?)?;
+    let store = store_test(None, true)?;
+    let (loaded_model, mut stored_model) = basic_test(pod_job_style(&store.store)?, &store)?;
     stored_model.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
@@ -64,7 +65,7 @@ fn pod_files() -> Result<()> {
     let store_directory = String::from(tempdir()?.path().to_string_lossy());
     {
         let pod_style = pod_style()?;
-        let store = store_test(Some(&store_directory))?;
+        let store = store_test(Some(&store_directory), false)?;
         let annotation = pod_style
             .annotation
             .as_ref()
@@ -99,14 +100,14 @@ fn pod_files() -> Result<()> {
 
 #[test]
 fn pod_list_empty() -> Result<()> {
-    let store = store_test(None)?;
+    let store = store_test(None, false)?;
     assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
 
 #[test]
 fn pod_load_from_hash() -> Result<()> {
-    let store = store_test(None)?;
+    let store = store_test(None, false)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     stored_model.model.annotation = None;
     let loaded_pod = stored_model
@@ -121,7 +122,7 @@ fn pod_load_from_hash() -> Result<()> {
 
 #[test]
 fn pod_annotation_delete() -> Result<()> {
-    let store = store_test(None)?;
+    let store = store_test(None, false)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     stored_model.model.annotation = Some(Annotation {
         name: "new-name".to_owned(),
@@ -135,12 +136,12 @@ fn pod_annotation_delete() -> Result<()> {
             ModelInfo {
                 name: "new-name".to_owned(),
                 version: "0.5.0".to_owned(),
-                hash: "1f20028a4981041172dbb808000a2c42ae6e2997b8b7894970763f74df15f5e8".to_owned()
+                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned()
             },
             ModelInfo {
                 name: "style-transfer".to_owned(),
                 version: "0.67.0".to_owned(),
-                hash: "1f20028a4981041172dbb808000a2c42ae6e2997b8b7894970763f74df15f5e8".to_owned()
+                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned()
             }
         ],
         "Pod list didn't return 2 expected entries."
@@ -151,7 +152,7 @@ fn pod_annotation_delete() -> Result<()> {
         vec![ModelInfo {
             name: "style-transfer".to_owned(),
             version: "0.67.0".to_owned(),
-            hash: "1f20028a4981041172dbb808000a2c42ae6e2997b8b7894970763f74df15f5e8".to_owned()
+            hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned()
         }],
         "Pod list didn't return 1 expected entry."
     );

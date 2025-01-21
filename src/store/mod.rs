@@ -1,6 +1,6 @@
 use crate::{
     error::Result,
-    model::{Pod, PodJob},
+    model::{BlobInterface, Pod, PodJob},
 };
 
 /// Options for identifying a model.
@@ -23,7 +23,7 @@ pub struct ModelInfo {
 }
 
 /// Standard behavior of any store backend supported.
-pub trait Store {
+pub trait Store: BlobInterface {
     /// Default namespace where user data (inputs/outputs) will be stored.
     const DEFAULT_DATA_NAMESPACE: &str = "orcapod_data";
     /// Namespace where models will be stored.
