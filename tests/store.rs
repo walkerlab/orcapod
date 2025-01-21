@@ -33,11 +33,18 @@ where
         .expect("Annotation missing from `pod_style`");
     assert_eq!(
         stored_model.model.list(store)?,
-        vec![ModelInfo {
-            name: annotation.name.clone(),
-            version: annotation.version.clone(),
-            hash: stored_model.model.get_hash().to_owned()
-        }],
+        vec![
+            ModelInfo {
+                name: Some(annotation.name.clone()),
+                version: Some(annotation.version.clone()),
+                hash: stored_model.model.get_hash().to_owned(),
+            },
+            ModelInfo {
+                name: None,
+                version: None,
+                hash: stored_model.model.get_hash().to_owned(),
+            },
+        ],
         "List didn't match."
     );
     Ok((stored_model.model.load(store)?, stored_model.model.clone()))
@@ -134,34 +141,56 @@ fn pod_annotation_delete() -> Result<()> {
         store.list_pod()?,
         vec![
             ModelInfo {
-                name: "new-name".to_owned(),
-                version: "0.5.0".to_owned(),
-                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned()
+                name: Some("new-name".to_owned()),
+                version: Some("0.5.0".to_owned()),
+                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
             },
             ModelInfo {
-                name: "style-transfer".to_owned(),
-                version: "0.67.0".to_owned(),
-                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned()
-            }
+                name: Some("style-transfer".to_owned()),
+                version: Some("0.67.0".to_owned()),
+                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+            },
+            ModelInfo {
+                name: None,
+                version: None,
+                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+            },
         ],
-        "Pod list didn't return 2 expected entries."
+        "Pod list didn't return 3 expected entries."
     );
     store.delete_annotation::<Pod>("new-name", "0.5.0")?;
     assert_eq!(
         store.list_pod()?,
+        vec![
+            ModelInfo {
+                name: Some("style-transfer".to_owned()),
+                version: Some("0.67.0".to_owned()),
+                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+            },
+            ModelInfo {
+                name: None,
+                version: None,
+                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+            },
+        ],
+        "Pod list didn't return 2 expected entry."
+    );
+    store.delete_annotation::<Pod>("style-transfer", "0.67.0")?;
+    assert_eq!(
+        store.list_pod()?,
         vec![ModelInfo {
-            name: "style-transfer".to_owned(),
-            version: "0.67.0".to_owned(),
+            name: None,
+            version: None,
             hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned()
         }],
         "Pod list didn't return 1 expected entry."
     );
     assert!(
         store
-            .delete_annotation::<Pod>("style-transfer", "0.67.0")
+            .delete_annotation::<Pod>("style-transfer", "9.9.9")
             .expect_err("Unexpectedly succeeded.")
-            .is_deleting_last_annotation(),
-        "Returned a different OrcaError than one expected for deleting the last annotation."
+            .is_invalid_annotation(),
+        "Returned a different OrcaError than one expected when deleting an invalid annotation."
     );
     Ok(())
 }

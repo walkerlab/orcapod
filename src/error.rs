@@ -23,18 +23,6 @@ pub(crate) enum Kind {
         name: String,
         version: String,
     },
-    #[error("No annotation found when attempting to store.")]
-    MissingAnnotationOnSave,
-    #[error("Attempted to delete the last annotation for `{name}:{version}` {class}.")]
-    DeletingLastAnnotation {
-        class: String,
-        name: String,
-        version: String,
-    },
-    #[error("No match for regex.")]
-    NoRegexMatch,
-    #[error(transparent)]
-    GlobError(#[from] glob::GlobError),
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]
@@ -50,21 +38,14 @@ pub struct OrcaError {
     kind: Kind,
 }
 impl OrcaError {
-    /// Returns `true` if the error was caused by an attempt to delete a model's last annotation.
-    pub const fn is_deleting_last_annotation(&self) -> bool {
-        matches!(self.kind, Kind::DeletingLastAnnotation { .. })
+    /// Returns `true` if the error was caused by an invalid model annotation.
+    pub const fn is_invalid_annotation(&self) -> bool {
+        matches!(self.kind, Kind::NoAnnotationFound { .. })
     }
 }
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
-    }
-}
-impl From<glob::GlobError> for OrcaError {
-    fn from(error: glob::GlobError) -> Self {
-        Self {
-            kind: Kind::GlobError(error),
-        }
     }
 }
 impl From<glob::PatternError> for OrcaError {

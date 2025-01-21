@@ -15,9 +15,9 @@ pub enum ModelID {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ModelInfo {
     /// A model's name.
-    pub name: String,
+    pub name: Option<String>,
     /// A model's version.
-    pub version: String,
+    pub version: Option<String>,
     /// A model's hash.
     pub hash: String,
 }
