@@ -2,40 +2,40 @@ use crate::{
     error::Result,
     util::{get_type_name, hash},
 };
-use serde::{Deserialize, Serialize, Serializer};
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-    result,
-};
-
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::{collections::BTreeMap, path::PathBuf, result};
+/// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
-/// Error out with ``serde_yaml`` seralization error if something goes wrong
-pub fn to_yaml<T: Serialize>(item: &T) -> Result<String> {
-    let mut yaml = serde_yaml::to_string(item)?;
+///
+/// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
+pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
+    let mut yaml = serde_yaml::to_string(instance)?;
     yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
+
     Ok(yaml)
 }
 
+// --- core model structs ---
+
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
     #[serde(skip)]
     pub annotation: Option<Annotation>,
-    command: String,
     /// Unique id based on reproducibility.
     #[serde(skip)]
     pub hash: String,
     image: String,
+    command: String,
     input_stream_map: BTreeMap<String, StreamInfo>,
     output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
+    source_commit_url: String,
     recommended_cpus: f32,
     recommended_memory: u64,
     required_gpu: Option<GPURequirement>,
-    source_commit_url: String,
 }
 
 impl Pod {
@@ -49,7 +49,6 @@ impl Pod {
         source_commit_url: String,
         image: String,
         command: String,
-        // Defined as Key and (Pathbuf, and Regex restriction)
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
@@ -77,104 +76,91 @@ impl Pod {
     }
 }
 
-/// Struct to store the path of where to look in the storage along with the checksum for hashing
-/// and/or file integrity check
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct InputStoreMapping {
-    path: PathBuf,
-    store_name: Option<String>,
-    content_check_sum: String,
-}
-
-impl InputStoreMapping {
-    /// Construct a new ``InputStoreMapping`` with empty content check sum
-    pub fn new(path: impl AsRef<Path>, store_name: Option<String>) -> Self {
-        Self {
-            path: path.as_ref().to_path_buf(),
-            store_name,
-            content_check_sum: String::new(),
-        }
-    }
-}
-
-/// Describe the input with two current options
-/// Singular file,
-/// or a collection of files that will be map
-///
-/// NOTE: All files are to be uploaded to the apporiate store ahead of usage
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub enum Input {
-    /// Single File to be used as input that is stored in the store
-    File(InputStoreMapping),
-    /// Collection of files to be used as input (assume to be same type to match against regex)
-    FileCollection(Vec<InputStoreMapping>),
-    /// For folder mounting
-    Folder(InputStoreMapping),
-}
-
-/// Mapping for output volume mount from container -> File Store
-#[derive(Serialize, Deserialize, PartialEq, Eq, Default, Debug)]
-pub struct OutputStoreMapping {
-    /// Where to store the results and in which store
-    pub path: PathBuf,
-    /// The name of the store
-    pub store_name: Option<String>,
-}
-/// Struct to represent ``PodJob``
-#[derive(Serialize, Deserialize, PartialEq, Default, Debug)]
-pub struct PodJob {
-    /// Optional annotation for pod job
-    #[serde(skip)]
-    pub annotation: Option<Annotation>,
-    /// Computed by coverting it to yaml then hash
-    #[serde(serialize_with = "pod_to_pod_hash")]
-    #[serde(skip_deserializing)]
-    pub pod: Pod,
-    /// Hash of the yaml seraliziation of pod job
-    #[serde(skip)]
-    pub hash: String,
-    /// String is the key, variable, input is the actual path to look up
-    input_store_mapping: BTreeMap<String, Input>,
-    output_store_mapping: OutputStoreMapping,
-    cpu_limit: f32, // Num of cpu to limit the pod from
-    mem_limit: u64, // Bytes to limit memory
-    retry_policy: RetryPolicy,
-}
-
-fn pod_to_pod_hash<S>(pod: &Pod, serializer: S) -> result::Result<S::Ok, S::Error>
+fn serialize_pod<S>(pod: &Pod, serializer: S) -> result::Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     serializer.serialize_str(&pod.hash)
 }
 
-impl PodJob {
-    /// Function to create a new pod job
+fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Pod, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(Pod {
+        hash: String::deserialize(deserializer)?,
+        ..Pod::default()
+    })
+}
+
+/// A compute job that specifies resource requests and input/output targets.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct PodJob {
+    /// Metadata that doesn't affect reproducibility.
+    #[serde(skip)]
+    pub annotation: Option<Annotation>,
+    /// Unique id based on reproducibility.
+    #[serde(skip)]
+    pub hash: String,
+    /// A pod to base the pod job on.
+    #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
+    pub pod: Pod,
+    /// Map stream ids to an input in user data target.
+    pub input_stream_path: BTreeMap<String, Input>,
+    /// Map output directory to a folder in user data target.
+    pub output_stream_path: Blob<FolderOnly>,
+    cpu_limit: f32,
+    memory_limit: u64,
+}
+
+/// An interface to access BLOB functions.
+pub trait BlobInterface {
+    /// How to evaluate a checksum of a BLOB.
     ///
     /// # Errors
-    /// Will error out if fail to cover to yaml and hash
+    ///
+    /// Will return `Err` if there is an issue computing the checksum of a BLOB.
+    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>>;
+}
+
+impl PodJob {
+    /// Construct a new pod job instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `PodJob` instance.
     pub fn new(
         annotation: Option<Annotation>,
         pod: Pod,
-        input_store_mapping: BTreeMap<String, Input>,
-        output_store_mapping: OutputStoreMapping,
+        input_stream_path: BTreeMap<String, Input>,
+        output_stream_path: Blob<FolderOnly>,
         cpu_limit: f32,
-        mem_limit: u64,
-        retry_policy: RetryPolicy,
+        memory_limit: u64,
+        blob_interface: &impl BlobInterface,
     ) -> Result<Self> {
+        let input_stream_path_with_checksums = input_stream_path
+            .into_iter()
+            .map(|(stream_name, stream_input)| match stream_input {
+                Input::Unary(blob) => Ok((
+                    stream_name,
+                    Input::Unary(blob_interface.compute_checksum(blob)?),
+                )),
+                Input::Collection(_) => todo!(),
+            })
+            .collect::<Result<BTreeMap<_, _>>>()?;
+        let mut output_stream_path_without_checksum = output_stream_path;
+        output_stream_path_without_checksum.checksum = None;
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
             pod,
-            input_store_mapping,
-            output_store_mapping,
+            input_stream_path: input_stream_path_with_checksums,
+            output_stream_path: output_stream_path_without_checksum,
             cpu_limit,
-            mem_limit,
-            retry_policy,
+            memory_limit,
         };
-
         Ok(Self {
-            hash: hash(&to_yaml(&pod_job_no_hash)?),
+            hash: hash(to_yaml(&pod_job_no_hash)?),
             ..pod_job_no_hash
         })
     }
@@ -183,7 +169,7 @@ impl PodJob {
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -192,7 +178,6 @@ pub struct Annotation {
     /// A long form description.
     pub description: String,
 }
-
 /// Specification for GPU requirements in computation.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
@@ -203,7 +188,6 @@ pub struct GPURequirement {
     /// Number of GPU cards required.
     pub count: u16,
 }
-
 /// GPU model specification.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
@@ -218,23 +202,40 @@ pub enum GPUModel {
 pub struct StreamInfo {
     /// Path to stream file.
     pub path: PathBuf,
-    /// Regex restriction of input file
-    /// For file, it can be i.e  \N+.png
-    /// For folders it must end in a slash i.e. \N+\/
+    /// Naming pattern for the stream.
     pub match_pattern: String,
 }
-
-/// Pod job retry policy
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub enum RetryPolicy {
-    /// Will stop the job upon first failure
-    NoRetry,
-    /// Will allow n number of failures within a time window of t seconds
-    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
+/// Input options sourced from user data target.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum Input {
+    /// A single BLOB.
+    Unary(Blob<FileOrFolder>),
+    /// A series of BLOBs.
+    Collection(Vec<Blob<FileOrFolder>>),
 }
 
-impl Default for RetryPolicy {
-    fn default() -> Self {
-        Self::NoRetry
-    }
+/// BLOB in user data target with metadata.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Blob<T> {
+    /// BLOB available options.
+    pub kind: T,
+    /// BLOB location.
+    pub location: PathBuf,
+    /// BLOB contents checksum.
+    pub checksum: Option<String>,
+}
+/// File or folder options for BLOBs.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum FileOrFolder {
+    /// A single file specified by its absolute path.
+    File,
+    /// A single folder specified by its absolute path.
+    Folder,
+}
+/// Folder-only option for BLOBs.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum FolderOnly {
+    /// A single folder specified by its absolute path.
+    Folder,
 }

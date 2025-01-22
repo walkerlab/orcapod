@@ -6,9 +6,6 @@ use std::any::type_name;
     clippy::unwrap_used,
     reason = "`last()` cannot return `None` since `type_name` always returns `&str`."
 )]
-///
-/// # Panics
-/// Never will panic
 pub fn get_type_name<T>() -> String {
     type_name::<T>()
         .split("::")
@@ -18,7 +15,6 @@ pub fn get_type_name<T>() -> String {
         .to_snake_case()
 }
 
-/// Standard hashing algorithm for models
 pub fn hash(buffer: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(buffer.as_ref()))
 }
