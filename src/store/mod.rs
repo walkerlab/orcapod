@@ -1,4 +1,7 @@
-use crate::{error::Result, model::Pod};
+use crate::{
+    error::Result,
+    model::{BlobInterface, Pod, PodJob},
+};
 
 /// Options for identifying a model.
 pub enum ModelID {
@@ -12,15 +15,19 @@ pub enum ModelID {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ModelInfo {
     /// A model's name.
-    pub name: String,
+    pub name: Option<String>,
     /// A model's version.
-    pub version: String,
+    pub version: Option<String>,
     /// A model's hash.
     pub hash: String,
 }
 
 /// Standard behavior of any store backend supported.
-pub trait Store {
+pub trait Store: BlobInterface {
+    /// Default namespace where user data (inputs/outputs) will be stored.
+    const DEFAULT_DATA_NAMESPACE: &str = "orcapod_data";
+    /// Namespace where models will be stored.
+    const MODEL_NAMESPACE: &str = "orcapod_model";
     /// How a pod is stored.
     ///
     /// # Errors
@@ -47,6 +54,34 @@ pub trait Store {
     /// Will return `Err` if there is an issue deleting a pod from the store using `name` and
     /// `version`.
     fn delete_pod(&self, model_id: &ModelID) -> Result<()>;
+    /// How a pod job is stored.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue storing `pod_job`.
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()>;
+    /// How to load a stored pod job into a model instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue loading a pod job from the store using `name` and
+    /// `version`.
+    fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob>;
+    /// How to query stored pod jobs.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue querying metadata from existing pod jobs in the
+    /// store.
+    fn list_pod_job(&self) -> Result<Vec<ModelInfo>>;
+    /// How to explicitly delete a stored pod job and all associated annotations (does not
+    /// propagate).
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue deleting a pod job from the store using `name` and
+    /// `version`.
+    fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
     /// How to explicitly delete an annotation.
     ///
     /// # Errors

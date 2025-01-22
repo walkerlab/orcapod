@@ -15,6 +15,6 @@ pub fn get_type_name<T>() -> String {
         .to_snake_case()
 }
 
-pub fn hash(buffer: &str) -> String {
-    format!("{:x}", Sha256::digest(buffer))
+pub fn hash(buffer: impl AsRef<[u8]>) -> String {
+    format!("{:x}", Sha256::digest(buffer.as_ref()))
 }

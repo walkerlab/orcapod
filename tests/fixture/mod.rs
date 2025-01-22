@@ -10,10 +10,12 @@
 
 use orcapod::{
     error::Result,
-    model::{Annotation, Pod, StreamInfo},
-    store::{filestore::LocalFileStore, ModelID, Store},
+    model::{
+        Annotation, Blob, BlobInterface, FileOrFolder, FolderOnly, Input, Pod, PodJob, StreamInfo,
+    },
+    store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
 };
-use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf};
+use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf, process::Command};
 use tempfile::tempdir;
 
 // --- fixtures ---
@@ -30,39 +32,87 @@ pub fn pod_style() -> Result<Pod> {
         "tail -f /dev/null".to_owned(),
         BTreeMap::from([
             (
-                "painting".to_owned(),
+                "style".to_owned(),
                 StreamInfo {
-                    path: PathBuf::from("/input/painting.png"),
-                    match_pattern: "/input/painting.png".to_owned(),
+                    path: PathBuf::from("/input/style.t7"),
+                    match_pattern: r".*\.t7".to_owned(),
                 },
             ),
             (
                 "image".to_owned(),
                 StreamInfo {
-                    path: PathBuf::from("/input/image.png"),
-                    match_pattern: "/input/image.png".to_owned(),
+                    path: PathBuf::from("/input/image.jpeg"),
+                    match_pattern: r".*\.jpeg".to_owned(),
                 },
             ),
         ]),
         PathBuf::from("/output"),
         BTreeMap::from([(
-            "styled".to_owned(),
+            "result".to_owned(),
             StreamInfo {
-                path: PathBuf::from("./styled.png"),
-                match_pattern: "./styled.png".to_owned(),
+                path: PathBuf::from("./result.jpeg"),
+                match_pattern: r".*\.jpeg".to_owned(),
             },
         )]),
         0.25,        // 250 millicores as frac cores
-        2_u64 << 30, // 2GiB in bytes
+        1_u64 << 30, // 1GiB in bytes
         None,
     )
 }
 
-pub fn store_test(store_directory: Option<&str>) -> Result<TestStore> {
+pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
+    PodJob::new(
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod job.".to_owned(),
+            version: "0.1.0".to_owned(),
+        }),
+        pod_style()?,
+        BTreeMap::from([
+            (
+                "style".to_owned(),
+                Input::Unary(Blob {
+                    kind: FileOrFolder::File,
+                    location: PathBuf::from("styles/mosaic.t7"),
+                    checksum: None,
+                }),
+            ),
+            (
+                "image".to_owned(),
+                Input::Unary(Blob {
+                    kind: FileOrFolder::File,
+                    location: PathBuf::from("images/dog.jpeg"),
+                    checksum: None,
+                }),
+            ),
+        ]),
+        Blob {
+            kind: FolderOnly::Folder,
+            location: PathBuf::from("output"),
+            checksum: Some("please_ignore".to_owned()),
+        },
+        0.5,         // 500 millicores as frac cores
+        2_u64 << 30, // 2GiB in bytes
+        blob_interface,
+    )
+}
+
+pub fn store_test(store_directory: Option<&str>, with_data: bool) -> Result<TestStore> {
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     let store =
         store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
     fs::create_dir_all(store.get_directory())?;
+    if with_data {
+        Command::new("cp")
+            .arg("-r")
+            .arg("./tests/data")
+            .arg(format!(
+                "{}/{}",
+                store.get_directory().to_string_lossy(),
+                LocalFileStore::DEFAULT_DATA_NAMESPACE
+            ))
+            .output()?;
+    }
     Ok(TestStore { store })
 }
 
@@ -78,7 +128,7 @@ pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStor
 
 #[derive(Debug)]
 pub struct TestStore {
-    store: LocalFileStore,
+    pub store: LocalFileStore,
 }
 
 #[derive(Debug)]
@@ -115,6 +165,7 @@ pub trait TestSetup {
     fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
     fn get_annotation(&self) -> Option<&Annotation>;
     fn get_hash(&self) -> &str;
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>>;
 }
 
 impl TestSetup for Pod {
@@ -137,5 +188,34 @@ impl TestSetup for Pod {
     }
     fn get_hash(&self) -> &str {
         &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        store.list_pod()
+    }
+}
+
+impl TestSetup for PodJob {
+    type Target = Self;
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        store.save_pod_job(self)
+    }
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        store.delete_pod_job(&ModelID::Hash(self.hash.clone()))
+    }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pod_job(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        store.list_pod_job()
     }
 }
