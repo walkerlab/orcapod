@@ -21,4 +21,6 @@ jobs:
       - name: Run format test
         run: cargo fmt --check
       - name: Run integration tests w/ coverage report
+        env:
+          RUST_BACKTRACE: full
         run: cargo llvm-cov -- --nocapture

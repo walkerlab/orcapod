@@ -3,111 +3,81 @@ use glob;
 use regex;
 use serde_yaml;
 use std::{
-    error::Error,
     fmt,
     fmt::{Display, Formatter},
     io,
     path::PathBuf,
     result,
 };
+use thiserror::Error;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T> = result::Result<T, OrcaError>;
-
 /// Possible errors you may encounter.
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub(crate) enum Kind {
-    /// Returned if a file is not expected to exist.
-    FileExists(PathBuf),
-    /// Returned if an annotation was expected to exist.
-    NoAnnotationFound(String, String, String),
-    /// Returned if a model save was attempted without an annotation set.
-    MissingAnnotationOnSave,
-    /// Returned if an annotation delete was attempted on a model's last annotation.
-    DeletingLastAnnotation(String, String, String),
-    /// Returned if a regular expression was expected to match.
-    NoRegexMatch,
-    /// Wrapper around `glob::GlobError`
-    GlobError(glob::GlobError),
-    /// Wrapper around `glob::PatternError`
-    GlobPatternError(glob::PatternError),
-    /// Wrapper around `regex::Error`
-    RegexError(regex::Error),
-    /// Wrapper around `serde_yaml::Error`
-    SerdeYamlError(serde_yaml::Error),
-    /// Wrapper around `io::Error`
-    IoError(io::Error),
+    #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
+    FileExists { path: PathBuf },
+    #[error("No annotation found for `{name}:{version}` {class}.")]
+    NoAnnotationFound {
+        class: String,
+        name: String,
+        version: String,
+    },
+    #[error(transparent)]
+    GlobPatternError(#[from] glob::PatternError),
+    #[error(transparent)]
+    RegexError(#[from] regex::Error),
+    #[error(transparent)]
+    SerdeYamlError(#[from] serde_yaml::Error),
+    #[error(transparent)]
+    IoError(#[from] io::Error),
 }
-
 /// A stable error API interface.
-#[derive(Debug)]
-pub struct OrcaError(Kind);
-impl Error for OrcaError {}
+#[derive(Error, Debug)]
+pub struct OrcaError {
+    kind: Kind,
+}
 impl OrcaError {
-    /// Returns `true` if the error was caused by an attempt to delete a model's last annotation.
-    pub const fn is_deleting_last_annotation(&self) -> bool {
-        matches!(self.0, Kind::DeletingLastAnnotation(_, _, _))
+    /// Returns `true` if the error was caused by an invalid model annotation.
+    pub const fn is_invalid_annotation(&self) -> bool {
+        matches!(self.kind, Kind::NoAnnotationFound { .. })
     }
 }
 impl Display for OrcaError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        match &self.0 {
-            Kind::FileExists(path) => {
-                write!(
-                    f,
-                    "File `{}` already exists.",
-                    path.to_string_lossy().bright_cyan()
-                )
-            }
-            Kind::NoAnnotationFound(class, name, version) => {
-                write!(f, "No annotation found for `{name}:{version}` {class}.")
-            }
-            Kind::MissingAnnotationOnSave => {
-                write!(f, "No annotation found when attempting to store.")
-            }
-            Kind::DeletingLastAnnotation(class, name, version) => {
-                write!(
-                    f,
-                    "Attempted to delete the last annotation for `{name}:{version}` {class}."
-                )
-            }
-            Kind::NoRegexMatch => {
-                write!(f, "No match for regex.")
-            }
-            Kind::GlobError(error) => write!(f, "{error}"),
-            Kind::GlobPatternError(error) => write!(f, "{error}"),
-            Kind::SerdeYamlError(error) => write!(f, "{error}"),
-            Kind::RegexError(error) => write!(f, "{error}"),
-            Kind::IoError(error) => write!(f, "{error}"),
-        }
-    }
-}
-impl From<glob::GlobError> for OrcaError {
-    fn from(error: glob::GlobError) -> Self {
-        Self(Kind::GlobError(error))
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.kind)
     }
 }
 impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
-        Self(Kind::GlobPatternError(error))
-    }
-}
-impl From<serde_yaml::Error> for OrcaError {
-    fn from(error: serde_yaml::Error) -> Self {
-        Self(Kind::SerdeYamlError(error))
+        Self {
+            kind: Kind::GlobPatternError(error),
+        }
     }
 }
 impl From<regex::Error> for OrcaError {
     fn from(error: regex::Error) -> Self {
-        Self(Kind::RegexError(error))
+        Self {
+            kind: Kind::RegexError(error),
+        }
+    }
+}
+impl From<serde_yaml::Error> for OrcaError {
+    fn from(error: serde_yaml::Error) -> Self {
+        Self {
+            kind: Kind::SerdeYamlError(error),
+        }
     }
 }
 impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
-        Self(Kind::IoError(error))
+        Self {
+            kind: Kind::IoError(error),
+        }
     }
 }
 impl From<Kind> for OrcaError {
-    fn from(error: Kind) -> Self {
-        Self(error)
+    fn from(kind: Kind) -> Self {
+        Self { kind }
     }
 }
