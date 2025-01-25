@@ -1,10 +1,11 @@
+use crate::store::ModelID;
+use bollard::errors::Error as BollardError;
 use colored::Colorize;
 use glob;
 use regex;
 use serde_yaml;
 use std::{
-    fmt,
-    fmt::{Display, Formatter},
+    fmt::{self, Display, Formatter},
     io,
     path::PathBuf,
     result,
@@ -23,6 +24,12 @@ pub(crate) enum Kind {
         name: String,
         version: String,
     },
+    #[error("No recent pod runs associated with pod job `{model_id:?}`.")]
+    NonexistentPodRun { model_id: ModelID },
+    #[error("No known container names.")]
+    NoContainerNames,
+    #[error("Out of generated random names.")]
+    GeneratedNamesOverflow,
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]
@@ -31,6 +38,8 @@ pub(crate) enum Kind {
     SerdeYamlError(#[from] serde_yaml::Error),
     #[error(transparent)]
     IoError(#[from] io::Error),
+    #[error(transparent)]
+    BollardError(#[from] BollardError),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -73,6 +82,13 @@ impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self {
             kind: Kind::IoError(error),
+        }
+    }
+}
+impl From<BollardError> for OrcaError {
+    fn from(error: BollardError) -> Self {
+        Self {
+            kind: Kind::BollardError(error),
         }
     }
 }

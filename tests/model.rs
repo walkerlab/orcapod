@@ -22,7 +22,7 @@ impl BlobInterface for FakeStore {
 fn hash_pod() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085",
+        "8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094",
         "Hash didn't match."
     );
     Ok(())
@@ -34,8 +34,8 @@ fn pod_to_yaml() -> Result<()> {
         to_yaml(&pod_style()?)?,
         indoc! {r"
             class: pod
-            image: zenmldocker/zenml-server:0.67.0
-            command: tail -f /dev/null
+            image: example.server.com/user/style-transfer:1.0.0
+            command: python /run.py
             input_stream_map:
               image:
                 path: /input/image.jpeg
@@ -48,7 +48,7 @@ fn pod_to_yaml() -> Result<()> {
               result:
                 path: ./result.jpeg
                 match_pattern: .*\.jpeg
-            source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
+            source_commit_url: https://github.com/user/style-transfer/tree/1.0.0
             recommended_cpus: 0.25
             recommended_memory: 1073741824
             required_gpu: null
@@ -61,8 +61,8 @@ fn pod_to_yaml() -> Result<()> {
 #[test]
 fn hash_pod_job() -> Result<()> {
     assert_eq!(
-        pod_job_style(&FakeStore)?.hash,
-        "5851a796f77e1649aa9b1e9704dd958f04af16e032bfa29d781db80d0e3ad243",
+        pod_job_style(&FakeStore, false)?.hash,
+        "0cfeb25e4b3f6ea2b2327fc799c9fbeb20107937e4e01c7cdcf5b7a024c45720",
         "Hash didn't match."
     );
     Ok(())
@@ -71,10 +71,10 @@ fn hash_pod_job() -> Result<()> {
 #[test]
 fn pod_job_to_yaml() -> Result<()> {
     assert_eq!(
-        to_yaml(&pod_job_style(&FakeStore)?)?,
+        to_yaml(&pod_job_style(&FakeStore, false)?)?,
         indoc! {"
             class: pod_job
-            pod: 61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085
+            pod: 8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094
             input_stream_path:
               image:
                 kind: File

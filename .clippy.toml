@@ -2,7 +2,7 @@ excessive-nesting-threshold = 4
 too-many-arguments-threshold = 10
 allowed-prefixes = ["..", "GPU", "Orca", "Local"]
 min-ident-chars-threshold = 2
-allowed-idents-below-min-chars = ["..", "k", "f", "re", "id", "Ok"]
+allowed-idents-below-min-chars = ["..", "k", "f", "re", "id", "Ok", "'_"]
 allowed-duplicate-crates = [
     "hashbrown",
     "indexmap",
@@ -17,4 +17,7 @@ allowed-duplicate-crates = [
     "windows-sys",
     "thiserror",
     "thiserror-impl",
+    "bitflags",
+    "heck",
+    "syn",
 ]

@@ -1,72 +1,97 @@
-// use crate::error::Result;
-use std::error::Error;
-
-#[expect(dead_code, reason = "debug")]
+use crate::{error::Result, model::PodJob, store::ModelID};
+use std::collections::HashMap;
+/// Available states of a run.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RunState {
+    /// Run is ongoing.
+    Running,
+    /// Run has completed successfully.
+    Completed,
+    /// Run failed with the provided error code.
+    Failed(i16),
+}
+/// Run metadata
 #[derive(Debug)]
-pub(crate) struct ContainerInfo {
-    name: String,
-    image: String,
-    created: i64,
-    entrypoint: String,
-    command: String,
-    state: String,
-    mounts: Vec<String>,
-    nano_cpu_limit: i64,
-    memory_limit: i64,
+pub struct RunInfo {
+    /// Name given by orchestrator.
+    pub name: String,
+    /// Environment utilized.
+    pub image: String,
+    /// Time in epoch when created.
+    pub created: u64,
+    /// Environment variables set in environment.
+    pub env_vars: HashMap<String, String>,
+    /// Command used to start run.
+    pub command: String,
+    /// Current run state.
+    pub state: RunState,
+    /// Mounted volume binds to the environment.
+    pub mounts: Vec<String>,
+    /// Label metadata set by orchestrator.
+    pub labels: HashMap<String, String>,
+    /// Assigned CPU core limit in fractional cores for the computation.
+    pub cpu_limit: f32,
+    /// Assigned memory limit in bytes for the computation.
+    pub memory_limit: u64,
+}
+/// Current computation managed by orchestrator.
+#[derive(Debug)]
+pub struct PodRun<'orch, T> {
+    pod_job_model_id: ModelID,
+    orchestrator: &'orch T,
+}
+/// API to access `PodRun`-specific orchestrator functionality.
+#[expect(
+    clippy::new_ret_no_self,
+    reason = "Default new implementation should return a `PodRun`."
+)]
+pub trait PodRunAPI<T> {
+    /// How to create a pod run.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue creating a pod run.
+    fn new(pod_job_model_id: ModelID, orchestrator: &T) -> Result<PodRun<T>> {
+        Ok(PodRun {
+            pod_job_model_id,
+            orchestrator,
+        })
+    }
+    /// How to get container info if still in orchestrator memory.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue accessing container info.
+    fn get_info(&self) -> Result<Option<RunInfo>>;
 }
 
-/// Standard behavior of any container orchestration engine supported.
-pub trait Orchestrator {
+/// API for standard behavior of any container orchestration engine supported.
+pub trait API {
+    /// An internal type meant to be associated with `PodRun` struct.
+    type PodRun<'orch>;
     /// How to start containers.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if there is an issue querying metadata from containers.
-    fn start(&self) -> Result<(), Box<dyn Error>>;
-    /// How to start containers with alternate image.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue querying metadata from containers.
-    // fn start_with_altimage(&self) -> Result<(), Box<dyn Error>>;
-    /// How to load an image.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue querying metadata from containers.
-    // fn load(&self) -> Result<(), Box<dyn Error>>;
-    /// How to delete containers.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue querying metadata from containers.
-    fn delete(&self) -> Result<(), Box<dyn Error>>;
-    /// How to get container logs.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue querying metadata from containers.
-    // fn get_logs(p: &PodRun) -> Result<String, OrchestrationError>;
-    /// How to get resource usage for container.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue querying metadata from containers.
-    // fn metrics() -> OrchestratorMetrics;
+    /// Will return `Err` if there is an issue starting container.
+    fn start(
+        &self,
+        pod_job: &PodJob,
+        env_vars: Option<HashMap<String, String>>,
+    ) -> Result<Self::PodRun<'_>>;
     /// How to query containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from containers.
-    fn list(&self) -> Result<(), Box<dyn Error>>;
+    fn list(&self) -> Result<Vec<Self::PodRun<'_>>>;
+    /// How to delete containers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue deleting a container.
+    fn delete(&self, pod_run: &Self::PodRun<'_>) -> Result<()>;
 }
-
-// struct OrchestratorMetrics {
-//     // represents orchestrator resource usage info
-//     // would be cool if this would be a handle to info stream
-// }
-
-// struct OrchestrationError {}
 
 /// Orchestration implementation for Docker backend.
 pub mod docker;

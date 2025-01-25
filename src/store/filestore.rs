@@ -6,6 +6,7 @@ use crate::{
 };
 use colored::Colorize;
 use glob::glob;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -89,17 +90,31 @@ impl BlobInterface for LocalFileStore {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "Valid static regex")]
+static RE_MODEL_METADATA: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?x)
+            ^
+                (?<store_directory>.*)\/
+                    (?<namespace>[a-z_]+)\/
+                        (?<class>[a-z_]+)\/
+                            (?<hash>[0-9a-f]+)\/
+                                (
+                                    annotation\/
+                                        (?<name>[0-9a-zA-Z\-]+)
+                                        -
+                                        (?<version>[0-9]+\.[0-9]+\.[0-9]+)
+                                        \.yaml
+                                |
+                                    spec\.yaml
+                                )
+            $
+            ",
+    )
+    .unwrap()
+});
+
 impl LocalFileStore {
-    /// Get the directory where store is located.
-    pub fn get_directory(&self) -> &Path {
-        &self.directory
-    }
-    /// Construct a local file store instance in a specific directory.
-    pub fn new(directory: impl AsRef<Path>) -> Self {
-        Self {
-            directory: directory.as_ref().into(),
-        }
-    }
     /// Relative path where model specification is stored within the model directory.
     pub const SPEC_RELPATH: &str = "spec.yaml";
     /// Relative path where model annotation is stored within the model directory.
@@ -119,28 +134,9 @@ impl LocalFileStore {
     }
 
     fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
-        let re = Regex::new(
-            r"(?x)
-            ^
-                (?<store_directory>.*)\/
-                    (?<namespace>[a-z_]+)\/
-                        (?<class>[a-z_]+)\/
-                            (?<hash>[0-9a-f]+)\/
-                                (
-                                    annotation\/
-                                        (?<name>[0-9a-zA-Z\-]+)
-                                        -
-                                        (?<version>[0-9]+\.[0-9]+\.[0-9]+)
-                                        \.yaml
-                                |
-                                    spec\.yaml
-                                )
-            $
-            ",
-        )?;
         let paths = glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
             let filepath_string = String::from(filepath.ok()?.to_string_lossy());
-            let group = re.captures(&filepath_string)?;
+            let group = RE_MODEL_METADATA.captures(&filepath_string)?;
             Some(ModelInfo {
                 name: group.name("name").map(|name| name.as_str().to_owned()),
                 version: group
@@ -150,6 +146,16 @@ impl LocalFileStore {
             })
         });
         Ok(paths)
+    }
+    /// Get the directory where store is located.
+    pub fn get_directory(&self) -> &Path {
+        &self.directory
+    }
+    /// Construct a local file store instance in a specific directory.
+    pub fn new(directory: impl AsRef<Path>) -> Self {
+        Self {
+            directory: directory.as_ref().into(),
+        }
     }
 
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
@@ -231,7 +237,7 @@ impl LocalFileStore {
                     self.make_path::<T>(hash, Self::SPEC_RELPATH),
                 )?)?,
                 None,
-                hash.clone(),
+                hash.to_owned(),
             )),
             ModelID::Annotation(name, version) => {
                 let hash = self.lookup_hash::<T>(name, version)?;

@@ -27,10 +27,14 @@ pub struct Pod {
     /// Unique id based on reproducibility.
     #[serde(skip)]
     pub hash: String,
-    image: String,
-    command: String,
-    input_stream_map: BTreeMap<String, StreamInfo>,
-    output_dir: PathBuf,
+    /// Reproducible environment for compute.
+    pub image: String,
+    /// Space-delimited shell command to begin computation.
+    pub command: String,
+    /// A dictionary of named input streams.
+    pub input_stream_map: BTreeMap<String, StreamInfo>,
+    /// Absolute output directory within the environment.
+    pub output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
     source_commit_url: String,
     recommended_cpus: f32,
@@ -46,12 +50,12 @@ impl Pod {
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
         annotation: Option<Annotation>,
-        source_commit_url: String,
         image: String,
         command: String,
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
+        source_commit_url: String,
         recommended_cpus: f32,
         recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
@@ -59,12 +63,12 @@ impl Pod {
         let pod_no_hash = Self {
             annotation,
             hash: String::new(),
-            source_commit_url,
             image,
             command,
             input_stream_map,
             output_dir,
             output_stream_map,
+            source_commit_url,
             recommended_cpus,
             recommended_memory,
             required_gpu,
@@ -109,8 +113,10 @@ pub struct PodJob {
     pub input_stream_path: BTreeMap<String, Input>,
     /// Map output directory to a folder in user data target.
     pub output_stream_path: Blob<FolderOnly>,
-    cpu_limit: f32,
-    memory_limit: u64,
+    /// Maximum allowable cores in fractional cores for the computation.
+    pub cpu_limit: f32,
+    /// Maximum allowable memory in bytes for the computation.
+    pub memory_limit: u64,
 }
 
 /// An interface to access BLOB functions.
@@ -120,7 +126,9 @@ pub trait BlobInterface {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue computing the checksum of a BLOB.
-    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>>;
+    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
+        Ok(blob)
+    }
 }
 
 impl PodJob {

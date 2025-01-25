@@ -4,6 +4,7 @@ use crate::{
 };
 
 /// Options for identifying a model.
+#[derive(Debug, Clone)]
 pub enum ModelID {
     /// Identifying by the hash value of a model as a string.
     Hash(String),

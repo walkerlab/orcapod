@@ -15,7 +15,13 @@ use orcapod::{
     },
     store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
 };
-use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf, process::Command};
+use std::{
+    collections::BTreeMap,
+    fs,
+    ops::Deref,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 use tempfile::tempdir;
 
 // --- fixtures ---
@@ -25,11 +31,10 @@ pub fn pod_style() -> Result<Pod> {
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod.".to_owned(),
-            version: "0.67.0".to_owned(),
+            version: "1.0.0".to_owned(),
         }),
-        "https://github.com/zenml-io/zenml/tree/0.67.0".to_owned(),
-        "zenmldocker/zenml-server:0.67.0".to_owned(),
-        "tail -f /dev/null".to_owned(),
+        "example.server.com/user/style-transfer:1.0.0".to_owned(),
+        "python /run.py".to_owned(),
         BTreeMap::from([
             (
                 "style".to_owned(),
@@ -54,20 +59,31 @@ pub fn pod_style() -> Result<Pod> {
                 match_pattern: r".*\.jpeg".to_owned(),
             },
         )]),
+        "https://github.com/user/style-transfer/tree/1.0.0".to_owned(),
         0.25,        // 250 millicores as frac cores
         1_u64 << 30, // 1GiB in bytes
         None,
     )
 }
 
-pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
+pub fn pod_job_style(blob_interface: &impl BlobInterface, build_image: bool) -> Result<PodJob> {
+    let pod = pod_style()?;
+    if build_image {
+        Command::new("docker")
+            .arg("build")
+            .arg("./tests/example_pod/style_transfer")
+            .arg("-t")
+            .arg(&pod.image)
+            .stderr(Stdio::inherit())
+            .output()?;
+    }
     PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod job.".to_owned(),
             version: "0.1.0".to_owned(),
         }),
-        pod_style()?,
+        pod,
         BTreeMap::from([
             (
                 "style".to_owned(),
@@ -92,7 +108,7 @@ pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
             checksum: Some("please_ignore".to_owned()),
         },
         0.5,         // 500 millicores as frac cores
-        2_u64 << 30, // 2GiB in bytes
+        2_u64 << 30, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
         blob_interface,
     )
 }

@@ -20,7 +20,7 @@
             "args": [
                 "--exact",
                 "--nocapture",
-                "docker_smoke"
+                "basic"
             ],
             "cwd": "${workspaceFolder}",
         },
