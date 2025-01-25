@@ -62,7 +62,7 @@ fn pod_to_yaml() -> Result<()> {
 fn hash_pod_job() -> Result<()> {
     assert_eq!(
         pod_job_style(&FakeStore, false)?.hash,
-        "0cfeb25e4b3f6ea2b2327fc799c9fbeb20107937e4e01c7cdcf5b7a024c45720",
+        "38f2021f67a8be0498ff1092789670661521e11c317d92ccebbc9dfeda98df7f",
         "Hash didn't match."
     );
     Ok(())
@@ -90,6 +90,7 @@ fn pod_job_to_yaml() -> Result<()> {
               checksum: null
             cpu_limit: 0.5
             memory_limit: 2147483648
+            env_vars: null
         "},
         "YAML serialization didn't match."
     );

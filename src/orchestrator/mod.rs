@@ -66,31 +66,25 @@ pub trait PodRunAPI<T> {
 }
 
 /// API for standard behavior of any container orchestration engine supported.
-pub trait API {
-    /// An internal type meant to be associated with `PodRun` struct.
-    type PodRun<'orch>;
+pub trait API: Sized {
     /// How to start containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting container.
-    fn start(
-        &self,
-        pod_job: &PodJob,
-        env_vars: Option<HashMap<String, String>>,
-    ) -> Result<Self::PodRun<'_>>;
+    fn start(&self, pod_job: &PodJob) -> Result<PodRun<Self>>;
     /// How to query containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from containers.
-    fn list(&self) -> Result<Vec<Self::PodRun<'_>>>;
+    fn list(&self) -> Result<Vec<PodRun<Self>>>;
     /// How to delete containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue deleting a container.
-    fn delete(&self, pod_run: &Self::PodRun<'_>) -> Result<()>;
+    fn delete(&self, pod_run: &PodRun<Self>) -> Result<()>;
 }
 
 /// Orchestration implementation for Docker backend.

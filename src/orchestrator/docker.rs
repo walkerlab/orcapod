@@ -60,8 +60,7 @@ impl LocalDockerOrchestratorAPI for LocalDockerOrchestrator {
 }
 
 impl orchestrator::API for LocalDockerOrchestrator {
-    type PodRun<'orch> = PodRun<'orch, Self>;
-    fn list(&self) -> Result<Vec<Self::PodRun<'_>>> {
+    fn list(&self) -> Result<Vec<PodRun<Self>>> {
         self.async_driver
             .block_on(list_containers(
                 self,
@@ -84,13 +83,8 @@ impl orchestrator::API for LocalDockerOrchestrator {
             })
             .collect()
     }
-    fn start(
-        &self,
-        pod_job: &PodJob,
-        env_vars: Option<HashMap<String, String>>,
-    ) -> Result<Self::PodRun<'_>> {
-        let (container_name, options, config) =
-            self.prepare_container_start_inputs(pod_job, env_vars)?;
+    fn start(&self, pod_job: &PodJob) -> Result<PodRun<Self>> {
+        let (container_name, options, config) = self.prepare_container_start_inputs(pod_job)?;
         self.async_driver.block_on(async {
             self.api.create_container(options, config).await?;
             self.api
@@ -111,7 +105,7 @@ impl orchestrator::API for LocalDockerOrchestrator {
             },
         )
     }
-    fn delete(&self, pod_run: &Self::PodRun<'_>) -> Result<()> {
+    fn delete(&self, pod_run: &PodRun<Self>) -> Result<()> {
         self.async_driver.block_on(
             self.api.remove_container(
                 &pod_run
@@ -174,7 +168,6 @@ impl LocalDockerOrchestrator {
     fn prepare_container_start_inputs(
         &self,
         pod_job: &PodJob,
-        env_vars: Option<HashMap<String, String>>,
     ) -> Result<(
         String,
         Option<CreateContainerOptions<String>>,
@@ -260,9 +253,9 @@ impl LocalDockerOrchestrator {
                 image: Some(pod_job.pod.image.clone()),
                 entrypoint: Some(command[..1].to_vec()),
                 cmd: Some(command[1..].to_vec()),
-                env: env_vars.map(|provided_env_vars| {
+                env: pod_job.env_vars.as_ref().map(|provided_env_vars| {
                     provided_env_vars
-                        .into_iter()
+                        .iter()
                         .map(|(name, value)| format!("{name}={value}"))
                         .collect()
                 }),

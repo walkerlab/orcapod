@@ -3,7 +3,11 @@ use crate::{
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{collections::BTreeMap, path::PathBuf, result};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+    result,
+};
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -117,6 +121,8 @@ pub struct PodJob {
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
     pub memory_limit: u64,
+    /// Environment variables to be set in environment.
+    pub env_vars: Option<HashMap<String, String>>,
 }
 
 /// An interface to access BLOB functions.
@@ -144,6 +150,7 @@ impl PodJob {
         output_stream_path: Blob<FolderOnly>,
         cpu_limit: f32,
         memory_limit: u64,
+        env_vars: Option<HashMap<String, String>>,
         blob_interface: &impl BlobInterface,
     ) -> Result<Self> {
         let input_stream_path_with_checksums = input_stream_path
@@ -166,6 +173,7 @@ impl PodJob {
             output_stream_path: output_stream_path_without_checksum,
             cpu_limit,
             memory_limit,
+            env_vars,
         };
         Ok(Self {
             hash: hash(to_yaml(&pod_job_no_hash)?),

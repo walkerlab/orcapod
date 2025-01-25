@@ -109,6 +109,7 @@ pub fn pod_job_style(blob_interface: &impl BlobInterface, build_image: bool) -> 
         },
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
+        None,
         blob_interface,
     )
 }

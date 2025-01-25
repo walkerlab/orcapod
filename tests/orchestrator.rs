@@ -15,17 +15,15 @@ use std::collections::HashMap;
 #[test]
 fn basic() -> Result<()> {
     let store = store_test(None, true)?;
-    let pod_job = pod_job_style(&store.store, true)?;
+    let mut pod_job = pod_job_style(&store.store, true)?;
+    pod_job.env_vars = Some(HashMap::from([("DELAY".to_owned(), "5".to_owned())]));
     let stored_pod_job = add_storage(pod_job, &store)?;
     let orchestrator = LocalDockerOrchestrator::new(
         store
             .get_directory()
             .join(LocalFileStore::DEFAULT_DATA_NAMESPACE),
     )?;
-    let pod_run = orchestrator.start(
-        &stored_pod_job.model,
-        Some(HashMap::from([("DELAY".to_owned(), "0".to_owned())])),
-    )?;
+    let pod_run = orchestrator.start(&stored_pod_job.model)?;
     let pod_runs = orchestrator.list()?;
 
     let runs = pod_runs
@@ -33,12 +31,13 @@ fn basic() -> Result<()> {
         .map(PodRunAPI::get_info)
         .collect::<Result<Vec<_>>>()?;
 
+    assert!(pod_run.get_info()?.is_some(), "Run isn't present.");
     assert_eq!(
         runs.into_iter()
             .filter_map(|x| Some(x?.state))
             .collect::<Vec<_>>(),
         vec![RunState::Completed],
-        "Pod list didn't return 3 expected entries."
+        "Unexpected run list."
     );
 
     orchestrator.delete(&pod_run)?;
