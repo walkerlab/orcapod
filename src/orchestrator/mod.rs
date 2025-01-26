@@ -1,7 +1,8 @@
 use crate::{error::Result, model::PodJob};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 /// Available states of a run.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum RunState {
     /// Run is ongoing.
     Running,
@@ -17,7 +18,7 @@ pub struct RunInfo {
     pub name: String,
     /// Environment utilized.
     pub image: String,
-    /// Time in epoch when created.
+    /// Time in epoch when created in seconds.
     pub created: u64,
     /// Environment variables set in environment.
     pub env_vars: HashMap<String, String>,

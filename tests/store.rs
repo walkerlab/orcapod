@@ -2,7 +2,9 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{add_storage, pod_job_style, pod_style, store_test, TestSetup, TestStore};
+use fixture::{
+    add_storage, pod_job_style, pod_result_style, pod_style, store_test, TestSetup, TestStore,
+};
 use orcapod::{
     error::Result,
     model::{Annotation, Pod},
@@ -63,6 +65,17 @@ fn pod_job_basic() -> Result<()> {
     let store = store_test(None, true)?;
     let (loaded_model, mut stored_model) = basic_test(pod_job_style(&store.store, false)?, &store)?;
     stored_model.pod.annotation = None;
+    assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
+    Ok(())
+}
+
+#[test]
+fn pod_result_basic() -> Result<()> {
+    let store = store_test(None, true)?;
+    let (loaded_model, mut stored_model) =
+        basic_test(pod_result_style(&store.store, false)?, &store)?;
+    stored_model.pod_job.annotation = None;
+    stored_model.pod_job.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
 }

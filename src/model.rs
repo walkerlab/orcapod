@@ -1,5 +1,6 @@
 use crate::{
     error::Result,
+    orchestrator::RunState,
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -103,7 +104,7 @@ where
 }
 
 /// A compute job that specifies resource requests and input/output targets.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct PodJob {
     /// Metadata that doesn't affect reproducibility.
     #[serde(skip)]
@@ -183,6 +184,78 @@ impl PodJob {
     }
 }
 
+fn serialize_pod_job<S>(pod_job: &PodJob, serializer: S) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&pod_job.hash)
+}
+
+fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<PodJob, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(PodJob {
+        hash: String::deserialize(deserializer)?,
+        ..PodJob::default()
+    })
+}
+
+/// Result from a compute job run.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PodResult {
+    /// Metadata that doesn't affect reproducibility.
+    #[serde(skip)]
+    pub annotation: Option<Annotation>,
+    /// Unique id based on reproducibility.
+    #[serde(skip)]
+    pub hash: String,
+    /// A pod job that originated the pod result.
+    #[serde(
+        serialize_with = "serialize_pod_job",
+        deserialize_with = "deserialize_pod_job"
+    )]
+    pub pod_job: PodJob,
+    /// Name given by orchestrator.
+    pub assigned_name: String,
+    /// State when terminated.
+    pub state: RunState,
+    /// Time in epoch when created in seconds.
+    pub created: u64,
+    /// Time in epoch when terminated in seconds.
+    pub terminated: u64,
+}
+
+impl PodResult {
+    /// Construct a new pod result instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `PodResult` instance.
+    pub fn new(
+        annotation: Option<Annotation>,
+        pod_job: PodJob,
+        assigned_name: String,
+        state: RunState,
+        created: u64,
+        terminated: u64,
+    ) -> Result<Self> {
+        let pod_result_no_hash = Self {
+            annotation,
+            hash: String::new(),
+            pod_job,
+            assigned_name,
+            state,
+            created,
+            terminated,
+        };
+        Ok(Self {
+            hash: hash(to_yaml(&pod_result_no_hash)?),
+            ..pod_result_no_hash
+        })
+    }
+}
+
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
@@ -233,7 +306,7 @@ pub enum Input {
 }
 
 /// BLOB in user data target with metadata.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob<T> {
     /// BLOB available options.
     pub kind: T,
@@ -251,8 +324,9 @@ pub enum FileOrFolder {
     Folder,
 }
 /// Folder-only option for BLOBs.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum FolderOnly {
     /// A single folder specified by its absolute path.
+    #[default]
     Folder,
 }

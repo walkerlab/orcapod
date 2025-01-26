@@ -1,7 +1,7 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_job_style, pod_style};
+use fixture::{pod_job_style, pod_result_style, pod_style};
 use indoc::indoc;
 use orcapod::{
     error::Result,
@@ -91,6 +91,33 @@ fn pod_job_to_yaml() -> Result<()> {
             cpu_limit: 0.5
             memory_limit: 2147483648
             env_vars: null
+        "},
+        "YAML serialization didn't match."
+    );
+    Ok(())
+}
+
+#[test]
+fn hash_pod_result() -> Result<()> {
+    assert_eq!(
+        pod_result_style(&FakeStore, false)?.hash,
+        "511e6e1ce8fd8dc2a4775b6372c2779283fa93b379976012dd2a25dc88a1ae3a",
+        "Hash didn't match."
+    );
+    Ok(())
+}
+
+#[test]
+fn pod_result_to_yaml() -> Result<()> {
+    assert_eq!(
+        to_yaml(&pod_result_style(&FakeStore, false)?)?,
+        indoc! {"
+            class: pod_result
+            pod_job: 38f2021f67a8be0498ff1092789670661521e11c317d92ccebbc9dfeda98df7f
+            assigned_name: simple-endeavour
+            state: Completed
+            created: 1737922307
+            terminated: 1737925907
         "},
         "YAML serialization didn't match."
     );

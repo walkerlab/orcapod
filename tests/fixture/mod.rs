@@ -11,8 +11,10 @@
 use orcapod::{
     error::Result,
     model::{
-        Annotation, Blob, BlobInterface, FileOrFolder, FolderOnly, Input, Pod, PodJob, StreamInfo,
+        Annotation, Blob, BlobInterface, FileOrFolder, FolderOnly, Input, Pod, PodJob, PodResult,
+        StreamInfo,
     },
+    orchestrator::RunState,
     store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
 };
 use std::{
@@ -111,6 +113,25 @@ pub fn pod_job_style(blob_interface: &impl BlobInterface, build_image: bool) -> 
         2_u64 << 30, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
         None,
         blob_interface,
+    )
+}
+
+pub fn pod_result_style(
+    blob_interface: &impl BlobInterface,
+    build_image: bool,
+) -> Result<PodResult> {
+    let pod_job = pod_job_style(blob_interface, build_image)?;
+    PodResult::new(
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod result.".to_owned(),
+            version: "0.0.0".to_owned(),
+        }),
+        pod_job,
+        "simple-endeavour".to_owned(),
+        RunState::Completed,
+        1_737_922_307,
+        1_737_925_907,
     )
 }
 
@@ -234,5 +255,31 @@ impl TestSetup for PodJob {
     }
     fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
         store.list_pod_job()
+    }
+}
+
+impl TestSetup for PodResult {
+    type Target = Self;
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        store.save_pod_result(self)
+    }
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        store.delete_pod_result(&ModelID::Hash(self.hash.clone()))
+    }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pod_result(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        store.list_pod_result()
     }
 }
