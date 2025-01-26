@@ -34,24 +34,31 @@ pub struct RunInfo {
     /// Assigned memory limit in bytes for the computation.
     pub memory_limit: u64,
 }
+/// API for orchestrator associated types e.g. allows field indexing for structs.
+pub trait Types
+where
+    Self::Orchestrator: API + Types<Orchestrator = Self::Orchestrator>,
+{
+    /// A type alias pointing to a concrete type that implements the orchestrator API.
+    type Orchestrator;
+}
 /// Current computation managed by orchestrator.
 #[derive(Debug)]
-pub struct PodRun<'orch, T> {
+pub struct PodRun<'orch, T: Types> {
     pod_job_model_id: ModelID,
-    orchestrator: &'orch T,
+    orchestrator: &'orch T::Orchestrator,
 }
 /// API to access `PodRun`-specific orchestrator functionality.
-#[expect(
-    clippy::new_ret_no_self,
-    reason = "Default new implementation should return a `PodRun`."
-)]
-pub trait PodRunAPI<T> {
+pub trait PodRunAPI: Types {
     /// How to create a pod run.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod run.
-    fn new(pod_job_model_id: ModelID, orchestrator: &T) -> Result<PodRun<T>> {
+    fn new(
+        pod_job_model_id: ModelID,
+        orchestrator: &Self::Orchestrator,
+    ) -> Result<PodRun<Self::Orchestrator>> {
         Ok(PodRun {
             pod_job_model_id,
             orchestrator,
@@ -66,25 +73,25 @@ pub trait PodRunAPI<T> {
 }
 
 /// API for standard behavior of any container orchestration engine supported.
-pub trait API: Sized {
+pub trait API {
     /// How to start containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting container.
-    fn start(&self, pod_job: &PodJob) -> Result<PodRun<Self>>;
+    fn start(&self, pod_job: &PodJob) -> Result<impl PodRunAPI>;
     /// How to query containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from containers.
-    fn list(&self) -> Result<Vec<PodRun<Self>>>;
+    fn list(&self) -> Result<Vec<impl PodRunAPI>>;
     /// How to delete containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue deleting a container.
-    fn delete(&self, pod_run: &PodRun<Self>) -> Result<()>;
+    fn delete(&self, pod_run: &impl PodRunAPI) -> Result<()>;
 }
 
 /// Orchestration implementation for Docker backend.

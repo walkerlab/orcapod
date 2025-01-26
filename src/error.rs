@@ -1,4 +1,3 @@
-use crate::store::ModelID;
 use bollard::errors::Error as BollardError;
 use colored::Colorize;
 use glob;
@@ -24,8 +23,6 @@ pub(crate) enum Kind {
         name: String,
         version: String,
     },
-    #[error("No recent pod runs associated with pod job `{model_id:?}`.")]
-    NonexistentPodRun { model_id: ModelID },
     #[error("No known container names.")]
     NoContainerNames,
     #[error("Out of generated random names.")]
