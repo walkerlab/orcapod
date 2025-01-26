@@ -3,6 +3,7 @@ use crate::{
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_yaml;
 use std::{
     collections::{BTreeMap, HashMap},
     path::PathBuf,

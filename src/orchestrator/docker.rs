@@ -1,8 +1,7 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{Input, PodJob},
+    model::{Input, Pod, PodJob},
     orchestrator::{self, PodRun, PodRunAPI, RunInfo, RunState, Types},
-    store::ModelID,
 };
 use bollard::{
     container::{
@@ -39,22 +38,14 @@ impl Types for LocalDockerOrchestrator {
 
 impl PodRunAPI for PodRun<'_, LocalDockerOrchestrator> {
     fn get_info(&self) -> Result<Option<RunInfo>> {
-        let mut labels = match &self.pod_job_model_id {
-            ModelID::Hash(hash) => {
-                vec![
-                    "org.orcapod.pod_job.model_id.type=hash".to_owned(),
-                    format!("org.orcapod.pod_job.model_id.hash={hash}"),
-                ]
-            }
-            ModelID::Annotation(name, version) => {
-                vec![
-                    "org.orcapod.pod_job.model_id.type=annotation".to_owned(),
-                    format!("org.orcapod.pod_job.model_id.name={name}"),
-                    format!("org.orcapod.pod_job.model_id.version={version}"),
-                ]
-            }
-        };
-        labels.push("org.orcapod=true".to_owned());
+        let labels = vec![
+            "org.orcapod=true".to_owned(),
+            format!(
+                "org.orcapod.pod_job.annotation={}",
+                serde_json::to_string(&self.pod_job.annotation)?
+            ),
+            format!("org.orcapod.pod_job.hash={}", self.pod_job.hash),
+        ];
         Ok(self
             .orchestrator
             .async_driver
@@ -74,19 +65,20 @@ impl orchestrator::API for LocalDockerOrchestrator {
                 vec!["org.orcapod=true".to_owned()],
             )])))?
             .map(|run_info| {
-                PodRun::new(
-                    match run_info.labels["org.orcapod.pod_job.model_id.type"].as_ref() {
-                        "annotation" => ModelID::Annotation(
-                            run_info.labels["org.orcapod.pod_job.model_id.name"].clone(),
-                            run_info.labels["org.orcapod.pod_job.model_id.version"].clone(),
-                        ),
-                        "hash" => ModelID::Hash(
-                            run_info.labels["org.orcapod.pod_job.model_id.hash"].clone(),
-                        ),
-                        _ => todo!(),
-                    },
-                    self,
-                )
+                let mut pod: Pod = serde_json::from_str(&run_info.labels["org.orcapod.pod"])?;
+                pod.annotation =
+                    serde_json::from_str(&run_info.labels["org.orcapod.pod.annotation"])?;
+                pod.hash
+                    .clone_from(&run_info.labels["org.orcapod.pod.hash"]);
+                let mut pod_job: PodJob =
+                    serde_json::from_str(&run_info.labels["org.orcapod.pod_job"])?;
+                pod_job.annotation =
+                    serde_json::from_str(&run_info.labels["org.orcapod.pod_job.annotation"])?;
+                pod_job
+                    .hash
+                    .clone_from(&run_info.labels["org.orcapod.pod_job.hash"]);
+                pod_job.pod = pod;
+                PodRun::new(pod_job, self)
             })
             .collect()
     }
@@ -102,15 +94,7 @@ impl orchestrator::API for LocalDockerOrchestrator {
                 .try_collect::<Vec<_>>()
                 .await
         })?;
-        pod_job.annotation.as_ref().map_or_else(
-            || PodRun::new(ModelID::Hash(pod_job.hash.clone()), self),
-            |annotation| {
-                PodRun::new(
-                    ModelID::Annotation(annotation.name.clone(), annotation.version.clone()),
-                    self,
-                )
-            },
-        )
+        PodRun::new(pod_job.clone(), self)
     }
     fn delete(&self, pod_run: &impl PodRunAPI) -> Result<()> {
         if let Some(run_info) = pod_run.get_info()? {
@@ -166,37 +150,27 @@ impl LocalDockerOrchestrator {
         let container_name = Generator::with_naming(Name::Plain)
             .next()
             .ok_or(OrcaError::from(Kind::GeneratedNamesOverflow))?;
-        let mut labels = pod_job.annotation.as_ref().map_or_else(
-            || {
-                HashMap::from([
-                    (
-                        "org.orcapod.pod_job.model_id.type".to_owned(),
-                        "hash".to_owned(),
-                    ),
-                    (
-                        "org.orcapod.pod_job.model_id.hash".to_owned(),
-                        pod_job.hash.clone(),
-                    ),
-                ])
-            },
-            |annotation| {
-                HashMap::from([
-                    (
-                        "org.orcapod.pod_job.model_id.type".to_owned(),
-                        "annotation".to_owned(),
-                    ),
-                    (
-                        "org.orcapod.pod_job.model_id.name".to_owned(),
-                        annotation.name.clone(),
-                    ),
-                    (
-                        "org.orcapod.pod_job.model_id.version".to_owned(),
-                        annotation.version.clone(),
-                    ),
-                ])
-            },
-        );
-        labels.insert("org.orcapod".to_owned(), "true".to_owned());
+        let labels = HashMap::from([
+            ("org.orcapod".to_owned(), "true".to_owned()),
+            (
+                "org.orcapod.pod.annotation".to_owned(),
+                serde_json::to_string(&pod_job.pod.annotation)?,
+            ),
+            ("org.orcapod.pod.hash".to_owned(), pod_job.pod.hash.clone()),
+            (
+                "org.orcapod.pod".to_owned(),
+                serde_json::to_string(&pod_job.pod)?,
+            ),
+            (
+                "org.orcapod.pod_job.annotation".to_owned(),
+                serde_json::to_string(&pod_job.annotation)?,
+            ),
+            ("org.orcapod.pod_job.hash".to_owned(), pod_job.hash.clone()),
+            (
+                "org.orcapod.pod_job".to_owned(),
+                serde_json::to_string(&pod_job)?,
+            ),
+        ]);
         let unary_input_binds = pod_job
             .pod
             .input_stream_map

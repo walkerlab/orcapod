@@ -9,6 +9,7 @@ use glob::glob;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_yaml;
 use std::{
     fs,
     path::{Path, PathBuf},

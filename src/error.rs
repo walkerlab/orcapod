@@ -2,6 +2,7 @@ use bollard::errors::Error as BollardError;
 use colored::Colorize;
 use glob;
 use regex;
+use serde_json;
 use serde_yaml;
 use std::{
     fmt::{self, Display, Formatter},
@@ -33,6 +34,8 @@ pub(crate) enum Kind {
     RegexError(#[from] regex::Error),
     #[error(transparent)]
     SerdeYamlError(#[from] serde_yaml::Error),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
     IoError(#[from] io::Error),
     #[error(transparent)]
@@ -72,6 +75,13 @@ impl From<serde_yaml::Error> for OrcaError {
     fn from(error: serde_yaml::Error) -> Self {
         Self {
             kind: Kind::SerdeYamlError(error),
+        }
+    }
+}
+impl From<serde_json::Error> for OrcaError {
+    fn from(error: serde_json::Error) -> Self {
+        Self {
+            kind: Kind::SerdeJsonError(error),
         }
     }
 }

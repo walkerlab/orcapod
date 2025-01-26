@@ -1,4 +1,4 @@
-use crate::{error::Result, model::PodJob, store::ModelID};
+use crate::{error::Result, model::PodJob};
 use std::collections::HashMap;
 /// Available states of a run.
 #[derive(Debug, PartialEq, Eq)]
@@ -45,7 +45,7 @@ where
 /// Current computation managed by orchestrator.
 #[derive(Debug)]
 pub struct PodRun<'orch, T: Types> {
-    pod_job_model_id: ModelID,
+    pod_job: PodJob,
     orchestrator: &'orch T::Orchestrator,
 }
 /// API to access `PodRun`-specific orchestrator functionality.
@@ -56,11 +56,11 @@ pub trait PodRunAPI: Types {
     ///
     /// Will return `Err` if there is an issue creating a pod run.
     fn new(
-        pod_job_model_id: ModelID,
+        pod_job: PodJob,
         orchestrator: &Self::Orchestrator,
     ) -> Result<PodRun<Self::Orchestrator>> {
         Ok(PodRun {
-            pod_job_model_id,
+            pod_job,
             orchestrator,
         })
     }

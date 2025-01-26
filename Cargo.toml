@@ -27,6 +27,7 @@ edition = "2021"
 bollard = "0.17.1"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_yaml = "0.9.34"
+serde_json = "1.0.137"
 sha2 = "0.10.8"
 glob = "0.3.1"
 regex = "1.11.0"
