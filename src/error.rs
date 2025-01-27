@@ -28,6 +28,10 @@ pub(crate) enum Kind {
     NoContainerNames,
     #[error("Out of generated random names.")]
     GeneratedNamesOverflow,
+    #[error("No corresponding pod run found for pod job (hash: {pod_job_hash}).")]
+    NoMatchingPodRun { pod_job_hash: String },
+    #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
+    InvalidPodResultTerminatedDatetime { pod_job_hash: String },
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]
@@ -50,6 +54,10 @@ impl OrcaError {
     /// Returns `true` if the error was caused by an invalid model annotation.
     pub const fn is_invalid_annotation(&self) -> bool {
         matches!(self.kind, Kind::NoAnnotationFound { .. })
+    }
+    /// Returns `true` if the error was caused by querying a purged pod run.
+    pub const fn is_purged_pod_run(&self) -> bool {
+        matches!(self.kind, Kind::NoMatchingPodRun { .. })
     }
 }
 impl Display for OrcaError {

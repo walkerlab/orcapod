@@ -1,6 +1,6 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{Input, Pod, PodJob},
+    model::{Input, Pod, PodJob, PodResult},
     orchestrator::{self, PodRun, PodRunAPI, RunInfo, RunState, Types},
 };
 use bollard::{
@@ -11,6 +11,7 @@ use bollard::{
     models::{ContainerStateStatusEnum, HostConfig},
     Docker,
 };
+use chrono::DateTime;
 use futures::{future::join_all, stream::TryStreamExt};
 use names::{Generator, Name};
 use std::{
@@ -37,23 +38,36 @@ impl Types for LocalDockerOrchestrator {
 }
 
 impl PodRunAPI for PodRun<'_, LocalDockerOrchestrator> {
-    fn get_info(&self) -> Result<Option<RunInfo>> {
-        let labels = vec![
-            "org.orcapod=true".to_owned(),
-            format!(
-                "org.orcapod.pod_job.annotation={}",
-                serde_json::to_string(&self.pod_job.annotation)?
-            ),
-            format!("org.orcapod.pod_job.hash={}", self.pod_job.hash),
-        ];
-        Ok(self
-            .orchestrator
+    fn get_info(&self) -> Result<RunInfo> {
+        self.orchestrator
             .async_driver
-            .block_on(
-                self.orchestrator
-                    .list_containers(HashMap::from([("label".to_owned(), labels)])),
-            )?
-            .next())
+            .block_on(self.get_info_async())
+    }
+    fn get_result(&self) -> Result<PodResult> {
+        self.orchestrator
+            .async_driver
+            .block_on(self.get_result_async())
+    }
+    async fn get_result_async(&self) -> Result<PodResult> {
+        let run_info = self.get_info_async().await?;
+        self.orchestrator
+            .api
+            .wait_container(&run_info.name, None::<WaitContainerOptions<String>>)
+            .try_collect::<Vec<_>>()
+            .await?;
+        let result_info = self.get_info_async().await?;
+        PodResult::new(
+            None,
+            self.pod_job.clone(),
+            result_info.name,
+            result_info.state,
+            result_info.created,
+            result_info.terminated.ok_or(OrcaError::from(
+                Kind::InvalidPodResultTerminatedDatetime {
+                    pod_job_hash: self.pod_job.hash.clone(),
+                },
+            ))?,
+        )
     }
 }
 
@@ -88,25 +102,39 @@ impl orchestrator::API for LocalDockerOrchestrator {
             self.api.create_container(options, config).await?;
             self.api
                 .start_container(&container_name, None::<StartContainerOptions<String>>)
-                .await?;
-            self.api
-                .wait_container(&container_name, None::<WaitContainerOptions<String>>)
-                .try_collect::<Vec<_>>()
                 .await
         })?;
         PodRun::new(pod_job.clone(), self)
     }
     fn delete(&self, pod_run: &impl PodRunAPI) -> Result<()> {
-        if let Some(run_info) = pod_run.get_info()? {
-            self.async_driver.block_on(self.api.remove_container(
-                &run_info.name,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            ))?;
-        }
+        self.async_driver.block_on(self.api.remove_container(
+            &pod_run.get_info()?.name,
+            Some(RemoveContainerOptions {
+                force: true,
+                ..Default::default()
+            }),
+        ))?;
         Ok(())
+    }
+}
+
+impl PodRun<'_, LocalDockerOrchestrator> {
+    async fn get_info_async(&self) -> Result<RunInfo> {
+        let labels = vec![
+            "org.orcapod=true".to_owned(),
+            format!(
+                "org.orcapod.pod_job.annotation={}",
+                serde_json::to_string(&self.pod_job.annotation)?
+            ),
+            format!("org.orcapod.pod_job.hash={}", self.pod_job.hash),
+        ];
+        self.orchestrator
+            .list_containers(HashMap::from([("label".to_owned(), labels)]))
+            .await?
+            .next()
+            .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
+                pod_job_hash: self.pod_job.hash.clone(),
+            }))
     }
 }
 
@@ -270,10 +298,15 @@ impl LocalDockerOrchestrator {
         .into_iter()
         .filter_map(|result: Result<_>| {
             let (container_name, container_summary, container_spec) = result.ok()?;
+            let terminated_timetamp =
+                DateTime::parse_from_rfc3339(container_spec.state.as_ref()?.finished_at.as_ref()?)
+                    .ok()?
+                    .timestamp() as u64;
             Some(RunInfo {
                 name: container_name,
                 image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
                 created: container_summary.created? as u64,
+                terminated: (terminated_timetamp > 0).then_some(terminated_timetamp),
                 env_vars: container_spec
                     .config
                     .as_ref()?

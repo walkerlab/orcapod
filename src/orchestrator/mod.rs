@@ -1,6 +1,9 @@
-use crate::{error::Result, model::PodJob};
+use crate::{
+    error::Result,
+    model::{PodJob, PodResult},
+};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, future::Future};
 /// Available states of a run.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum RunState {
@@ -20,6 +23,8 @@ pub struct RunInfo {
     pub image: String,
     /// Time in epoch when created in seconds.
     pub created: u64,
+    /// Time in epoch when terminated in seconds.
+    pub terminated: Option<u64>,
     /// Environment variables set in environment.
     pub env_vars: HashMap<String, String>,
     /// Command used to start run.
@@ -70,7 +75,19 @@ pub trait PodRunAPI: Types {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    fn get_info(&self) -> Result<Option<RunInfo>>;
+    fn get_info(&self) -> Result<RunInfo>;
+    /// How to wait for pod result to be ready.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue creating a pod result.
+    fn get_result(&self) -> Result<PodResult>;
+    /// How to (asynchronously) wait for pod result to be ready.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue creating a pod result.
+    fn get_result_async(&self) -> impl Future<Output = Result<PodResult>> + Send;
 }
 
 /// API for standard behavior of any container orchestration engine supported.
