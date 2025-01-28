@@ -63,7 +63,7 @@ fn pod_basic() -> Result<()> {
 #[test]
 fn pod_job_basic() -> Result<()> {
     let store = store_test(None, true)?;
-    let (loaded_model, mut stored_model) = basic_test(pod_job_style(&store.store, false)?, &store)?;
+    let (loaded_model, mut stored_model) = basic_test(pod_job_style(&store.store)?, &store)?;
     stored_model.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
@@ -72,8 +72,7 @@ fn pod_job_basic() -> Result<()> {
 #[test]
 fn pod_result_basic() -> Result<()> {
     let store = store_test(None, true)?;
-    let (loaded_model, mut stored_model) =
-        basic_test(pod_result_style(&store.store, false)?, &store)?;
+    let (loaded_model, mut stored_model) = basic_test(pod_result_style(&store.store)?, &store)?;
     stored_model.pod_job.annotation = None;
     stored_model.pod_job.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");

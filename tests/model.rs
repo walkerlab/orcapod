@@ -61,7 +61,7 @@ fn pod_to_yaml() -> Result<()> {
 #[test]
 fn hash_pod_job() -> Result<()> {
     assert_eq!(
-        pod_job_style(&FakeStore, false)?.hash,
+        pod_job_style(&FakeStore)?.hash,
         "38f2021f67a8be0498ff1092789670661521e11c317d92ccebbc9dfeda98df7f",
         "Hash didn't match."
     );
@@ -71,7 +71,7 @@ fn hash_pod_job() -> Result<()> {
 #[test]
 fn pod_job_to_yaml() -> Result<()> {
     assert_eq!(
-        to_yaml(&pod_job_style(&FakeStore, false)?)?,
+        to_yaml(&pod_job_style(&FakeStore)?)?,
         indoc! {"
             class: pod_job
             pod: 8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094
@@ -100,7 +100,7 @@ fn pod_job_to_yaml() -> Result<()> {
 #[test]
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
-        pod_result_style(&FakeStore, false)?.hash,
+        pod_result_style(&FakeStore)?.hash,
         "511e6e1ce8fd8dc2a4775b6372c2779283fa93b379976012dd2a25dc88a1ae3a",
         "Hash didn't match."
     );
@@ -110,7 +110,7 @@ fn hash_pod_result() -> Result<()> {
 #[test]
 fn pod_result_to_yaml() -> Result<()> {
     assert_eq!(
-        to_yaml(&pod_result_style(&FakeStore, false)?)?,
+        to_yaml(&pod_result_style(&FakeStore)?)?,
         indoc! {"
             class: pod_result
             pod_job: 38f2021f67a8be0498ff1092789670661521e11c317d92ccebbc9dfeda98df7f

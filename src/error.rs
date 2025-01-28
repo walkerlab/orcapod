@@ -32,6 +32,10 @@ pub(crate) enum Kind {
     NoMatchingPodRun { pod_job_hash: String },
     #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
     InvalidPodResultTerminatedDatetime { pod_job_hash: String },
+    #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
+    EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
+    #[error("No tags found in provided container alternate image: {path}.")]
+    NoTagFoundInContainerAltImage { path: PathBuf },
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]

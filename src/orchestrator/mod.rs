@@ -3,7 +3,16 @@ use crate::{
     model::{PodJob, PodResult},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, future::Future};
+use std::{collections::HashMap, future::Future, path::PathBuf};
+/// Options for sourcing compute environment images.
+pub enum ImageKind {
+    /// A published compute environment image in a container registry. Argument formatted as
+    /// `{server.com/}{name}:{tag}`. Server is optional e.g. (`alpine:latest`).
+    Published(String),
+    /// A packaged compute environment of image+tag as a tarball. Arguments is the path of tarball
+    /// e.g. (`path/to/image.tar.gz`).
+    Tarball(PathBuf),
+}
 /// Available states of a run.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum RunState {
@@ -92,12 +101,18 @@ pub trait PodRunAPI: Types {
 
 /// API for standard behavior of any container orchestration engine supported.
 pub trait API {
-    /// How to start containers.
+    /// How to start containers. Assumes `PodJob` image is published.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if there is an issue starting container.
+    /// Will return `Err` if there is an issue starting the container.
     fn start(&self, pod_job: &PodJob) -> Result<impl PodRunAPI>;
+    /// How to start containers with an alternate image.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue starting the container.
+    fn start_with_altimage(&self, pod_job: &PodJob, image: &ImageKind) -> Result<impl PodRunAPI>;
     /// How to query containers.
     ///
     /// # Errors

@@ -2,10 +2,10 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{add_storage, pod_job_style, store_test};
+use fixture::{add_storage, container_image_style, pod_job_style, store_test};
 use orcapod::{
     error::Result,
-    orchestrator::{docker::LocalDockerOrchestrator, PodRunAPI, RunState, API},
+    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, PodRunAPI, RunState, API},
     store::{filestore::LocalFileStore, Store},
 };
 use std::collections::HashMap;
@@ -14,7 +14,12 @@ use std::collections::HashMap;
 fn basic() -> Result<()> {
     // setup
     let store = store_test(None, true)?;
-    let pod_job = pod_job_style(&store.store, true)?;
+    let container_image_location = store
+        .get_directory()
+        .join(LocalFileStore::DEFAULT_DATA_NAMESPACE)
+        .join("container_images/style-transfer/image.tar.gz");
+    let _container_image = container_image_style(&container_image_location)?;
+    let pod_job = pod_job_style(&store.store)?;
     let mut stored_pod_job = add_storage(pod_job, &store)?;
     let orchestrator = LocalDockerOrchestrator::new(
         store
@@ -23,7 +28,8 @@ fn basic() -> Result<()> {
     )?;
     // start in background
     stored_pod_job.model.env_vars = Some(HashMap::from([("DELAY".to_owned(), "5".to_owned())]));
-    let pod_run = orchestrator.start(&stored_pod_job.model)?;
+    let container_image_kind = ImageKind::Tarball(container_image_location);
+    let pod_run = orchestrator.start_with_altimage(&stored_pod_job.model, &container_image_kind)?;
     assert_eq!(
         pod_run.get_info()?.state,
         RunState::Running,
@@ -34,9 +40,9 @@ fn basic() -> Result<()> {
             .list()?
             .iter()
             .map(PodRunAPI::get_info)
-            .map(|run_info| Ok(run_info?.image))
+            .map(|run_info| Ok(run_info?.command))
             .collect::<Result<Vec<_>>>()?,
-        vec!["example.server.com/user/style-transfer:1.0.0".to_owned()],
+        vec!["python /run.py".to_owned()],
         "Unexpected list."
     );
     // await result
@@ -51,9 +57,9 @@ fn basic() -> Result<()> {
             .list()?
             .iter()
             .map(PodRunAPI::get_info)
-            .map(|run_info| Ok(run_info?.image))
+            .map(|run_info| Ok(run_info?.command))
             .collect::<Result<Vec<_>>>()?,
-        vec!["example.server.com/user/style-transfer:1.0.0".to_owned()],
+        vec!["python /run.py".to_owned()],
         "Unexpected list."
     );
     assert_eq!(

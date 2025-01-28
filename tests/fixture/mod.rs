@@ -5,9 +5,11 @@
 )]
 #![expect(
     clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
     reason = "Integration tests won't be included in documentation."
 )]
 
+use names::{Generator, Name};
 use orcapod::{
     error::Result,
     model::{
@@ -19,9 +21,9 @@ use orcapod::{
 };
 use std::{
     collections::BTreeMap,
-    fs,
+    fs::{self, File},
     ops::Deref,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 use tempfile::tempdir;
@@ -68,17 +70,8 @@ pub fn pod_style() -> Result<Pod> {
     )
 }
 
-pub fn pod_job_style(blob_interface: &impl BlobInterface, build_image: bool) -> Result<PodJob> {
+pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
     let pod = pod_style()?;
-    if build_image {
-        Command::new("docker")
-            .arg("build")
-            .arg("./tests/example_pod/style_transfer")
-            .arg("-t")
-            .arg(&pod.image)
-            .stderr(Stdio::inherit())
-            .output()?;
-    }
     PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -116,11 +109,8 @@ pub fn pod_job_style(blob_interface: &impl BlobInterface, build_image: bool) -> 
     )
 }
 
-pub fn pod_result_style(
-    blob_interface: &impl BlobInterface,
-    build_image: bool,
-) -> Result<PodResult> {
-    let pod_job = pod_job_style(blob_interface, build_image)?;
+pub fn pod_result_style(blob_interface: &impl BlobInterface) -> Result<PodResult> {
+    let pod_job = pod_job_style(blob_interface)?;
     PodResult::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -133,6 +123,51 @@ pub fn pod_result_style(
         1_737_922_307,
         1_737_925_907,
     )
+}
+
+pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
+    let build_context_location = PathBuf::from("./tests/example_pod/style_transfer");
+
+    if let Some(parent) = binary_location.as_ref().parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let image_name = format!(
+        "{}:0.0.0",
+        Generator::with_naming(Name::Plain)
+            .next()
+            .expect("Name generation overflowed.")
+    );
+    Command::new("docker")
+        .arg("build")
+        .arg(&build_context_location)
+        .arg("-t")
+        .arg(&image_name)
+        .stderr(Stdio::inherit())
+        .output()?;
+    let docker_save = Command::new("docker")
+        .arg("save")
+        .arg(&image_name)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    Command::new("gzip")
+        .stdin(Stdio::from(
+            docker_save.stdout.expect("No pipe data received."),
+        ))
+        .stderr(Stdio::inherit())
+        .stdout(File::create(&binary_location).expect("Failed to open image tarball location."))
+        .output()?;
+    Command::new("docker")
+        .arg("rmi")
+        .arg(&image_name)
+        .stderr(Stdio::inherit())
+        .output()?;
+
+    Ok(TestContainerImage {
+        image_name,
+        build_context_location,
+        binary_location: binary_location.as_ref().to_path_buf(),
+    })
 }
 
 pub fn store_test(store_directory: Option<&str>, with_data: bool) -> Result<TestStore> {
@@ -193,6 +228,24 @@ impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
         self.model
             .delete(self.store)
             .expect("Failed to teardown model.");
+    }
+}
+
+pub struct TestContainerImage {
+    pub image_name: String,
+    pub build_context_location: PathBuf,
+    pub binary_location: PathBuf,
+}
+
+impl Drop for TestContainerImage {
+    fn drop(&mut self) {
+        Command::new("docker")
+            .arg("rmi")
+            .arg(&self.image_name)
+            .stderr(Stdio::inherit())
+            .output()
+            .expect("Failed to teardown container image.");
+        fs::remove_file(&self.binary_location).expect("Failed to remove image binary.");
     }
 }
 

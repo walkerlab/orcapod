@@ -1,25 +1,33 @@
 use crate::{
     error::{Kind, OrcaError, Result},
     model::{Input, Pod, PodJob, PodResult},
-    orchestrator::{self, PodRun, PodRunAPI, RunInfo, RunState, Types},
+    orchestrator::{self, ImageKind, PodRun, PodRunAPI, RunInfo, RunState, Types},
 };
 use bollard::{
     container::{
         Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
         StartContainerOptions, WaitContainerOptions,
     },
+    image::{CreateImageOptions, ImportImageOptions},
     models::{ContainerStateStatusEnum, HostConfig},
     Docker,
 };
 use chrono::DateTime;
 use futures::{future::join_all, stream::TryStreamExt};
+use futures_util::stream::StreamExt;
 use names::{Generator, Name};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
-use tokio::runtime::Runtime;
+use tokio::{fs::File, runtime::Runtime};
+use tokio_util::{
+    bytes::{Bytes, BytesMut},
+    codec::{BytesCodec, FramedRead},
+};
 
 /// Support for an orchestration engine using a local docker installation.
 #[derive(Debug)]
@@ -96,13 +104,25 @@ impl orchestrator::API for LocalDockerOrchestrator {
             })
             .collect()
     }
+    fn start_with_altimage(&self, pod_job: &PodJob, image: &ImageKind) -> Result<impl PodRunAPI> {
+        self.async_driver
+            .block_on(self.start_with_altimage_async(pod_job, image))
+    }
     fn start(&self, pod_job: &PodJob) -> Result<impl PodRunAPI> {
-        let (container_name, options, config) = self.prepare_container_start_inputs(pod_job)?;
+        let image_options = Some(CreateImageOptions {
+            from_image: pod_job.pod.image.clone(),
+            ..Default::default()
+        });
         self.async_driver.block_on(async {
-            self.api.create_container(options, config).await?;
             self.api
-                .start_container(&container_name, None::<StartContainerOptions<String>>)
-                .await
+                .create_image(image_options, None, None)
+                .try_collect::<Vec<_>>()
+                .await?;
+            self.start_with_altimage_async(
+                pod_job,
+                &ImageKind::Published(pod_job.pod.image.clone()),
+            )
+            .await
         })?;
         PodRun::new(pod_job.clone(), self)
     }
@@ -138,6 +158,18 @@ impl PodRun<'_, LocalDockerOrchestrator> {
     }
 }
 
+#[expect(clippy::unwrap_used, reason = "Valid static regex")]
+static RE_IMAGE_TAGS: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?x)
+                \s
+                    (?<image>[^\s]+:[^\s]+)
+                \s
+            ",
+    )
+    .unwrap()
+});
+
 impl LocalDockerOrchestrator {
     /// How to create a local docker orchestrator with an absolute path on docker host where binds
     /// will be mounted from.
@@ -152,6 +184,57 @@ impl LocalDockerOrchestrator {
             async_driver: Runtime::new()?,
         })
     }
+    #[expect(
+        clippy::try_err,
+        reason = r#"
+        - `map_err` workaround needed since `import_image_stream` requires resolved bytes
+        - Raising an errors manually on occurrence to halt so we don't just ignore
+        - Should not get as far as `Ok(_)`
+    "#
+    )]
+    async fn start_with_altimage_async(
+        &self,
+        pod_job: &PodJob,
+        image: &ImageKind,
+    ) -> Result<impl PodRunAPI + use<'_>> {
+        let (container_name, container_options, container_config) = match image {
+            ImageKind::Published(remote_image) => {
+                self.prepare_container_start_inputs(pod_job, remote_image.clone())?
+            }
+            ImageKind::Tarball(location) => {
+                let byte_stream = FramedRead::new(File::open(location).await?, BytesCodec::new())
+                    .map_err(|err| -> Result<BytesMut> {
+                        let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
+                        Ok(resolved_error)
+                    })
+                    .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
+                let mut stream =
+                    self.api
+                        .import_image_stream(ImportImageOptions::default(), byte_stream, None);
+                let mut local_image = String::new();
+                while let Some(response) = stream.next().await {
+                    local_image = RE_IMAGE_TAGS
+                        .captures_iter(&response?.stream.ok_or(OrcaError::from(
+                            Kind::EmptyResponseWhenLoadingContainerAltImage {
+                                path: location.clone(),
+                            },
+                        ))?)
+                        .find_map(|x| x.name("image").map(|name| name.as_str().to_owned()))
+                        .ok_or(OrcaError::from(Kind::NoTagFoundInContainerAltImage {
+                            path: location.clone(),
+                        }))?;
+                }
+                self.prepare_container_start_inputs(pod_job, local_image.clone())?
+            }
+        };
+        self.api
+            .create_container(container_options, container_config)
+            .await?;
+        self.api
+            .start_container(&container_name, None::<StartContainerOptions<String>>)
+            .await?;
+        PodRun::new(pod_job.clone(), self)
+    }
 
     #[expect(
         clippy::cast_possible_wrap,
@@ -164,6 +247,7 @@ impl LocalDockerOrchestrator {
     fn prepare_container_start_inputs(
         &self,
         pod_job: &PodJob,
+        image: String,
     ) -> Result<(
         String,
         Option<CreateContainerOptions<String>>,
@@ -236,7 +320,7 @@ impl LocalDockerOrchestrator {
                 platform: None,
             }),
             Config {
-                image: Some(pod_job.pod.image.clone()),
+                image: Some(image),
                 entrypoint: Some(command[..1].to_vec()),
                 cmd: Some(command[1..].to_vec()),
                 env: pod_job.env_vars.as_ref().map(|provided_env_vars| {
