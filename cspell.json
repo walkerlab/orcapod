@@ -8,13 +8,16 @@
         "idents",
         "serde",
         "cuda",
-        "thiserror"
+        "thiserror",
+        "millicore",
+        "millicores",
+        "nanocore",
+        "numpy"
     ],
     "ignoreWords": [
         "relpath",
         "tempfile",
         "tempdir",
-        "millicores",
         "zenmldocker",
         "indoc",
         "rustc",
@@ -30,7 +33,7 @@
         "dearmor",
         "dpkg",
         "usermod",
-        "NOPASSWD",
+        "nopasswd",
         "rustup",
         "adduser",
         "vadimcn",
@@ -41,6 +44,18 @@
         "cudnn",
         "tlsv1",
         "chsh",
-        "altimage"
+        "altimage",
+        "chrono",
+        "ncpu",
+        "ucores",
+        "mcores",
+        "opencv",
+        "imutils",
+        "frombuffer",
+        "imdecode",
+        "imread",
+        "imencode",
+        "tobytes",
+        "bitflags"
     ]
 }

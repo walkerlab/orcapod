@@ -71,14 +71,13 @@ pub fn pod_style() -> Result<Pod> {
 }
 
 pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
-    let pod = pod_style()?;
     PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod job.".to_owned(),
             version: "0.1.0".to_owned(),
         }),
-        pod,
+        pod_style()?,
         BTreeMap::from([
             (
                 "style".to_owned(),
@@ -110,14 +109,13 @@ pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
 }
 
 pub fn pod_result_style(blob_interface: &impl BlobInterface) -> Result<PodResult> {
-    let pod_job = pod_job_style(blob_interface)?;
     PodResult::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod result.".to_owned(),
             version: "0.0.0".to_owned(),
         }),
-        pod_job,
+        pod_job_style(blob_interface)?,
         "simple-endeavour".to_owned(),
         RunState::Completed,
         1_737_922_307,

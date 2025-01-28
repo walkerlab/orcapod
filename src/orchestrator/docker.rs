@@ -13,8 +13,10 @@ use bollard::{
     Docker,
 };
 use chrono::DateTime;
-use futures::{future::join_all, stream::TryStreamExt};
-use futures_util::stream::StreamExt;
+use futures_util::{
+    future::join_all,
+    stream::{StreamExt, TryStreamExt},
+};
 use names::{Generator, Name};
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -382,7 +384,7 @@ impl LocalDockerOrchestrator {
         .into_iter()
         .filter_map(|result: Result<_>| {
             let (container_name, container_summary, container_spec) = result.ok()?;
-            let terminated_timetamp =
+            let terminated_timestamp =
                 DateTime::parse_from_rfc3339(container_spec.state.as_ref()?.finished_at.as_ref()?)
                     .ok()?
                     .timestamp() as u64;
@@ -390,7 +392,7 @@ impl LocalDockerOrchestrator {
                 name: container_name,
                 image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
                 created: container_summary.created? as u64,
-                terminated: (terminated_timetamp > 0).then_some(terminated_timetamp),
+                terminated: (terminated_timestamp > 0).then_some(terminated_timestamp),
                 env_vars: container_spec
                     .config
                     .as_ref()?

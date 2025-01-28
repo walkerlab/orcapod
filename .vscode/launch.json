@@ -11,7 +11,7 @@
                     "--no-run",
                     "--package=orcapod",
                     "--test",
-                    "orchestrator"
+                    "model"
                 ],
                 "filter": {
                     "kind": "test"
@@ -20,7 +20,7 @@
             "args": [
                 "--exact",
                 "--nocapture",
-                "basic"
+                "hash"
             ],
             "cwd": "${workspaceFolder}",
         },
