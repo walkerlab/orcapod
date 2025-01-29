@@ -32,15 +32,14 @@ regex = "1.11.0"
 heck = "0.5.0"
 colored = "2.1.0"
 image = "0.25.5"
-anyhow = "1.0.93"
 hashes = "0.1.9"
 rs_merkle = "1.4.2"
 
+thiserror = "2.0.11"
 
 [dev-dependencies]
 tempfile = "3.13.0"
 indoc = "2.0.5"
-anyhow = "1.0.93"
 
 [lints.rust]
 non_ascii_idents = "deny"
@@ -74,16 +73,16 @@ implicit_return = { level = "allow", priority = 127 }                  # missing
 indexing_slicing = { level = "allow", priority = 127 }                 # allow since guaranteed and error handling is overkill
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
-iter_over_hash_type = { level = "allow", priority = 127 }              # allow iteartion over hash type objects when order doesn't matter
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
 min_ident_chars = { level = "allow", priority = 127 }                  # Allow for variables that are name a and b
 missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing assert before indexing ok
 missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok
 missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
 missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
-module_name_repetitions = { level = "allow", priority = 127 }          # name should be explicit to avoid confusion
 must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
+multiple-crate-versions = { level = "allow", priority = 127 }          # allow mutiple crate version to deal with dependencies issues
 mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok
+module_name_repetitions = { level = "allow", priority = 127 }          # name should be explicit to avoid confusion
 non_ascii_literal = { level = "allow", priority = 127 }                # non-ascii char in string literal ok
 partial_pub_fields = { level = "allow", priority = 127 }               # partial struct pub fields ok
 pattern_type_mismatch = { level = "allow", priority = 127 }            # allow in favor of clippy::ref_patterns
@@ -102,10 +101,9 @@ std_instead_of_alloc = { level = "allow", priority = 127 }             # we shou
 std_instead_of_core = { level = "allow", priority = 127 }              # we should use std when possible
 string_add = { level = "allow", priority = 127 }                       # simple concat ok
 string_lit_chars_any = { level = "allow", priority = 127 }             # favor readability until a perf case comes up
-todo = { level = "warn", priority = 127 }                              # warn todos
 use_debug = { level = "warn", priority = 127 }                         # debug print
 
-
 # temporary
-single_call_fn = { level = "allow", priority = 127 }            # remove once other models are in
+todo = { level = "allow", priority = 127 }                      # allow until folder hash and input collection cases are complete, then warn todos
+single_call_fn = { level = "allow", priority = 127 }            # remove once more models need pointer serializers/deserializers
 tests_outside_test_module = { level = "allow", priority = 127 } # for now due to false-positive for integration tests: https://github.com/rust-lang/rust-clippy/pull/13038

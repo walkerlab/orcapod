@@ -9,6 +9,7 @@
         "millicores",
         "zenmldocker",
         "zenml",
-        "indoc"
+        "indoc",
+        "thiserror"
     ]
 }

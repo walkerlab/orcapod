@@ -17,25 +17,19 @@ pub enum ModelID {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ModelInfo {
     /// A model's name.
-    pub name: String,
+    pub name: Option<String>,
     /// A model's version.
-    pub version: String,
+    pub version: Option<String>,
     /// A model's hash.
     pub hash: String,
 }
 
 /// Standard behavior of any store backend supported.
-pub trait ModelStore: Sized + DataStore {
-    /// How to delete only annotation, which will leave the item untouched
-    /// How to explicitly delete an annotation.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
-    /// and `version`.
-    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
+pub trait ModelStore: DataStore {
+    /// Namespace where models will be stored.
+    const MODEL_NAMESPACE: &str = "orcapod_model";
 
-    /// How a pod is stored
+    /// How a pod is stored.
     ///
     /// # Errors
     ///
@@ -65,29 +59,45 @@ pub trait ModelStore: Sized + DataStore {
     /// `version`.
     fn delete_pod(&self, model_id: &ModelID) -> Result<()>;
 
-    /// Save ``pod_job`` to storage
+    /// How a pod job is stored.
     ///
     /// # Errors
-    /// Return error if failed to save pod for some reason, either encoding or ioerror
+    ///
+    /// Will return `Err` if there is an issue storing `pod_job`.
     fn save_pod_job(&self, pod_job: &mut PodJob) -> Result<()>;
 
-    /// Load ``pod_job`` from storage given an ``model_id``
+    /// How to load a stored pod job into a model instance.
     ///
     /// # Errors
-    /// Will return error if fail to load pod
+    ///
+    /// Will return `Err` if there is an issue loading a pod job from the store using `name` and
+    /// `version`.
     fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob>;
 
-    /// List all ``pod_job``
+    /// How to query stored pod jobs.
     ///
     /// # Errors
-    /// Will return error if fail to get all pods annotations
+    ///
+    /// Will return `Err` if there is an issue querying metadata from existing pod jobs in the
+    /// store.
     fn list_pod_job(&self) -> Result<Vec<ModelInfo>>;
 
-    /// Delete job by ``model_id``
+    /// How to explicitly delete a stored pod job and all associated annotations (does not
+    /// propagate).
     ///
     /// # Errors
-    /// Will return error if failed to delete the pod job
+    ///
+    /// Will return `Err` if there is an issue deleting a pod job from the store using `name` and
+    /// `version`.
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
+
+    /// How to explicitly delete an annotation.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
+    /// and `version`.
+    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 
     ///
     /// # Errors
@@ -111,16 +121,20 @@ pub trait ModelStore: Sized + DataStore {
     /// # Errors
     /// Will return error if failed to delete the store pointer
     fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()>;
-
-    /// Will delete everything store
-    ///
-    /// # Errors
-    /// Will return orca error if failed to tear down store
-    fn wipe(&self) -> Result<()>;
 }
 
-/// Trait to be implemented by file stores
+/// An interface to access BLOB functions.
 pub trait DataStore: Sized {
+    /// Default namespace where user data (inputs/outputs) will be stored.
+    const DEFAULT_DATA_NAMESPACE: &str = "orcapod_data";
+
+    /// How to evaluate a checksum of a BLOB.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue computing the checksum of a BLOB.
+    fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String>;
+
     ///
     /// # Errors
     /// Will return invalid uri if file store cannot be rebuilt given the uri
@@ -129,22 +143,6 @@ pub trait DataStore: Sized {
     /// Get the uri string to reconstruct the store later
     ///
     fn get_uri(&self) -> String;
-
-    /// Compute the checksum given a path, which can be a file or a folder.
-    /// NOTE: The folder is expected to be all in the same store
-    ///
-    /// It is expected to compute the hash in the following way:
-    ///
-    /// For File:
-    /// Read the contents and hash it using the method found in the crypto module
-    ///
-    /// For Folders:
-    /// Recursively hash each item and store it in a ``BTreeMap`` then concat the individual hash
-    /// results together into one giant string, then hash it using the ``hash_bytes`` from crypto module
-    ///
-    /// # Errors
-    /// Return file io error if unable to read the underlying file
-    fn compute_checksum_for_path(&self, path: impl AsRef<Path>) -> Result<String>;
 
     /// Function to read file into memory
     ///
@@ -161,4 +159,4 @@ pub trait DataStore: Sized {
 }
 
 /// Store implementation on a local filesystem.
-pub mod local_store;
+pub mod filestore;

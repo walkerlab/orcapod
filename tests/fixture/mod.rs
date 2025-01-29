@@ -1,25 +1,27 @@
 #![expect(clippy::expect_used, reason = "Expect OK in tests.")]
-#![expect(clippy::unwrap_used, reason = "Expect test to unwrap without failed")]
+#![expect(
+    clippy::unwrap_in_result,
+    reason = "Expect OK in tests that return result."
+)]
 #![expect(
     clippy::missing_errors_doc,
     reason = "Integration tests won't be included in documentation."
 )]
 
-use anyhow::{anyhow, Result};
-use image::{DynamicImage, ImageFormat, RgbImage};
 use orcapod::{
+    error::Result,
     model::{
-        Annotation, Input, InputStoreMapping, OutputStoreMapping, Pod, PodJob, RetryPolicy,
-        StorePointer, StreamInfo,
+        Annotation, Blob, BlobInterface, FileOrFolder, FolderOnly, Input, Pod, PodJob, StreamInfo,
     },
-    store::{DataStore, ModelID, ModelInfo, ModelStore},
+    store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore},
 };
-use std::{collections::BTreeMap, io::Cursor, ops::Deref, path::PathBuf};
+use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf, process::Command};
+use tempfile::tempdir;
 
 // --- fixtures ---
 
-pub fn pod_fixture() -> Result<Pod> {
-    Ok(Pod::new(
+pub fn pod_style() -> Result<Pod> {
+    Pod::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod.".to_owned(),
@@ -30,242 +32,190 @@ pub fn pod_fixture() -> Result<Pod> {
         "tail -f /dev/null".to_owned(),
         BTreeMap::from([
             (
-                "painting".to_owned(),
+                "style".to_owned(),
                 StreamInfo {
-                    path: PathBuf::from("/input/painting.png"),
-                    match_pattern: "/input/painting.png".to_owned(),
+                    path: PathBuf::from("/input/style.t7"),
+                    match_pattern: r".*\.t7".to_owned(),
                 },
             ),
             (
                 "image".to_owned(),
                 StreamInfo {
-                    path: PathBuf::from("/input/image.png"),
-                    match_pattern: "/input/image.png".to_owned(),
+                    path: PathBuf::from("/input/image.jpeg"),
+                    match_pattern: r".*\.jpeg".to_owned(),
                 },
             ),
         ]),
         PathBuf::from("/output"),
         BTreeMap::from([(
-            "styled".to_owned(),
+            "result".to_owned(),
             StreamInfo {
-                path: PathBuf::from("styled.png"),
-                match_pattern: "styled.png".to_owned(),
+                path: PathBuf::from("./result.jpeg"),
+                match_pattern: r".*\.jpeg".to_owned(),
             },
         )]),
-        0.25,                // 250 millicores as frac cores
-        (2_u64) * (1 << 30), // 2GiB in bytes
+        0.25,        // 250 millicores as frac cores
+        1_u64 << 30, // 1GiB in bytes
         None,
-    )?)
+    )
 }
 
-static IMAGE_DIM: u32 = 512;
-
-pub fn pod_job_fixture<T: DataStore>(store: &T) -> Result<PodJob> {
-    // Generate random uniform image
-    let mut img_buffer = RgbImage::new(IMAGE_DIM, IMAGE_DIM);
-
-    for (_, _, pixel) in img_buffer.enumerate_pixels_mut() {
-        *pixel = image::Rgb([255, 255, 255]);
-    }
-
-    // Covert it to rawbytes
-    let mut bytes = Vec::new();
-    let img = DynamicImage::from(img_buffer);
-    img.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)?;
-
-    // Store it in the store
-    store.save_file("style.png", bytes.clone())?;
-    store.save_file("image.png", bytes)?;
-
-    // Create the input volume map
-    let mut input_volume_map = BTreeMap::new();
-
-    input_volume_map.insert(
-        "style".to_owned(),
-        Input::FileOrFolder(InputStoreMapping::new("style.png", None)),
-    );
-    input_volume_map.insert(
-        "image".to_owned(),
-        Input::FileOrFolder(InputStoreMapping::new("image.png", None)),
-    );
-
-    //
-    let output_store_mapping = OutputStoreMapping {
-        path: "stylized_image".into(),
-        store_name: None,
-    };
-
-    Ok(PodJob::new(
+pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
+    PodJob::new(
         Some(Annotation {
-            name: "style-transfer-job".to_owned(),
+            name: "style-transfer".to_owned(),
             description: "This is an example pod job.".to_owned(),
-            version: "0.67.0".to_owned(),
+            version: "0.1.0".to_owned(),
         }),
-        pod_fixture()?,
-        input_volume_map,
-        output_store_mapping,
-        2.0_f32,
-        (4_u64) * (1 << 30),
-        RetryPolicy::NoRetry,
-    )?)
+        pod_style()?,
+        BTreeMap::from([
+            (
+                "style".to_owned(),
+                Input::Unary(Blob {
+                    kind: FileOrFolder::File,
+                    location: PathBuf::from("styles/mosaic.t7"),
+                    checksum: None,
+                }),
+            ),
+            (
+                "image".to_owned(),
+                Input::Unary(Blob {
+                    kind: FileOrFolder::File,
+                    location: PathBuf::from("images/dog.jpeg"),
+                    checksum: None,
+                }),
+            ),
+        ]),
+        Blob {
+            kind: FolderOnly::Folder,
+            location: PathBuf::from("output"),
+            checksum: Some("please_ignore".to_owned()),
+        },
+        0.5,         // 500 millicores as frac cores
+        2_u64 << 30, // 2GiB in bytes
+        blob_interface,
+    )
 }
 
-pub fn store_pointer_fixture(store: &impl DataStore) -> Result<StorePointer> {
-    Ok(StorePointer::new(
-        Annotation {
-            name: "store 1".to_owned(),
-            version: "0.0.0".to_owned(),
-            description: "Exmaple store pointer for test usage".to_owned(),
-        },
-        store.get_uri(),
-    )?)
+pub fn store_test(store_directory: Option<&str>, with_data: bool) -> Result<TestStore> {
+    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
+    let store =
+        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
+    fs::create_dir_all(store.get_directory())?;
+    if with_data {
+        Command::new("cp")
+            .arg("-r")
+            .arg("./tests/data")
+            .arg(format!(
+                "{}/{}",
+                store.get_directory().to_string_lossy(),
+                LocalFileStore::DEFAULT_DATA_NAMESPACE
+            ))
+            .output()?;
+    }
+    Ok(TestStore { store })
+}
+
+// --- helper functions ---
+
+pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
+    model.save(store)?;
+    let model_with_storage = TestStoredModel { store, model };
+    Ok(model_with_storage)
 }
 
 // --- util ---
+
 #[derive(Debug)]
-pub struct StoreScaffold<T: ModelStore> {
-    pub store: T,
+pub struct TestStore {
+    pub store: LocalFileStore,
 }
 
-impl<T: ModelStore> Deref for StoreScaffold<T> {
-    type Target = T;
+#[derive(Debug)]
+pub struct TestStoredModel<'base, T: TestSetup> {
+    pub store: &'base TestStore,
+    pub model: T,
+}
+
+impl Deref for TestStore {
+    type Target = LocalFileStore;
     fn deref(&self) -> &Self::Target {
         &self.store
     }
 }
 
-impl<T: ModelStore> Drop for StoreScaffold<T> {
+impl Drop for TestStore {
     fn drop(&mut self) {
-        self.store.wipe().unwrap();
+        fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
     }
 }
 
-impl<T: ModelStore> StoreScaffold<T> {
-    pub fn save_model(&self, model: &mut Model) -> Result<()> {
-        match model {
-            Model::Pod(pod) => Ok(self.store.save_pod(pod)?),
-            Model::PodJob(pod_job) => Ok(self.store.save_pod_job(pod_job)?),
-            Model::StorePointer(store_pointer) => {
-                Ok(self.store.save_store_pointer(store_pointer)?)
-            }
-        }
-    }
-
-    pub fn load_model(&self, model_id: &ModelID, model_type: &ModelType) -> Result<Model> {
-        match model_type {
-            ModelType::Pod => Ok(Model::Pod(self.store.load_pod(model_id)?)),
-            ModelType::PodJob => Ok(Model::PodJob(self.store.load_pod_job(model_id)?)),
-            ModelType::StorePointer => {
-                let store_name = match model_id {
-                    ModelID::Hash(_) => {
-                        return Err(anyhow!("Store model cannot be loaded by hash only"))
-                    }
-                    ModelID::Annotation(name, _) => name,
-                };
-                Ok(Model::StorePointer(
-                    self.store.load_store_pointer(store_name)?,
-                ))
-            }
-        }
-    }
-
-    pub fn list_model(&self, model_type: &ModelType) -> Result<Vec<ModelInfo>> {
-        match model_type {
-            ModelType::Pod => Ok(self.store.list_pod()?),
-            ModelType::PodJob => Ok(self.store.list_pod_job()?),
-            ModelType::StorePointer => Ok(self.store.list_store_pointer()?),
-        }
-    }
-
-    pub fn delete_item(&self, model_id: &ModelID, model_type: &ModelType) -> Result<()> {
-        match model_type {
-            ModelType::Pod => Ok(self.store.delete_pod(model_id)?),
-            ModelType::PodJob => Ok(self.store.delete_pod_job(model_id)?),
-            ModelType::StorePointer => Ok(self.store.delete_store_pointer(model_id)?),
-        }
-    }
-
-    pub fn delete_item_annotation(
-        &self,
-        name: &str,
-        version: &str,
-        model_type: &ModelType,
-    ) -> Result<()> {
-        match model_type {
-            ModelType::Pod => Ok(self.store.delete_annotation::<Pod>(name, version)?),
-            ModelType::PodJob => Ok(self.store.delete_annotation::<PodJob>(name, version)?),
-            ModelType::StorePointer => Ok(self
-                .store
-                .delete_annotation::<StorePointer>(name, version)?),
-        }
+impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
+    fn drop(&mut self) {
+        self.model
+            .delete(self.store)
+            .expect("Failed to teardown model.");
     }
 }
 
-#[derive(PartialEq, Debug)]
-pub enum Model {
-    Pod(Pod),
-    PodJob(PodJob),
-    StorePointer(StorePointer),
+pub trait TestSetup {
+    type Target;
+    fn save(&self, store: &LocalFileStore) -> Result<()>;
+    fn delete(&self, store: &LocalFileStore) -> Result<()>;
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
+    fn get_annotation(&self) -> Option<&Annotation>;
+    fn get_hash(&self) -> &str;
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>>;
 }
 
-impl Model {
-    ///
-    /// # Panics
-    /// Will panic if annotation is empty
-    pub fn get_annotation(&self) -> &Annotation {
-        match self {
-            Self::Pod(pod) => pod.annotation.as_ref().expect("Pod has empty annotation"),
-            Self::PodJob(pod_job) => pod_job
-                .annotation
-                .as_ref()
-                .expect("Pod job has empty annotation"),
-            Self::StorePointer(store_pointer) => &store_pointer.annotation,
-        }
+impl TestSetup for Pod {
+    type Target = Self;
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        store.save_pod(self)
     }
-
-    pub fn get_hash(&self) -> &str {
-        match self {
-            Self::Pod(pod) => &pod.hash,
-            Self::PodJob(pod_job) => &pod_job.hash,
-            Self::StorePointer(store_pointer) => &store_pointer.hash,
-        }
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        store.delete_pod(&ModelID::Hash(self.hash.clone()))
     }
-
-    /// # Panics
-    /// Only panic if ``store_pointer`` annotation is None which shouldn't be possiable
-    pub fn set_annotation(&mut self, annotation: Option<Annotation>) {
-        match self {
-            Self::Pod(pod) => pod.annotation = annotation,
-            Self::PodJob(pod_job) => pod_job.annotation = annotation,
-            // Store pointer cannot have an empty annotation
-            Self::StorePointer(store_pointer) => store_pointer.annotation = annotation.unwrap(),
-        }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pod(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
     }
-
-    pub fn set_sub_models_annotation_to_none(&mut self) -> Result<()> {
-        match self {
-            Self::Pod(_) => Ok(()),
-            Self::PodJob(pod_job) => {
-                pod_job.pod.annotation = None;
-                Ok(())
-            }
-            Self::StorePointer(_) => Err(anyhow!("Store pointer cannot have None annotation")),
-        }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        store.list_pod()
     }
 }
 
-impl ModelType {
-    pub fn get_model<T: ModelStore + DataStore>(&self, store: &StoreScaffold<T>) -> Result<Model> {
-        match self {
-            Self::Pod => Ok(Model::Pod(pod_fixture()?)),
-            Self::PodJob => Ok(Model::PodJob(pod_job_fixture(&store.store)?)),
-            Self::StorePointer => Ok(Model::StorePointer(store_pointer_fixture(&store.store)?)),
-        }
+impl TestSetup for PodJob {
+    type Target = Self;
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        store.save_pod_job(self)
     }
-}
-
-pub enum ModelType {
-    Pod,
-    PodJob,
-    StorePointer,
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        store.delete_pod_job(&ModelID::Hash(self.hash.clone()))
+    }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pod_job(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        store.list_pod_job()
+    }
 }
