@@ -213,7 +213,7 @@ impl LocalFileStore {
             .clone())
     }
 
-    fn save_file_internal(
+    fn save_file(
         file: impl AsRef<Path>,
         content: impl AsRef<[u8]>,
         fail_if_exists: bool,
@@ -245,7 +245,7 @@ impl LocalFileStore {
     ) -> Result<()> {
         if let Some(provided_annotation) = annotation {
             // Save the annotation file and throw an error if exist
-            Self::save_file_internal(
+            Self::save_file(
                 self.make_path::<T>(
                     hash,
                     Self::make_annotation_relpath(
@@ -258,7 +258,7 @@ impl LocalFileStore {
             )?;
         }
         // Save the pod and skip if it already exist, for the case of many annotation to a single pod
-        Self::save_file_internal(
+        Self::save_file(
             self.make_path::<T>(hash, SPEC_RELPATH),
             to_yaml(model)?,
             false,
