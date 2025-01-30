@@ -114,6 +114,7 @@ pub struct PodJob {
     pub output_stream_mapping: PathBuf,
     cpu_limit: f32,
     memory_limit: u64,
+    retry_policy: RetryPolicy,
 }
 
 impl PodJob {
@@ -129,6 +130,7 @@ impl PodJob {
         output_stream_path: PathBuf,
         cpu_limit: f32,
         memory_limit: u64,
+        retry_policy: RetryPolicy,
     ) -> Result<Self> {
         let pod_job_no_hash = Self {
             annotation,
@@ -138,6 +140,7 @@ impl PodJob {
             output_stream_mapping: output_stream_path,
             cpu_limit,
             memory_limit,
+            retry_policy,
         };
         Ok(Self {
             hash: hash(to_yaml(&pod_job_no_hash)?),
@@ -254,4 +257,13 @@ pub enum FileOrFolder {
     File,
     /// A single folder specified by its absolute path.
     Folder,
+}
+
+/// Pod job retry policy
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub enum RetryPolicy {
+    /// Will stop the job upon first failure
+    NoRetry,
+    /// Will allow n number of failures within a time window of t seconds
+    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
 }

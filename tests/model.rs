@@ -50,7 +50,7 @@ fn hash_pod_job() -> Result<()> {
     let mut pod_job = pod_job_style()?;
     pod_job.compute_checksum_for_input_stream_path(&store_fixture(None, true)?.store)?;
     assert_eq!(
-        pod_job.hash, "399176b3251d839a508f6a2ed20f06cc22cb272d80f7341bf1c349999d78d794",
+        pod_job.hash, "ff0f48e9edf63a5170f78b6fc9e6231cbdf2fae9f2665753992bb1a7bd0f60a6",
         "Hash didn't match."
     );
     Ok(())
@@ -75,6 +75,7 @@ fn pod_job_to_yaml() -> Result<()> {
             output_stream_mapping: output
             cpu_limit: 0.5
             memory_limit: 2147483648
+            retry_policy: NoRetry
         "},
         "YAML serialization didn't match."
     );

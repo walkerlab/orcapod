@@ -10,7 +10,7 @@
 
 use orcapod::{
     error::Result,
-    model::{Annotation, Blob, FileOrFolder, Input, Pod, PodJob, StreamInfo},
+    model::{Annotation, Blob, FileOrFolder, Input, Pod, PodJob, RetryPolicy, StreamInfo},
     store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore},
 };
 use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf, process::Command};
@@ -87,6 +87,7 @@ pub fn pod_job_style() -> Result<PodJob> {
         PathBuf::from("output"),
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes
+        RetryPolicy::NoRetry,
     )
 }
 
