@@ -2,11 +2,14 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{add_storage, pod_job_style, pod_style, store_test, TestSetup, TestStore};
+use fixture::{add_storage, pod_job_style, pod_style, store_fixture, TestSetup, TestStore};
 use orcapod::{
     error::Result,
     model::{Annotation, Pod},
-    store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
+    store::{
+        filestore::{LocalFileStore, SPEC_RELPATH},
+        ModelID, ModelInfo, ModelStore,
+    },
 };
 use std::{fmt::Debug, fs, path::Path};
 use tempfile::tempdir;
@@ -52,16 +55,15 @@ where
 
 #[test]
 fn pod_basic() -> Result<()> {
-    let store = store_test(None, false)?;
-    let (loaded_model, stored_model) = basic_test(pod_style()?, &store)?;
+    let (loaded_model, stored_model) = basic_test(pod_style()?, &store_fixture(None, false)?)?;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
 }
 
 #[test]
 fn pod_job_basic() -> Result<()> {
-    let store = store_test(None, true)?;
-    let (loaded_model, mut stored_model) = basic_test(pod_job_style(&store.store)?, &store)?;
+    let (loaded_model, mut stored_model) =
+        basic_test(pod_job_style()?, &store_fixture(None, true)?)?;
     stored_model.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
@@ -72,7 +74,7 @@ fn pod_files() -> Result<()> {
     let store_directory = String::from(tempdir()?.path().to_string_lossy());
     {
         let pod_style = pod_style()?;
-        let store = store_test(Some(&store_directory), false)?;
+        let store = store_fixture(Some(&store_directory), false)?;
         let annotation = pod_style
             .annotation
             .as_ref()
@@ -81,7 +83,7 @@ fn pod_files() -> Result<()> {
             &pod_style.hash,
             &LocalFileStore::make_annotation_relpath(&annotation.name, &annotation.version),
         );
-        let spec_file = store.make_path::<Pod>(&pod_style.hash, LocalFileStore::SPEC_RELPATH);
+        let spec_file = store.make_path::<Pod>(&pod_style.hash, SPEC_RELPATH);
         {
             let _pod = add_storage(pod_style, &store)?;
             assert!(spec_file.exists(), "Spec file missing.");
@@ -107,14 +109,14 @@ fn pod_files() -> Result<()> {
 
 #[test]
 fn pod_list_empty() -> Result<()> {
-    let store = store_test(None, false)?;
+    let store = store_fixture(None, false)?;
     assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
 
 #[test]
 fn pod_load_from_hash() -> Result<()> {
-    let store = store_test(None, false)?;
+    let store = store_fixture(None, false)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     stored_model.model.annotation = None;
     let loaded_pod = stored_model
@@ -129,7 +131,7 @@ fn pod_load_from_hash() -> Result<()> {
 
 #[test]
 fn pod_annotation_delete() -> Result<()> {
-    let store = store_test(None, false)?;
+    let store = store_fixture(None, false)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     stored_model.model.annotation = Some(Annotation {
         name: "new-name".to_owned(),

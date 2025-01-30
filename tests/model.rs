@@ -1,22 +1,9 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_job_style, pod_style};
+use fixture::{pod_job_style, pod_style, store_fixture};
 use indoc::indoc;
-use orcapod::{
-    error::Result,
-    model::{to_yaml, Blob, BlobInterface, FileOrFolder},
-};
-
-struct FakeStore;
-impl BlobInterface for FakeStore {
-    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
-        Ok(Blob {
-            checksum: Some("fake_hash".to_owned()),
-            ..blob
-        })
-    }
-}
+use orcapod::{error::Result, model::to_yaml};
 
 #[test]
 fn hash_pod() -> Result<()> {
@@ -60,9 +47,10 @@ fn pod_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_job() -> Result<()> {
+    let mut pod_job = pod_job_style()?;
+    pod_job.compute_checksum_for_input_stream_path(&store_fixture(None, true)?.store)?;
     assert_eq!(
-        pod_job_style(&FakeStore)?.hash,
-        "5851a796f77e1649aa9b1e9704dd958f04af16e032bfa29d781db80d0e3ad243",
+        pod_job.hash, "399176b3251d839a508f6a2ed20f06cc22cb272d80f7341bf1c349999d78d794",
         "Hash didn't match."
     );
     Ok(())
@@ -71,23 +59,20 @@ fn hash_pod_job() -> Result<()> {
 #[test]
 fn pod_job_to_yaml() -> Result<()> {
     assert_eq!(
-        to_yaml(&pod_job_style(&FakeStore)?)?,
+        to_yaml(&pod_job_style()?)?,
         indoc! {"
             class: pod_job
             pod: 61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085
-            input_stream_path:
+            input_stream_mapping:
               image:
                 kind: File
                 location: images/dog.jpeg
-                checksum: fake_hash
+                checksum: null
               style:
                 kind: File
                 location: styles/mosaic.t7
-                checksum: fake_hash
-            output_stream_path:
-              kind: Folder
-              location: output
-              checksum: null
+                checksum: null
+            output_stream_mapping: output
             cpu_limit: 0.5
             memory_limit: 2147483648
         "},

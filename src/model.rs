@@ -108,9 +108,10 @@ pub struct PodJob {
     #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
     pub pod: Pod,
     /// Map stream ids to an input in user data target.
-    pub input_stream_path: BTreeMap<String, Input>,
+    pub input_stream_mapping: BTreeMap<String, Input>,
     /// Map output directory to a folder in user data target.
-    pub output_stream_path: Blob<FolderOnly>,
+    /// Will be replaced `output_store_mapping` when store pointer is implemented
+    pub output_stream_mapping: PathBuf,
     cpu_limit: f32,
     memory_limit: u64,
 }
@@ -125,7 +126,7 @@ impl PodJob {
         annotation: Option<Annotation>,
         pod: Pod,
         input_stream_path: BTreeMap<String, Input>,
-        output_stream_path: Blob<FolderOnly>,
+        output_stream_path: PathBuf,
         cpu_limit: f32,
         memory_limit: u64,
     ) -> Result<Self> {
@@ -133,8 +134,8 @@ impl PodJob {
             annotation,
             hash: String::new(),
             pod,
-            input_stream_path,
-            output_stream_path,
+            input_stream_mapping: input_stream_path,
+            output_stream_mapping: output_stream_path,
             cpu_limit,
             memory_limit,
         };
@@ -155,7 +156,7 @@ impl PodJob {
         &mut self,
         model_store: &T,
     ) -> Result<()> {
-        for input in self.input_stream_path.values_mut() {
+        for input in self.input_stream_mapping.values_mut() {
             input.compute_checksum(model_store)?;
         }
         Ok(())
@@ -251,13 +252,6 @@ impl Blob<FileOrFolder> {
 pub enum FileOrFolder {
     /// A single file specified by its absolute path.
     File,
-    /// A single folder specified by its absolute path.
-    Folder,
-}
-
-/// Folder-only option for BLOBs.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum FolderOnly {
     /// A single folder specified by its absolute path.
     Folder,
 }

@@ -27,6 +27,8 @@ pub(crate) enum Kind {
     MultipleHashFound { name: String, ver: String },
     #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
     UnsupportedPath { path: PathBuf },
+    #[error("Path: {} does not exists", path.to_string_lossy().bright_cyan())]
+    PathDoesNotExist { path: PathBuf },
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]

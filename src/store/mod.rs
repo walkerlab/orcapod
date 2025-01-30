@@ -104,7 +104,7 @@ pub trait ModelStore: DataStore {
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 }
 
-/// Same as blob interface, but renamed due to possiable additional of features for store pointer.
+/// Same as blob interface, but renamed due to possible additional of features for store pointer.
 pub trait DataStore: Sized {
     /// How to evaluate a checksum of a BLOB.
     ///

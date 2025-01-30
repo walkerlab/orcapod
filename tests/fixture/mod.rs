@@ -10,9 +10,7 @@
 
 use orcapod::{
     error::Result,
-    model::{
-        Annotation, Blob, BlobInterface, FileOrFolder, FolderOnly, Input, Pod, PodJob, StreamInfo,
-    },
+    model::{Annotation, Blob, FileOrFolder, Input, Pod, PodJob, StreamInfo},
     store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore},
 };
 use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf, process::Command};
@@ -60,7 +58,7 @@ pub fn pod_style() -> Result<Pod> {
     )
 }
 
-pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
+pub fn pod_job_style() -> Result<PodJob> {
     PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -86,18 +84,13 @@ pub fn pod_job_style(blob_interface: &impl BlobInterface) -> Result<PodJob> {
                 }),
             ),
         ]),
-        Blob {
-            kind: FolderOnly::Folder,
-            location: PathBuf::from("output"),
-            checksum: Some("please_ignore".to_owned()),
-        },
+        PathBuf::from("output"),
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes
-        blob_interface,
     )
 }
 
-pub fn store_test(store_directory: Option<&str>, with_data: bool) -> Result<TestStore> {
+pub fn store_fixture(store_directory: Option<&str>, with_data: bool) -> Result<TestStore> {
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     let store =
         store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
@@ -118,7 +111,7 @@ pub fn store_test(store_directory: Option<&str>, with_data: bool) -> Result<Test
 
 // --- helper functions ---
 
-pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
+pub fn add_storage<T: TestSetup>(mut model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
     model.save(store)?;
     let model_with_storage = TestStoredModel { store, model };
     Ok(model_with_storage)
@@ -160,7 +153,7 @@ impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
 
 pub trait TestSetup {
     type Target;
-    fn save(&self, store: &LocalFileStore) -> Result<()>;
+    fn save(&mut self, store: &LocalFileStore) -> Result<()>;
     fn delete(&self, store: &LocalFileStore) -> Result<()>;
     fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
     fn get_annotation(&self) -> Option<&Annotation>;
@@ -170,7 +163,7 @@ pub trait TestSetup {
 
 impl TestSetup for Pod {
     type Target = Self;
-    fn save(&self, store: &LocalFileStore) -> Result<()> {
+    fn save(&mut self, store: &LocalFileStore) -> Result<()> {
         store.save_pod(self)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {
@@ -196,7 +189,7 @@ impl TestSetup for Pod {
 
 impl TestSetup for PodJob {
     type Target = Self;
-    fn save(&self, store: &LocalFileStore) -> Result<()> {
+    fn save(&mut self, store: &LocalFileStore) -> Result<()> {
         store.save_pod_job(self)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {

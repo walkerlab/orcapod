@@ -85,6 +85,10 @@ impl DataStore for LocalFileStore {
     fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String> {
         let full_path = self.make_data_path().join(path.as_ref());
 
+        if !full_path.exists() {
+            return Err(OrcaError::from(Kind::PathDoesNotExist { path: full_path }));
+        }
+
         if full_path.is_file() {
             // Read and hash in chunks
             let buf_reader = BufReader::with_capacity(BUFFER_READER_CAP, File::open(full_path)?);
@@ -189,7 +193,7 @@ impl LocalFileStore {
             &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
         )?;
 
-        if model_infos.len() != 1 {
+        if model_infos.len() > 1 {
             return Err(OrcaError::from(Kind::MultipleHashFound {
                 name: name.to_owned(),
                 ver: version.to_owned(),
