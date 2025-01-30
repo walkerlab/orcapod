@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     error::Result,
-    model::{Pod, PodJob, StorePointer},
+    model::{Pod, PodJob},
 };
 
 /// Options for identifying a model.
@@ -28,6 +28,10 @@ pub struct ModelInfo {
 pub trait ModelStore: DataStore {
     /// Namespace where models will be stored.
     const MODEL_NAMESPACE: &str = "orcapod_model";
+
+    /// Default namespace where user data (inputs/outputs) will be stored.
+    /// Mainly use for the data store traits
+    const DEFAULT_DATA_NAMESPACE: &str = "orcapod_data";
 
     /// How a pod is stored.
     ///
@@ -98,64 +102,16 @@ pub trait ModelStore: DataStore {
     /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
     /// and `version`.
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
-
-    ///
-    /// # Errors
-    /// Will with orca error if fail to save
-    fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()>;
-
-    /// Load the latest store pointer
-    ///
-    /// # Errors
-    /// Will return orca error if fail to load latest store pointer
-    fn load_store_pointer(&self, store_name: &str) -> Result<StorePointer>;
-
-    /// List all avaliable store pointers if there are any
-    ///
-    /// # Errors
-    /// Will return `Err` if there is an issue querying metadata from existing store pointers in the store.
-    fn list_store_pointer(&self) -> Result<Vec<ModelInfo>>;
-
-    /// Delete store pointer by ``model_id``
-    ///
-    /// # Errors
-    /// Will return error if failed to delete the store pointer
-    fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()>;
 }
 
-/// An interface to access BLOB functions.
+/// Same as blob interface, but renamed due to possiable additional of features for store pointer.
 pub trait DataStore: Sized {
-    /// Default namespace where user data (inputs/outputs) will be stored.
-    const DEFAULT_DATA_NAMESPACE: &str = "orcapod_data";
-
     /// How to evaluate a checksum of a BLOB.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue computing the checksum of a BLOB.
     fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String>;
-
-    ///
-    /// # Errors
-    /// Will return invalid uri if file store cannot be rebuilt given the uri
-    fn from_uri(uri: &str) -> Result<Self>;
-
-    /// Get the uri string to reconstruct the store later
-    ///
-    fn get_uri(&self) -> String;
-
-    /// Function to read file into memory
-    ///
-    /// # Errors
-    ///
-    /// Will error out with standard ``io::errors``
-    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>>;
-
-    /// Save file to local file store, will error out if file already exist
-    ///
-    /// # Errors
-    /// Will error out with standard ``io::errors``
-    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()>;
 }
 
 /// Store implementation on a local filesystem.

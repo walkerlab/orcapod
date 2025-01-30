@@ -1,7 +1,7 @@
 use crate::{
     crypto::hash_bytes,
-    error::{Kind, OrcaError, Result},
-    store::{filestore::LocalFileStore, DataStore, ModelStore},
+    error::Result,
+    store::DataStore,
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -143,74 +143,24 @@ impl PodJob {
             ..pod_job_no_hash
         })
     }
-}
 
-impl PodJob {
-    /// Helper function to compute the hash for the input_stream_path that is typically used when saving the model
+    /// Helper function to compute the hash for the `input_stream_path` that is typically used when saving the model
     /// This is using last min save, basically do not compute the checksum, until it is actually written, but can be used
     /// before hand in memory.
     ///
     /// # Errors
-    /// Error if fails to compute checksum, mainly due to FileIO
+    /// Error if fails to compute checksum, mainly due to `FileIO`
     ///
-    pub fn compute_checksum_for_input_stream_path<T: ModelStore>(
+    pub fn compute_checksum_for_input_stream_path<T: DataStore>(
         &mut self,
         model_store: &T,
     ) -> Result<()> {
-        for (_, input) in self.input_stream_path.iter_mut() {
-            input.compute_checksum(model_store)?
+        for input in self.input_stream_path.values_mut() {
+            input.compute_checksum(model_store)?;
         }
         Ok(())
     }
 }
-
-/// Model object that contains a ``BTreeMap``that maps store names to the actual URI use to reconstruct the stores
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub struct StorePointer {
-    /// Version tag to uniquely identify
-    #[serde(skip)]
-    pub annotation: Annotation,
-    #[serde(skip)]
-    /// hash identity, for now it is just the uri
-    pub hash: String,
-    /// Uri path to the store
-    pub uri: String,
-}
-
-impl StorePointer {
-    /// Function to create new store pointer and compute the hash
-    ///
-    /// # Errors
-    /// Return serialization error if something went wrong.
-    pub fn new(annotation: Annotation, uri: String) -> Result<Self> {
-        let mut store_pointer = Self {
-            annotation,
-            uri,
-            hash: String::new(),
-        };
-
-        store_pointer.hash = hash(&to_yaml(&store_pointer)?);
-        Ok(store_pointer)
-    }
-
-    /// Function to rebuild the store based on self
-    ///
-    /// # Errors
-    /// Will fail if rebuilding of the store access struct fails
-    pub fn get_store(&self) -> Result<impl DataStore> {
-        // Load the yaml into a Btreemap, pull out the class, then build the store
-
-        let storage_class_name = self.uri.split("::").collect::<Vec<&str>>()[0];
-
-        match storage_class_name {
-            "LocalStore" => Ok(LocalFileStore::from_uri(&self.uri)?),
-            _ => Err(OrcaError::from(Kind::UnsupportedFileStorage {
-                data_storage_type: storage_class_name.to_owned(),
-            })),
-        }
-    }
-}
-
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
@@ -261,12 +211,12 @@ pub enum Input {
 }
 
 impl Input {
-    fn compute_checksum<T: ModelStore>(&mut self, model_store: &T) -> Result<()> {
+    fn compute_checksum<T: DataStore>(&mut self, model_store: &T) -> Result<()> {
         match self {
             Self::Unary(blob) => blob.compute_checksum(model_store),
             Self::Collection(blobs) => {
                 for blob in blobs {
-                    blob.compute_checksum(model_store)?
+                    blob.compute_checksum(model_store)?;
                 }
 
                 Ok(())
@@ -284,27 +234,14 @@ pub struct Blob<T> {
     pub location: PathBuf,
     /// BLOB contents checksum.
     pub checksum: Option<String>,
-    /// Where is it located
-    pub store_pointer_name: Option<String>,
 }
 
 impl Blob<FileOrFolder> {
     // Function to compute the checksum based with handling for default case
-    fn compute_checksum<T: ModelStore>(&mut self, model_store: &T) -> Result<()> {
-        self.checksum = match &self.store_pointer_name {
-            Some(store_pointer_name) => Some(
-                model_store
-                    .load_store_pointer(store_pointer_name)?
-                    .get_store()?
-                    .compute_checksum(&self.location)?,
-            ),
-            None => {
-                Some(
-                    // Empty store name, thus use default behaivor
-                    model_store.compute_checksum(&self.location)?,
-                )
-            }
-        };
+    /// We are assuming the datastore to always be the same as model store for now
+    /// until store pointer is implmented
+    fn compute_checksum<T: DataStore>(&mut self, model_store: &T) -> Result<()> {
+        self.checksum = Some(model_store.compute_checksum(&self.location)?);
         Ok(())
     }
 }

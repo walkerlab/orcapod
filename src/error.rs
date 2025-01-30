@@ -17,8 +17,6 @@ pub type Result<T> = result::Result<T, OrcaError>;
 pub(crate) enum Kind {
     #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
     FileExists { path: PathBuf },
-    #[error("{}", err_msg.bright_cyan())]
-    InvalidURIForFileStore { err_msg: String },
     #[error("No annotation found for `{name}:{version}` {class}.")]
     NoAnnotationFound {
         class: String,
@@ -29,8 +27,6 @@ pub(crate) enum Kind {
     MultipleHashFound { name: String, ver: String },
     #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
     UnsupportedPath { path: PathBuf },
-    #[error("Unsupported data storage type: {}", data_storage_type.bright_cyan())]
-    UnsupportedFileStorage { data_storage_type: String },
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]

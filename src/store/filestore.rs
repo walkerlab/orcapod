@@ -1,7 +1,7 @@
 use crate::{
     crypto::{hash_buf_reader, hash_bytes},
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Pod, PodJob, StorePointer},
+    model::{to_yaml, Annotation, Pod, PodJob},
     store::{ModelID, ModelInfo},
     util::get_type_name,
 };
@@ -79,72 +79,6 @@ impl ModelStore for LocalFileStore {
 
         Ok(())
     }
-
-    fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()> {
-        self.save_model(
-            store_pointer,
-            &store_pointer.hash,
-            Some(&store_pointer.annotation),
-        )
-    }
-
-    fn load_store_pointer(&self, store_name: &str) -> Result<StorePointer> {
-        // Search all the annotations in store_pointer to
-
-        let glob_pattern = self.make_path::<StorePointer>("*", "annotation/*");
-
-        let mut model_infos = Self::find_model_metadata(&glob_pattern)?;
-
-        // Sort the versions in ascending order
-        model_infos.sort_by(|a, b| a.version.cmp(&b.version));
-
-        // Get the lastest version
-        let latest_model_info = model_infos.last().ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<StorePointer>(),
-                name: store_name.to_owned(),
-                version: "*".to_owned(),
-            })
-        })?;
-
-        let name = latest_model_info.name.clone().ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<StorePointer>(),
-                name: store_name.to_owned(),
-                version: "*".to_owned(),
-            })
-        })?;
-
-        let version = latest_model_info.version.clone().ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<StorePointer>(),
-                name: store_name.to_owned(),
-                version: "*".to_owned(),
-            })
-        })?;
-
-        let (mut store_pointer, annotation, hash) =
-            self.load_model::<StorePointer>(&ModelID::Annotation(name, version))?;
-
-        store_pointer.annotation = annotation.ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<StorePointer>(),
-                name: store_name.to_owned(),
-                version: "*".to_owned(),
-            })
-        })?;
-        store_pointer.hash = hash;
-
-        Ok(store_pointer)
-    }
-
-    fn list_store_pointer(&self) -> Result<Vec<ModelInfo>> {
-        self.list_model::<StorePointer>()
-    }
-
-    fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()> {
-        self.delete_model::<StorePointer>(model_id)
-    }
 }
 
 impl DataStore for LocalFileStore {
@@ -179,38 +113,6 @@ impl DataStore for LocalFileStore {
                 path: path.as_ref().to_path_buf(),
             }))
         }
-    }
-
-    fn from_uri(uri: &str) -> Result<Self> {
-        // Remove the class name from the start
-        let directory = uri.split("::").collect::<Vec<&str>>()[1];
-        if !PathBuf::from(directory).exists() {
-            // uri is not valid
-            return Err(OrcaError::from(Kind::InvalidURIForFileStore {
-                err_msg: format!(
-                    "Directory {} doesn't exist or not accessible ",
-                    directory.to_owned()
-                ),
-            }));
-        }
-
-        Ok(Self {
-            directory: directory.into(),
-        })
-    }
-
-    fn get_uri(&self) -> String {
-        let mut uri = String::from("LocalStore::");
-        uri.push_str(&self.directory.to_string_lossy());
-        uri
-    }
-
-    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
-        Ok(fs::read(self.make_data_path().join(path))?)
-    }
-
-    fn save_file(&self, path: impl AsRef<Path>, content: Vec<u8>) -> Result<()> {
-        Self::save_file_internal(self.make_data_path().join(path), content, true)
     }
 }
 
