@@ -9,8 +9,8 @@ pub enum ImageKind {
     /// A published compute environment image in a container registry. Argument formatted as
     /// `{server.com/}{name}:{tag}`. Server is optional e.g. (`alpine:latest`).
     Published(String),
-    /// A packaged compute environment of image+tag as a tarball. Arguments is the path of tarball
-    /// e.g. (`path/to/image.tar.gz`).
+    /// A packaged compute environment of image+tag as a tarball. Argument is the relative path of
+    /// tarball in orchestrator data directory e.g. (`path/to/image.tar.gz`).
     Tarball(PathBuf),
 }
 /// Available states of a run.
@@ -60,8 +60,10 @@ where
 /// Current computation managed by orchestrator.
 #[derive(Debug)]
 pub struct PodRun<'orch, T: Types> {
-    pod_job: PodJob,
-    orchestrator: &'orch T::Orchestrator,
+    /// Original compute request.
+    pub pod_job: PodJob,
+    /// The orchestrator that is managing the compute run.
+    pub orchestrator: &'orch T::Orchestrator,
 }
 /// API to access `PodRun`-specific orchestrator functionality.
 pub trait PodRunAPI: Types {

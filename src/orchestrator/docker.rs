@@ -23,7 +23,7 @@ use regex::Regex;
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
 };
 use tokio::{fs::File, runtime::Runtime};
 use tokio_util::{
@@ -181,7 +181,7 @@ impl LocalDockerOrchestrator {
     /// Will return `Err` if there is an issue creating a local docker orchestrator.
     pub fn new(data_directory: impl AsRef<Path>) -> Result<Self> {
         Ok(Self {
-            data_directory: fs::canonicalize(data_directory)?,
+            data_directory: path::absolute(data_directory)?,
             api: Docker::connect_with_local_defaults()?,
             async_driver: Runtime::new()?,
         })
@@ -203,8 +203,9 @@ impl LocalDockerOrchestrator {
             ImageKind::Published(remote_image) => {
                 self.prepare_container_start_inputs(pod_job, remote_image.clone())?
             }
-            ImageKind::Tarball(location) => {
-                let byte_stream = FramedRead::new(File::open(location).await?, BytesCodec::new())
+            ImageKind::Tarball(relative_location) => {
+                let location = self.data_directory.join(relative_location);
+                let byte_stream = FramedRead::new(File::open(&location).await?, BytesCodec::new())
                     .map_err(|err| -> Result<BytesMut> {
                         let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
                         Ok(resolved_error)

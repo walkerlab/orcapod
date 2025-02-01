@@ -187,6 +187,16 @@ pub fn store_test(store_directory: Option<&str>, with_data: bool) -> Result<Test
     Ok(TestStore { store })
 }
 
+pub struct FakeStore;
+impl BlobInterface for FakeStore {
+    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
+        Ok(Blob {
+            checksum: Some("fake_hash".to_owned()),
+            ..blob
+        })
+    }
+}
+
 // --- helper functions ---
 
 pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {

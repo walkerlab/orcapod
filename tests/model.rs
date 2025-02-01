@@ -1,22 +1,9 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_job_style, pod_result_style, pod_style};
+use fixture::{pod_job_style, pod_result_style, pod_style, FakeStore};
 use indoc::indoc;
-use orcapod::{
-    error::Result,
-    model::{to_yaml, Blob, BlobInterface, FileOrFolder},
-};
-
-struct FakeStore;
-impl BlobInterface for FakeStore {
-    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
-        Ok(Blob {
-            checksum: Some("fake_hash".to_owned()),
-            ..blob
-        })
-    }
-}
+use orcapod::{error::Result, model::to_yaml};
 
 #[test]
 fn hash_pod() -> Result<()> {

@@ -24,8 +24,9 @@ fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     )
 }
 
-fn basic_test<T: TestSetup + Debug + Clone>(model: T, store: &TestStore) -> Result<(T::Target, T)>
+fn basic_test<T>(model: T, store: &TestStore) -> Result<(T::Target, T)>
 where
+    T: TestSetup + Debug + Clone,
     T::Target: PartialEq<T> + Debug,
 {
     let stored_model = add_storage(model, store)?;
