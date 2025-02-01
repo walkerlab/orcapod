@@ -112,6 +112,22 @@ pub trait DataStore: Sized {
     ///
     /// Will return `Err` if there is an issue computing the checksum of a BLOB.
     fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String>;
+
+    ///
+    /// # Errors
+    /// Will return invalid uri if file store cannot be rebuilt given the uri
+    fn from_uri(uri: &str) -> Result<Self>;
+
+    /// Get the uri string to reconstruct the store later
+    ///
+    fn get_uri(&self) -> String;
+
+    /// Function to read file into memory
+    ///
+    /// # Errors
+    ///
+    /// Will error out with standard ``io::errors``
+    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>>;
 }
 
 /// Store implementation on a local filesystem.

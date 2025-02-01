@@ -118,6 +118,34 @@ impl DataStore for LocalFileStore {
             }))
         }
     }
+
+    fn from_uri(uri: &str) -> Result<Self> {
+        // Remove the class name from the start
+        let directory = uri.split("::").collect::<Vec<&str>>()[1];
+        if !PathBuf::from(directory).exists() {
+            // uri is not valid
+            return Err(OrcaError::from(Kind::InvalidURIForFileStore {
+                err_msg: format!(
+                    "Directory {} doesn't exist or not accessible ",
+                    directory.to_owned()
+                ),
+            }));
+        }
+
+        Ok(Self {
+            directory: directory.into(),
+        })
+    }
+
+    fn get_uri(&self) -> String {
+        let mut uri = String::from("LocalStore::");
+        uri.push_str(&self.directory.to_string_lossy());
+        uri
+    }
+
+    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
+        Ok(fs::read(self.make_data_path().join(path))?)
+    }
 }
 
 impl LocalFileStore {

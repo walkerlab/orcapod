@@ -23,10 +23,14 @@ pub(crate) enum Kind {
         name: String,
         version: String,
     },
+    #[error("{}", err_msg.bright_cyan())]
+    InvalidURIForFileStore { err_msg: String },
     #[error("Multiple hash found for annotation: (name: {}, ver: {})", name.bright_cyan(), ver.bright_cyan())]
     MultipleHashFound { name: String, ver: String },
     #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
     UnsupportedPath { path: PathBuf },
+    #[error("Unsupported data storage type: {}", data_storage_type.bright_cyan())]
+    UnsupportedFileStorage { data_storage_type: String },
     #[error("Path: {} does not exists", path.to_string_lossy().bright_cyan())]
     PathDoesNotExist { path: PathBuf },
     #[error(transparent)]

@@ -1,7 +1,7 @@
 use crate::{
     crypto::hash_bytes,
-    error::Result,
-    store::DataStore,
+    error::{Kind, OrcaError, Result},
+    store::{filestore::LocalFileStore, DataStore},
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -165,8 +165,55 @@ impl PodJob {
         Ok(())
     }
 }
-// --- util types ---
 
+/// Model object that contains a ``BTreeMap``that maps store names to the actual URI use to reconstruct the stores
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+pub struct StorePointer {
+    /// Version tag to uniquely identify
+    #[serde(skip)]
+    pub annotation: Annotation,
+    #[serde(skip)]
+    /// hash identity, for now it is just the uri
+    pub hash: String,
+    /// Uri path to the store
+    pub uri: String,
+}
+
+impl StorePointer {
+    /// Function to create new store pointer and compute the hash
+    ///
+    /// # Errors
+    /// Return serialization error if something went wrong.
+    pub fn new(annotation: Annotation, uri: String) -> Result<Self> {
+        let mut store_pointer = Self {
+            annotation,
+            uri,
+            hash: String::new(),
+        };
+
+        store_pointer.hash = hash(&to_yaml(&store_pointer)?);
+        Ok(store_pointer)
+    }
+
+    /// Function to rebuild the store based on self
+    ///
+    /// # Errors
+    /// Will fail if rebuilding of the store access struct fails
+    pub fn get_store(&self) -> Result<impl DataStore> {
+        // Load the yaml into a Btreemap, pull out the class, then build the store
+
+        let storage_class_name = self.uri.split("::").collect::<Vec<&str>>()[0];
+
+        match storage_class_name {
+            "LocalStore" => Ok(LocalFileStore::from_uri(&self.uri)?),
+            _ => Err(OrcaError::from(Kind::UnsupportedFileStorage {
+                data_storage_type: storage_class_name.to_owned(),
+            })),
+        }
+    }
+}
+
+// --- util types ---
 /// Standard metadata structure for all model instances.
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
