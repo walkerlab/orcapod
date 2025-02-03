@@ -144,13 +144,6 @@ pub trait DataStore: Sized {
     /// Get the uri string to reconstruct the store later
     ///
     fn get_uri(&self) -> String;
-
-    /// Function to read file into memory
-    ///
-    /// # Errors
-    ///
-    /// Will error out with standard ``io::errors``
-    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>>;
 }
 
 /// Store implementation on a local filesystem.

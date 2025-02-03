@@ -207,10 +207,6 @@ impl DataStore for LocalFileStore {
         uri.push_str(&self.directory.to_string_lossy());
         uri
     }
-
-    fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>> {
-        Ok(fs::read(self.make_data_path().join(path))?)
-    }
 }
 
 impl LocalFileStore {
