@@ -162,7 +162,7 @@ impl LocalFileStore {
                             (?<hash>[0-9a-f]+)\/
                                 (
                                     annotation\/
-                                        (?<name>[0-9a-zA-Z\-]+)
+                                        (?<name>[0-9a-zA-Z\-\s]+)
                                         -
                                         (?<version>[0-9]+\.[0-9]+\.[0-9]+)
                                         \.yaml
