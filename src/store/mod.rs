@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     error::Result,
-    model::{Pod, PodJob},
+    model::{Pod, PodJob, StorePointer},
 };
 
 /// Options for identifying a model.
@@ -102,6 +102,29 @@ pub trait ModelStore: DataStore {
     /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
     /// and `version`.
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
+
+    ///
+    /// # Errors
+    /// Will with orca error if fail to save
+    fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()>;
+
+    /// Load the latest store pointer
+    ///
+    /// # Errors
+    /// Will return orca error if fail to load latest store pointer
+    fn load_store_pointer(&self, store_name: &str) -> Result<StorePointer>;
+
+    /// List all avaliable store pointers if there are any
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue querying metadata from existing store pointers in the store.
+    fn list_store_pointer(&self) -> Result<Vec<ModelInfo>>;
+
+    /// Delete store pointer by ``model_id``
+    ///
+    /// # Errors
+    /// Will return error if failed to delete the store pointer
+    fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()>;
 }
 
 /// Same as blob interface, but renamed due to possible additional of features for store pointer.

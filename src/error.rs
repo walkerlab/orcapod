@@ -1,5 +1,5 @@
 use colored::Colorize;
-use glob;
+use glob::{self, GlobError};
 use regex;
 use serde_yaml;
 use std::{
@@ -41,6 +41,8 @@ pub(crate) enum Kind {
     SerdeYamlError(#[from] serde_yaml::Error),
     #[error(transparent)]
     IoError(#[from] io::Error),
+    #[error(transparent)]
+    GlobError(#[from] GlobError),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -83,6 +85,13 @@ impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self {
             kind: Kind::IoError(error),
+        }
+    }
+}
+impl From<GlobError> for OrcaError {
+    fn from(error: GlobError) -> Self {
+        Self {
+            kind: Kind::GlobError(error),
         }
     }
 }

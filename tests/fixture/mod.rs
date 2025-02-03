@@ -73,6 +73,7 @@ pub fn pod_job_style() -> Result<PodJob> {
                     kind: FileOrFolder::File,
                     location: PathBuf::from("styles/mosaic.t7"),
                     checksum: None,
+                    store_pointer_name: None,
                 }),
             ),
             (
@@ -81,6 +82,7 @@ pub fn pod_job_style() -> Result<PodJob> {
                     kind: FileOrFolder::File,
                     location: PathBuf::from("images/dog.jpeg"),
                     checksum: None,
+                    store_pointer_name: None,
                 }),
             ),
         ]),

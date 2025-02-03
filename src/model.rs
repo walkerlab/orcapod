@@ -1,7 +1,7 @@
 use crate::{
     crypto::hash_bytes,
     error::{Kind, OrcaError, Result},
-    store::{filestore::LocalFileStore, DataStore},
+    store::{filestore::LocalFileStore, DataStore, ModelStore},
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -155,7 +155,7 @@ impl PodJob {
     /// # Errors
     /// Error if fails to compute checksum, mainly due to `FileIO`
     ///
-    pub fn compute_checksum_for_input_stream_path<T: DataStore>(
+    pub fn compute_checksum_for_input_stream_path<T: ModelStore>(
         &mut self,
         model_store: &T,
     ) -> Result<()> {
@@ -262,7 +262,7 @@ pub enum Input {
 }
 
 impl Input {
-    fn compute_checksum<T: DataStore>(&mut self, model_store: &T) -> Result<()> {
+    fn compute_checksum<T: ModelStore>(&mut self, model_store: &T) -> Result<()> {
         match self {
             Self::Unary(blob) => blob.compute_checksum(model_store),
             Self::Collection(blobs) => {
@@ -285,14 +285,29 @@ pub struct Blob<T> {
     pub location: PathBuf,
     /// BLOB contents checksum.
     pub checksum: Option<String>,
+    /// Where is it located
+    pub store_pointer_name: Option<String>,
 }
 
 impl Blob<FileOrFolder> {
     // Function to compute the checksum based with handling for default case
     /// We are assuming the datastore to always be the same as model store for now
     /// until store pointer is implmented
-    fn compute_checksum<T: DataStore>(&mut self, model_store: &T) -> Result<()> {
-        self.checksum = Some(model_store.compute_checksum(&self.location)?);
+    fn compute_checksum<T: ModelStore>(&mut self, model_store: &T) -> Result<()> {
+        self.checksum = match &self.store_pointer_name {
+            Some(store_pointer_name) => Some(
+                model_store
+                    .load_store_pointer(store_pointer_name)?
+                    .get_store()?
+                    .compute_checksum(&self.location)?,
+            ),
+            None => {
+                Some(
+                    // Empty store name, thus use default behaivor
+                    model_store.compute_checksum(&self.location)?,
+                )
+            }
+        };
         Ok(())
     }
 }

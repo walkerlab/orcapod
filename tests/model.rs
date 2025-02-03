@@ -50,7 +50,7 @@ fn hash_pod_job() -> Result<()> {
     let mut pod_job = pod_job_style()?;
     pod_job.compute_checksum_for_input_stream_path(&store_fixture(None, true)?.store)?;
     assert_eq!(
-        pod_job.hash, "ff0f48e9edf63a5170f78b6fc9e6231cbdf2fae9f2665753992bb1a7bd0f60a6",
+        pod_job.hash, "aa83d37781f010a4a0833c9d3e96a58ef3ab7956fc9cedb43b67724a6c578269",
         "Hash didn't match."
     );
     Ok(())
@@ -68,10 +68,12 @@ fn pod_job_to_yaml() -> Result<()> {
                 kind: File
                 location: images/dog.jpeg
                 checksum: null
+                store_pointer_name: null
               style:
                 kind: File
                 location: styles/mosaic.t7
                 checksum: null
+                store_pointer_name: null
             output_stream_mapping: output
             cpu_limit: 0.5
             memory_limit: 2147483648

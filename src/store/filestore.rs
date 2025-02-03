@@ -1,7 +1,7 @@
 use crate::{
     crypto::{hash_buf_reader, hash_bytes},
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Pod, PodJob},
+    model::{to_yaml, Annotation, Pod, PodJob, StorePointer},
     store::{ModelID, ModelInfo},
     util::get_type_name,
 };
@@ -78,6 +78,71 @@ impl ModelStore for LocalFileStore {
         fs::remove_file(&annotation_file)?;
 
         Ok(())
+    }
+    fn save_store_pointer(&self, store_pointer: &StorePointer) -> Result<()> {
+        self.save_model(
+            store_pointer,
+            &store_pointer.hash,
+            Some(&store_pointer.annotation),
+        )
+    }
+
+    fn load_store_pointer(&self, store_name: &str) -> Result<StorePointer> {
+        // Search all the annotations in store_pointer to
+
+        let glob_pattern = self.make_path::<StorePointer>("*", "annotation/*");
+
+        let mut model_infos = Self::find_model_metadata(&glob_pattern)?;
+
+        // Sort the versions in ascending order
+        model_infos.sort_by(|a, b| a.version.cmp(&b.version));
+
+        // Get the lastest version
+        let latest_model_info = model_infos.last().ok_or_else(|| {
+            OrcaError::from(Kind::NoAnnotationFound {
+                class: get_type_name::<StorePointer>(),
+                name: store_name.to_owned(),
+                version: "*".to_owned(),
+            })
+        })?;
+
+        let name = latest_model_info.name.clone().ok_or_else(|| {
+            OrcaError::from(Kind::NoAnnotationFound {
+                class: get_type_name::<StorePointer>(),
+                name: store_name.to_owned(),
+                version: "*".to_owned(),
+            })
+        })?;
+
+        let version = latest_model_info.version.clone().ok_or_else(|| {
+            OrcaError::from(Kind::NoAnnotationFound {
+                class: get_type_name::<StorePointer>(),
+                name: store_name.to_owned(),
+                version: "*".to_owned(),
+            })
+        })?;
+
+        let (mut store_pointer, annotation, hash) =
+            self.load_model::<StorePointer>(&ModelID::Annotation(name, version))?;
+
+        store_pointer.annotation = annotation.ok_or_else(|| {
+            OrcaError::from(Kind::NoAnnotationFound {
+                class: get_type_name::<StorePointer>(),
+                name: store_name.to_owned(),
+                version: "*".to_owned(),
+            })
+        })?;
+        store_pointer.hash = hash;
+
+        Ok(store_pointer)
+    }
+
+    fn list_store_pointer(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<StorePointer>()
+    }
+
+    fn delete_store_pointer(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<StorePointer>(model_id)
     }
 }
 
@@ -190,7 +255,7 @@ impl LocalFileStore {
                             (?<hash>[0-9a-f]+)\/
                                 (
                                     annotation\/
-                                        (?<name>[0-9a-zA-Z\-]+)
+                                        (?<name>[0-9a-zA-Z\-\s]+)
                                         -
                                         (?<version>[0-9]+\.[0-9]+\.[0-9]+)
                                         \.yaml
