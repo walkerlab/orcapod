@@ -1,6 +1,6 @@
 use crate::{
     error::Result,
-    orchestrator::RunState,
+    orchestrator::Status,
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -218,8 +218,8 @@ pub struct PodResult {
     pub pod_job: PodJob,
     /// Name given by orchestrator.
     pub assigned_name: String,
-    /// State when terminated.
-    pub state: RunState,
+    /// Status of compute run when terminated.
+    pub status: Status,
     /// Time in epoch when created in seconds.
     pub created: u64,
     /// Time in epoch when terminated in seconds.
@@ -236,7 +236,7 @@ impl PodResult {
         annotation: Option<Annotation>,
         pod_job: PodJob,
         assigned_name: String,
-        state: RunState,
+        status: Status,
         created: u64,
         terminated: u64,
     ) -> Result<Self> {
@@ -245,7 +245,7 @@ impl PodResult {
             hash: String::new(),
             pod_job,
             assigned_name,
-            state,
+            status,
             created,
             terminated,
         };

@@ -88,7 +88,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&FakeStore)?.hash,
-        "511e6e1ce8fd8dc2a4775b6372c2779283fa93b379976012dd2a25dc88a1ae3a",
+        "53e418976509b75b9fae778bde148d5f0e42567caa43f78b39b329d9d8409c62",
         "Hash didn't match."
     );
     Ok(())
@@ -102,7 +102,7 @@ fn pod_result_to_yaml() -> Result<()> {
             class: pod_result
             pod_job: 38f2021f67a8be0498ff1092789670661521e11c317d92ccebbc9dfeda98df7f
             assigned_name: simple-endeavour
-            state: Completed
+            status: Completed
             created: 1737922307
             terminated: 1737925907
         "},

@@ -9,7 +9,7 @@ use fixture::{
 use orcapod::{
     error::Result,
     model::{BlobInterface, PodJob},
-    orchestrator::{self, docker::LocalDockerOrchestrator, ImageKind, PodRunAPI, RunState, API},
+    orchestrator::{self, docker::LocalDockerOrchestrator, ImageKind, PodRunAPI, Status, API},
     store::{filestore::LocalFileStore, Store},
 };
 use std::{
@@ -37,8 +37,8 @@ fn basic_test(
     expected_command: String,
 ) -> Result<()> {
     assert_eq!(
-        pod_run.get_info()?.state,
-        RunState::Running,
+        pod_run.get_info()?.status,
+        Status::Running,
         "Unexpected state."
     );
     assert_eq!(
@@ -54,8 +54,8 @@ fn basic_test(
     // await result
     let pod_result_1 = pod_run.get_result()?;
     assert_eq!(
-        pod_run.get_info()?.state,
-        RunState::Completed,
+        pod_run.get_info()?.status,
+        Status::Completed,
         "Unexpected state."
     );
     assert_eq!(

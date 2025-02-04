@@ -13,9 +13,9 @@ pub enum ImageKind {
     /// tarball in orchestrator data directory e.g. (`path/to/image.tar.gz`).
     Tarball(PathBuf),
 }
-/// Available states of a run.
+/// Status of a particular compute run.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub enum RunState {
+pub enum Status {
     /// Run is ongoing.
     Running,
     /// Run has completed successfully.
@@ -38,8 +38,8 @@ pub struct RunInfo {
     pub env_vars: HashMap<String, String>,
     /// Command used to start run.
     pub command: String,
-    /// Current run state.
-    pub state: RunState,
+    /// Current run status.
+    pub status: Status,
     /// Mounted volume binds to the environment.
     pub mounts: Vec<String>,
     /// Label metadata set by orchestrator.

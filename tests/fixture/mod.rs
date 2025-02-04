@@ -16,7 +16,7 @@ use orcapod::{
         Annotation, Blob, BlobInterface, FileOrFolder, FolderOnly, Input, Pod, PodJob, PodResult,
         StreamInfo,
     },
-    orchestrator::RunState,
+    orchestrator::Status,
     store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
 };
 use std::{
@@ -117,7 +117,7 @@ pub fn pod_result_style(blob_interface: &impl BlobInterface) -> Result<PodResult
         }),
         pod_job_style(blob_interface)?,
         "simple-endeavour".to_owned(),
-        RunState::Completed,
+        Status::Completed,
         1_737_922_307,
         1_737_925_907,
     )

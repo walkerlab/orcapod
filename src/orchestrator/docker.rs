@@ -1,7 +1,7 @@
 use crate::{
     error::{Kind, OrcaError, Result},
     model::{Input, Pod, PodJob, PodResult},
-    orchestrator::{self, ImageKind, PodRun, PodRunAPI, RunInfo, RunState, Types},
+    orchestrator::{self, ImageKind, PodRun, PodRunAPI, RunInfo, Status, Types},
 };
 use bollard::{
     container::{
@@ -70,7 +70,7 @@ impl PodRunAPI for PodRun<'_, LocalDockerOrchestrator> {
             None,
             self.pod_job.clone(),
             result_info.name,
-            result_info.state,
+            result_info.status,
             result_info.created,
             result_info.terminated.ok_or(OrcaError::from(
                 Kind::InvalidPodResultTerminatedDatetime {
@@ -358,7 +358,7 @@ impl LocalDockerOrchestrator {
     )]
     async fn list_containers(
         &self,
-        filters: HashMap<String, Vec<String>>,
+        filters: HashMap<String, Vec<String>>, // https://docs.rs/bollard/latest/bollard/container/struct.ListContainersOptions.html#structfield.filters
     ) -> Result<impl Iterator<Item = RunInfo>> {
         Ok(join_all(
             self.api
@@ -415,13 +415,13 @@ impl LocalDockerOrchestrator {
                         .join(" "),
                     container_spec.config.as_ref()?.cmd.as_ref()?.join(" ")
                 ),
-                state: match (
+                status: match (
                     container_spec.state.as_ref()?.status.as_ref()?,
                     container_spec.state.as_ref()?.exit_code? as i16,
                 ) {
-                    (ContainerStateStatusEnum::RUNNING, _) => RunState::Running,
-                    (ContainerStateStatusEnum::EXITED, 0) => RunState::Completed,
-                    (ContainerStateStatusEnum::EXITED, code) => RunState::Failed(code),
+                    (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
+                    (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
+                    (ContainerStateStatusEnum::EXITED, code) => Status::Failed(code),
                     _ => todo!(),
                 },
                 mounts: container_spec
