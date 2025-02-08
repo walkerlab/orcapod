@@ -9,7 +9,7 @@ use fixture::{
 use orcapod::{
     error::Result,
     model::{BlobInterface, PodJob},
-    orchestrator::{self, docker::LocalDockerOrchestrator, ImageKind, PodRunAPI, Status, API},
+    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, PodRun, PodRunAPI, Status, API},
     store::{filestore::LocalFileStore, Store},
 };
 use std::{
@@ -31,18 +31,15 @@ fn setup<'store>(
     ))
 }
 
-fn basic_test(
-    pod_run: &impl PodRunAPI,
-    orchestrator: &impl orchestrator::API,
-    expected_command: String,
-) -> Result<()> {
+fn basic_test(pod_run: &PodRun<LocalDockerOrchestrator>, expected_command: String) -> Result<()> {
     assert_eq!(
         pod_run.get_info()?.status,
         Status::Running,
         "Unexpected state."
     );
     assert_eq!(
-        orchestrator
+        pod_run
+            .orchestrator
             .list()?
             .iter()
             .map(PodRunAPI::get_info)
@@ -59,7 +56,8 @@ fn basic_test(
         "Unexpected state."
     );
     assert_eq!(
-        orchestrator
+        pod_run
+            .orchestrator
             .list()?
             .iter()
             .map(PodRunAPI::get_info)
@@ -77,9 +75,9 @@ fn basic_test(
     let pod_result_2 = pod_run.get_result()?;
     assert_eq!(pod_result_1, pod_result_2, "Pod results don't match.");
     // test delete
-    orchestrator.delete(pod_run)?;
+    pod_run.orchestrator.delete(pod_run)?;
     assert!(
-        orchestrator.list()?.is_empty(),
+        pod_run.orchestrator.list()?.is_empty(),
         "Unexpected container remains."
     );
     // try getting result of a purged pod run
@@ -92,7 +90,8 @@ fn basic_test(
     );
     // try deleting a purged pod run
     assert!(
-        orchestrator
+        pod_run
+            .orchestrator
             .delete(pod_run)
             .expect_err("Unexpectedly succeeded.")
             .is_purged_pod_run(),
@@ -117,11 +116,7 @@ fn offline_container_image_basic() -> Result<()> {
     stored_pod_job.model.env_vars = Some(HashMap::from([("DELAY".to_owned(), "5".to_owned())]));
     let container_image_kind = ImageKind::Tarball(PathBuf::from(container_image_relative_location));
     let pod_run = orchestrator.start_with_altimage(&stored_pod_job.model, &container_image_kind)?;
-    basic_test(
-        &pod_run,
-        &orchestrator,
-        stored_pod_job.model.pod.command.clone(),
-    )
+    basic_test(&pod_run, stored_pod_job.model.pod.command.clone())
 }
 
 #[test]
@@ -134,9 +129,5 @@ fn remote_container_image_basic() -> Result<()> {
     stored_pod_job.model.pod.input_stream_map = BTreeMap::new();
     stored_pod_job.model.input_stream_path = BTreeMap::new();
     let pod_run = orchestrator.start(&stored_pod_job.model)?;
-    basic_test(
-        &pod_run,
-        &orchestrator,
-        stored_pod_job.model.pod.command.clone(),
-    )
+    basic_test(&pod_run, stored_pod_job.model.pod.command.clone())
 }

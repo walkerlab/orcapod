@@ -1,7 +1,7 @@
 use crate::{
     error::{Kind, OrcaError, Result},
     model::{Input, Pod, PodJob, PodResult},
-    orchestrator::{self, ImageKind, PodRun, PodRunAPI, RunInfo, Status, Types},
+    orchestrator::{self, ImageKind, PodRun, PodRunAPI, RunInfo, Status},
 };
 use bollard::{
     container::{
@@ -39,14 +39,6 @@ pub struct LocalDockerOrchestrator {
     async_driver: Runtime,
 }
 
-impl Types for PodRun<'_, LocalDockerOrchestrator> {
-    type Orchestrator = LocalDockerOrchestrator;
-}
-
-impl Types for LocalDockerOrchestrator {
-    type Orchestrator = Self;
-}
-
 impl PodRunAPI for PodRun<'_, LocalDockerOrchestrator> {
     fn get_info(&self) -> Result<RunInfo> {
         self.orchestrator
@@ -81,8 +73,8 @@ impl PodRunAPI for PodRun<'_, LocalDockerOrchestrator> {
     }
 }
 
-impl orchestrator::API for LocalDockerOrchestrator {
-    fn list(&self) -> Result<Vec<impl PodRunAPI>> {
+impl<'orch> orchestrator::API<'orch> for LocalDockerOrchestrator {
+    fn list(&'orch self) -> Result<Vec<PodRun<'orch, Self>>> {
         self.async_driver
             .block_on(self.list_containers(HashMap::from([(
                 "label".to_owned(),
@@ -102,15 +94,22 @@ impl orchestrator::API for LocalDockerOrchestrator {
                     .hash
                     .clone_from(&run_info.labels["org.orcapod.pod_job.hash"]);
                 pod_job.pod = pod;
-                PodRun::new(pod_job, self)
+                Ok(PodRun {
+                    pod_job,
+                    orchestrator: self,
+                })
             })
             .collect()
     }
-    fn start_with_altimage(&self, pod_job: &PodJob, image: &ImageKind) -> Result<impl PodRunAPI> {
+    fn start_with_altimage(
+        &'orch self,
+        pod_job: &PodJob,
+        image: &ImageKind,
+    ) -> Result<PodRun<'orch, Self>> {
         self.async_driver
             .block_on(self.start_with_altimage_async(pod_job, image))
     }
-    fn start(&self, pod_job: &PodJob) -> Result<impl PodRunAPI> {
+    fn start(&'orch self, pod_job: &PodJob) -> Result<PodRun<'orch, Self>> {
         let image_options = Some(CreateImageOptions {
             from_image: pod_job.pod.image.clone(),
             ..Default::default()
@@ -126,9 +125,12 @@ impl orchestrator::API for LocalDockerOrchestrator {
             )
             .await
         })?;
-        PodRun::new(pod_job.clone(), self)
+        Ok(PodRun {
+            pod_job: pod_job.clone(),
+            orchestrator: self,
+        })
     }
-    fn delete(&self, pod_run: &impl PodRunAPI) -> Result<()> {
+    fn delete(&self, pod_run: &PodRun<'orch, Self>) -> Result<()> {
         self.async_driver.block_on(self.api.remove_container(
             &pod_run.get_info()?.name,
             Some(RemoveContainerOptions {
@@ -198,7 +200,7 @@ impl LocalDockerOrchestrator {
         &self,
         pod_job: &PodJob,
         image: &ImageKind,
-    ) -> Result<impl PodRunAPI + use<'_>> {
+    ) -> Result<PodRun<Self>> {
         let (container_name, container_options, container_config) = match image {
             ImageKind::Published(remote_image) => {
                 self.prepare_container_start_inputs(pod_job, remote_image.clone())?
@@ -236,7 +238,10 @@ impl LocalDockerOrchestrator {
         self.api
             .start_container(&container_name, None::<StartContainerOptions<String>>)
             .await?;
-        PodRun::new(pod_job.clone(), self)
+        Ok(PodRun {
+            pod_job: pod_job.clone(),
+            orchestrator: self,
+        })
     }
 
     #[expect(
