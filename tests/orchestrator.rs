@@ -9,7 +9,7 @@ use fixture::{
 use orcapod::{
     error::Result,
     model::{BlobInterface, PodJob},
-    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, PodRun, PodRunAPI, Status, API},
+    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator, PodRun, Status},
     store::{filestore::LocalFileStore, Store},
 };
 use std::{
@@ -31,71 +31,61 @@ fn setup<'store>(
     ))
 }
 
-fn basic_test(pod_run: &PodRun<LocalDockerOrchestrator>, expected_command: String) -> Result<()> {
+fn basic_test(
+    orchestrator: &LocalDockerOrchestrator,
+    pod_run: &PodRun,
+    expected_command: String,
+) -> Result<()> {
     assert_eq!(
-        pod_run.get_info()?.status,
+        orchestrator.get_info(pod_run)?.status,
         Status::Running,
         "Unexpected state."
     );
     assert_eq!(
-        pod_run
-            .orchestrator
+        orchestrator
             .list()?
             .iter()
-            .map(PodRunAPI::get_info)
-            .map(|run_info| Ok(run_info?.command))
+            .map(|run| Ok(orchestrator.get_info(run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command.clone()],
         "Unexpected list."
     );
     // await result
-    let pod_result_1 = pod_run.get_result()?;
+    let pod_result_1 = orchestrator.get_result(pod_run)?;
     assert_eq!(
-        pod_run.get_info()?.status,
+        orchestrator.get_info(pod_run)?.status,
         Status::Completed,
         "Unexpected state."
     );
     assert_eq!(
-        pod_run
-            .orchestrator
+        orchestrator
             .list()?
             .iter()
-            .map(PodRunAPI::get_info)
-            .map(|run_info| Ok(run_info?.command))
+            .map(|run| Ok(orchestrator.get_info(run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command],
         "Unexpected list."
     );
     assert_eq!(
-        pod_result_1.assigned_name,
-        pod_run.get_info()?.name,
+        pod_result_1.assigned_name, pod_run.assigned_name,
         "Unexpected name."
     );
     // try generating result again
-    let pod_result_2 = pod_run.get_result()?;
+    let pod_result_2 = orchestrator.get_result(pod_run)?;
     assert_eq!(pod_result_1, pod_result_2, "Pod results don't match.");
     // test delete
-    pod_run.orchestrator.delete(pod_run)?;
+    orchestrator.delete(pod_run)?;
     assert!(
-        pod_run.orchestrator.list()?.is_empty(),
+        orchestrator.list()?.is_empty(),
         "Unexpected container remains."
     );
-    // try getting result of a purged pod run
+    // try getting info of a purged pod run
     assert!(
-        pod_run
-            .get_result()
+        orchestrator
+            .get_info(pod_run)
             .expect_err("Unexpectedly succeeded.")
             .is_purged_pod_run(),
-        "Returned a different OrcaError than one expected when querying a purged pod run."
-    );
-    // try deleting a purged pod run
-    assert!(
-        pod_run
-            .orchestrator
-            .delete(pod_run)
-            .expect_err("Unexpectedly succeeded.")
-            .is_purged_pod_run(),
-        "Returned a different OrcaError than one expected when querying a purged pod run."
+        "Returned a different OrcaError than one expected when getting info of a purged pod run."
     );
     Ok(())
 }
@@ -116,7 +106,11 @@ fn offline_container_image_basic() -> Result<()> {
     stored_pod_job.model.env_vars = Some(HashMap::from([("DELAY".to_owned(), "5".to_owned())]));
     let container_image_kind = ImageKind::Tarball(PathBuf::from(container_image_relative_location));
     let pod_run = orchestrator.start_with_altimage(&stored_pod_job.model, &container_image_kind)?;
-    basic_test(&pod_run, stored_pod_job.model.pod.command.clone())
+    basic_test(
+        &orchestrator,
+        &pod_run,
+        stored_pod_job.model.pod.command.clone(),
+    )
 }
 
 #[test]
@@ -129,5 +123,9 @@ fn remote_container_image_basic() -> Result<()> {
     stored_pod_job.model.pod.input_stream_map = BTreeMap::new();
     stored_pod_job.model.input_stream_path = BTreeMap::new();
     let pod_run = orchestrator.start(&stored_pod_job.model)?;
-    basic_test(&pod_run, stored_pod_job.model.pod.command.clone())
+    basic_test(
+        &orchestrator,
+        &pod_run,
+        stored_pod_job.model.pod.command.clone(),
+    )
 }

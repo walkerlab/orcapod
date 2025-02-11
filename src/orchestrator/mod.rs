@@ -26,8 +26,6 @@ pub enum Status {
 /// Run metadata
 #[derive(Debug)]
 pub struct RunInfo {
-    /// Name given by orchestrator.
-    pub name: String,
     /// Environment utilized.
     pub image: String,
     /// Time in epoch when created in seconds.
@@ -51,72 +49,57 @@ pub struct RunInfo {
 }
 /// Current computation managed by orchestrator.
 #[derive(Debug)]
-pub struct PodRun<'orch, T>
-where
-    T: API<'orch>,
-    Self: PodRunAPI,
-{
+pub struct PodRun {
     /// Original compute request.
     pub pod_job: PodJob,
-    /// The orchestrator that is managing the compute run.
-    pub orchestrator: &'orch T,
-}
-/// API to access `PodRun`-specific orchestrator functionality.
-pub trait PodRunAPI {
-    /// How to get container info if still in orchestrator memory.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue accessing container info.
-    fn get_info(&self) -> Result<RunInfo>;
-    /// How to wait for pod result to be ready.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue creating a pod result.
-    fn get_result(&self) -> Result<PodResult>;
-    /// How to (asynchronously) wait for pod result to be ready.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue creating a pod result.
-    fn get_result_async(&self) -> impl Future<Output = Result<PodResult>> + Send;
+    /// Name given by orchestrator.
+    pub assigned_name: String,
 }
 
 /// API for standard behavior of any container orchestration engine supported.
-pub trait API<'orch>: Sized
-where
-    PodRun<'orch, Self>: PodRunAPI,
-    Self: 'orch,
-{
-    /// How to start containers. Assumes `PodJob` image is published.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue starting the container.
-    fn start(&'orch self, pod_job: &PodJob) -> Result<PodRun<'orch, Self>>;
+pub trait Orchestrator {
     /// How to start containers with an alternate image.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start_with_altimage(
-        &'orch self,
-        pod_job: &PodJob,
-        image: &ImageKind,
-    ) -> Result<PodRun<'orch, Self>>;
+    fn start_with_altimage(&self, pod_job: &PodJob, image: &ImageKind) -> Result<PodRun>;
+    /// How to start containers. Assumes `PodJob` image is published.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue starting the container.
+    fn start(&self, pod_job: &PodJob) -> Result<PodRun>;
     /// How to query containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from containers.
-    fn list(&'orch self) -> Result<Vec<PodRun<'orch, Self>>>;
+    fn list(&self) -> Result<Vec<PodRun>>;
     /// How to delete containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue deleting a container.
-    fn delete(&self, pod_run: &PodRun<'orch, Self>) -> Result<()>;
+    fn delete(&self, pod_run: &PodRun) -> Result<()>;
+    /// How to get container info if still in orchestrator memory.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue accessing container info.
+    fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    /// How to wait for pod result to be ready.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue creating a pod result.
+    fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// How to (asynchronously) wait for pod result to be ready.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue creating a pod result.
+    fn get_result_async(&self, pod_run: &PodRun) -> impl Future<Output = Result<PodResult>> + Send;
 }
 
 /// Orchestration implementation for Docker backend.

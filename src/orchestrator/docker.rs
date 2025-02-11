@@ -1,7 +1,7 @@
 use crate::{
     error::{Kind, OrcaError, Result},
     model::{Input, Pod, PodJob, PodResult},
-    orchestrator::{self, ImageKind, PodRun, PodRunAPI, RunInfo, Status},
+    orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
 };
 use bollard::{
     container::{
@@ -39,48 +39,35 @@ pub struct LocalDockerOrchestrator {
     async_driver: Runtime,
 }
 
-impl PodRunAPI for PodRun<'_, LocalDockerOrchestrator> {
-    fn get_info(&self) -> Result<RunInfo> {
-        self.orchestrator
-            .async_driver
-            .block_on(self.get_info_async())
+impl Orchestrator for LocalDockerOrchestrator {
+    fn start_with_altimage(&self, pod_job: &PodJob, image: &ImageKind) -> Result<PodRun> {
+        self.async_driver
+            .block_on(self.start_with_altimage_async(pod_job, image))
     }
-    fn get_result(&self) -> Result<PodResult> {
-        self.orchestrator
-            .async_driver
-            .block_on(self.get_result_async())
+    fn start(&self, pod_job: &PodJob) -> Result<PodRun> {
+        let image_options = Some(CreateImageOptions {
+            from_image: pod_job.pod.image.clone(),
+            ..Default::default()
+        });
+        self.async_driver.block_on(async {
+            self.api
+                .create_image(image_options, None, None)
+                .try_collect::<Vec<_>>()
+                .await?;
+            self.start_with_altimage_async(
+                pod_job,
+                &ImageKind::Published(pod_job.pod.image.clone()),
+            )
+            .await
+        })
     }
-    async fn get_result_async(&self) -> Result<PodResult> {
-        let run_info = self.get_info_async().await?;
-        self.orchestrator
-            .api
-            .wait_container(&run_info.name, None::<WaitContainerOptions<String>>)
-            .try_collect::<Vec<_>>()
-            .await?;
-        let result_info = self.get_info_async().await?;
-        PodResult::new(
-            None,
-            self.pod_job.clone(),
-            result_info.name,
-            result_info.status,
-            result_info.created,
-            result_info.terminated.ok_or(OrcaError::from(
-                Kind::InvalidPodResultTerminatedDatetime {
-                    pod_job_hash: self.pod_job.hash.clone(),
-                },
-            ))?,
-        )
-    }
-}
-
-impl<'orch> orchestrator::API<'orch> for LocalDockerOrchestrator {
-    fn list(&'orch self) -> Result<Vec<PodRun<'orch, Self>>> {
+    fn list(&self) -> Result<Vec<PodRun>> {
         self.async_driver
             .block_on(self.list_containers(HashMap::from([(
                 "label".to_owned(),
                 vec!["org.orcapod=true".to_owned()],
             )])))?
-            .map(|run_info| {
+            .map(|(assigned_name, run_info)| {
                 let mut pod: Pod = serde_json::from_str(&run_info.labels["org.orcapod.pod"])?;
                 pod.annotation =
                     serde_json::from_str(&run_info.labels["org.orcapod.pod.annotation"])?;
@@ -96,43 +83,14 @@ impl<'orch> orchestrator::API<'orch> for LocalDockerOrchestrator {
                 pod_job.pod = pod;
                 Ok(PodRun {
                     pod_job,
-                    orchestrator: self,
+                    assigned_name,
                 })
             })
             .collect()
     }
-    fn start_with_altimage(
-        &'orch self,
-        pod_job: &PodJob,
-        image: &ImageKind,
-    ) -> Result<PodRun<'orch, Self>> {
-        self.async_driver
-            .block_on(self.start_with_altimage_async(pod_job, image))
-    }
-    fn start(&'orch self, pod_job: &PodJob) -> Result<PodRun<'orch, Self>> {
-        let image_options = Some(CreateImageOptions {
-            from_image: pod_job.pod.image.clone(),
-            ..Default::default()
-        });
-        self.async_driver.block_on(async {
-            self.api
-                .create_image(image_options, None, None)
-                .try_collect::<Vec<_>>()
-                .await?;
-            self.start_with_altimage_async(
-                pod_job,
-                &ImageKind::Published(pod_job.pod.image.clone()),
-            )
-            .await
-        })?;
-        Ok(PodRun {
-            pod_job: pod_job.clone(),
-            orchestrator: self,
-        })
-    }
-    fn delete(&self, pod_run: &PodRun<'orch, Self>) -> Result<()> {
+    fn delete(&self, pod_run: &PodRun) -> Result<()> {
         self.async_driver.block_on(self.api.remove_container(
-            &pod_run.get_info()?.name,
+            &pod_run.assigned_name,
             Some(RemoveContainerOptions {
                 force: true,
                 ..Default::default()
@@ -140,25 +98,30 @@ impl<'orch> orchestrator::API<'orch> for LocalDockerOrchestrator {
         ))?;
         Ok(())
     }
-}
-
-impl PodRun<'_, LocalDockerOrchestrator> {
-    async fn get_info_async(&self) -> Result<RunInfo> {
-        let labels = vec![
-            "org.orcapod=true".to_owned(),
-            format!(
-                "org.orcapod.pod_job.annotation={}",
-                serde_json::to_string(&self.pod_job.annotation)?
-            ),
-            format!("org.orcapod.pod_job.hash={}", self.pod_job.hash),
-        ];
-        self.orchestrator
-            .list_containers(HashMap::from([("label".to_owned(), labels)]))
-            .await?
-            .next()
-            .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
-                pod_job_hash: self.pod_job.hash.clone(),
-            }))
+    fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo> {
+        self.async_driver.block_on(self.get_info_async(pod_run))
+    }
+    fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
+        self.async_driver.block_on(self.get_result_async(pod_run))
+    }
+    async fn get_result_async(&self, pod_run: &PodRun) -> Result<PodResult> {
+        self.api
+            .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
+            .try_collect::<Vec<_>>()
+            .await?;
+        let result_info = self.get_info_async(pod_run).await?;
+        PodResult::new(
+            None,
+            pod_run.pod_job.clone(),
+            pod_run.assigned_name.clone(),
+            result_info.status,
+            result_info.created,
+            result_info.terminated.ok_or(OrcaError::from(
+                Kind::InvalidPodResultTerminatedDatetime {
+                    pod_job_hash: pod_run.pod_job.hash.clone(),
+                },
+            ))?,
+        )
     }
 }
 
@@ -200,8 +163,8 @@ impl LocalDockerOrchestrator {
         &self,
         pod_job: &PodJob,
         image: &ImageKind,
-    ) -> Result<PodRun<Self>> {
-        let (container_name, container_options, container_config) = match image {
+    ) -> Result<PodRun> {
+        let (assigned_name, container_options, container_config) = match image {
             ImageKind::Published(remote_image) => {
                 self.prepare_container_start_inputs(pod_job, remote_image.clone())?
             }
@@ -236,12 +199,31 @@ impl LocalDockerOrchestrator {
             .create_container(container_options, container_config)
             .await?;
         self.api
-            .start_container(&container_name, None::<StartContainerOptions<String>>)
+            .start_container(&assigned_name, None::<StartContainerOptions<String>>)
             .await?;
         Ok(PodRun {
             pod_job: pod_job.clone(),
-            orchestrator: self,
+            assigned_name,
         })
+    }
+
+    async fn get_info_async(&self, pod_run: &PodRun) -> Result<RunInfo> {
+        let labels = vec![
+            "org.orcapod=true".to_owned(),
+            format!(
+                "org.orcapod.pod_job.annotation={}",
+                serde_json::to_string(&pod_run.pod_job.annotation)?
+            ),
+            format!("org.orcapod.pod_job.hash={}", pod_run.pod_job.hash),
+        ];
+        let (_, run_info) = self
+            .list_containers(HashMap::from([("label".to_owned(), labels)]))
+            .await?
+            .next()
+            .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
+                pod_job_hash: pod_run.pod_job.hash.clone(),
+            }))?;
+        Ok(run_info)
     }
 
     #[expect(
@@ -364,7 +346,7 @@ impl LocalDockerOrchestrator {
     async fn list_containers(
         &self,
         filters: HashMap<String, Vec<String>>, // https://docs.rs/bollard/latest/bollard/container/struct.ListContainersOptions.html#structfield.filters
-    ) -> Result<impl Iterator<Item = RunInfo>> {
+    ) -> Result<impl Iterator<Item = (String, RunInfo)>> {
         Ok(join_all(
             self.api
                 .list_containers(Some(ListContainersOptions {
@@ -394,61 +376,64 @@ impl LocalDockerOrchestrator {
                 DateTime::parse_from_rfc3339(container_spec.state.as_ref()?.finished_at.as_ref()?)
                     .ok()?
                     .timestamp() as u64;
-            Some(RunInfo {
-                name: container_name,
-                image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
-                created: container_summary.created? as u64,
-                terminated: (terminated_timestamp > 0).then_some(terminated_timestamp),
-                env_vars: container_spec
-                    .config
-                    .as_ref()?
-                    .env
-                    .as_ref()?
-                    .iter()
-                    .filter_map(|x| {
-                        x.split_once('=')
-                            .map(|(key, value)| (key.to_owned(), value.to_owned()))
-                    })
-                    .collect(),
-                command: format!(
-                    "{} {}",
-                    container_spec
+            Some((
+                container_name,
+                RunInfo {
+                    image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
+                    created: container_summary.created? as u64,
+                    terminated: (terminated_timestamp > 0).then_some(terminated_timestamp),
+                    env_vars: container_spec
                         .config
                         .as_ref()?
-                        .entrypoint
+                        .env
                         .as_ref()?
-                        .join(" "),
-                    container_spec.config.as_ref()?.cmd.as_ref()?.join(" ")
-                ),
-                status: match (
-                    container_spec.state.as_ref()?.status.as_ref()?,
-                    container_spec.state.as_ref()?.exit_code? as i16,
-                ) {
-                    (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
-                    (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
-                    (ContainerStateStatusEnum::EXITED, code) => Status::Failed(code),
-                    _ => todo!(),
+                        .iter()
+                        .filter_map(|x| {
+                            x.split_once('=')
+                                .map(|(key, value)| (key.to_owned(), value.to_owned()))
+                        })
+                        .collect(),
+                    command: format!(
+                        "{} {}",
+                        container_spec
+                            .config
+                            .as_ref()?
+                            .entrypoint
+                            .as_ref()?
+                            .join(" "),
+                        container_spec.config.as_ref()?.cmd.as_ref()?.join(" ")
+                    ),
+                    status: match (
+                        container_spec.state.as_ref()?.status.as_ref()?,
+                        container_spec.state.as_ref()?.exit_code? as i16,
+                    ) {
+                        (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
+                        (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
+                        (ContainerStateStatusEnum::EXITED, code) => Status::Failed(code),
+                        _ => todo!(),
+                    },
+                    mounts: container_spec
+                        .mounts
+                        .as_ref()?
+                        .iter()
+                        .map(|mount_point| {
+                            Some(format!(
+                                "{}:{}{}",
+                                mount_point.source.as_ref()?,
+                                mount_point.destination.as_ref()?,
+                                mount_point
+                                    .mode
+                                    .as_ref()
+                                    .map_or_else(String::new, |mode| format!(":{mode}"))
+                            ))
+                        })
+                        .collect::<Option<Vec<_>>>()?,
+                    labels: container_spec.config.as_ref()?.labels.as_ref()?.clone(),
+                    cpu_limit: container_spec.host_config.as_ref()?.nano_cpus? as f32
+                        / 10_f32.powi(9), // ncpu, ucores=3, mcores=6, cores=9
+                    memory_limit: container_spec.host_config.as_ref()?.memory? as u64,
                 },
-                mounts: container_spec
-                    .mounts
-                    .as_ref()?
-                    .iter()
-                    .map(|mount_point| {
-                        Some(format!(
-                            "{}:{}{}",
-                            mount_point.source.as_ref()?,
-                            mount_point.destination.as_ref()?,
-                            mount_point
-                                .mode
-                                .as_ref()
-                                .map_or_else(String::new, |mode| format!(":{mode}"))
-                        ))
-                    })
-                    .collect::<Option<Vec<_>>>()?,
-                labels: container_spec.config.as_ref()?.labels.as_ref()?.clone(),
-                cpu_limit: container_spec.host_config.as_ref()?.nano_cpus? as f32 / 10_f32.powi(9), // ncpu, ucores=3, mcores=6, cores=9
-                memory_limit: container_spec.host_config.as_ref()?.memory? as u64,
-            })
+            ))
         }))
     }
 }
