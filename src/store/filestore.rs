@@ -6,13 +6,13 @@ use crate::{
 };
 use colored::Colorize;
 use glob::glob;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_yaml;
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
 /// Support for a storage backend on a local filesystem directory.
 #[derive(Debug)]
@@ -100,8 +100,8 @@ impl BlobInterface for LocalFileStore {
     }
 }
 
-#[expect(clippy::unwrap_used, reason = "Valid static regex")]
-static RE_MODEL_METADATA: Lazy<Regex> = Lazy::new(|| {
+#[expect(clippy::expect_used, reason = "Valid static regex")]
+static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
             ^
@@ -121,7 +121,7 @@ static RE_MODEL_METADATA: Lazy<Regex> = Lazy::new(|| {
             $
             ",
     )
-    .unwrap()
+    .expect("Invalid model metadata regex.")
 });
 
 impl LocalFileStore {

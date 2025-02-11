@@ -18,12 +18,12 @@ use futures_util::{
     stream::{StreamExt, TryStreamExt},
 };
 use names::{Generator, Name};
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::{
     collections::HashMap,
     fs,
     path::{self, Path, PathBuf},
+    sync::LazyLock,
 };
 use tokio::{fs::File, runtime::Runtime};
 use tokio_util::{
@@ -125,8 +125,8 @@ impl Orchestrator for LocalDockerOrchestrator {
     }
 }
 
-#[expect(clippy::unwrap_used, reason = "Valid static regex")]
-static RE_IMAGE_TAGS: Lazy<Regex> = Lazy::new(|| {
+#[expect(clippy::expect_used, reason = "Valid static regex")]
+static RE_IMAGE_TAG: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
                 \s
@@ -134,7 +134,7 @@ static RE_IMAGE_TAGS: Lazy<Regex> = Lazy::new(|| {
                 \s
             ",
     )
-    .unwrap()
+    .expect("Invalid image tag regex.")
 });
 
 impl LocalDockerOrchestrator {
@@ -151,81 +151,6 @@ impl LocalDockerOrchestrator {
             async_driver: Runtime::new()?,
         })
     }
-    #[expect(
-        clippy::try_err,
-        reason = r#"
-        - `map_err` workaround needed since `import_image_stream` requires resolved bytes
-        - Raising an errors manually on occurrence to halt so we don't just ignore
-        - Should not get as far as `Ok(_)`
-    "#
-    )]
-    async fn start_with_altimage_async(
-        &self,
-        pod_job: &PodJob,
-        image: &ImageKind,
-    ) -> Result<PodRun> {
-        let (assigned_name, container_options, container_config) = match image {
-            ImageKind::Published(remote_image) => {
-                self.prepare_container_start_inputs(pod_job, remote_image.clone())?
-            }
-            ImageKind::Tarball(relative_location) => {
-                let location = self.data_directory.join(relative_location);
-                let byte_stream = FramedRead::new(File::open(&location).await?, BytesCodec::new())
-                    .map_err(|err| -> Result<BytesMut> {
-                        let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
-                        Ok(resolved_error)
-                    })
-                    .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
-                let mut stream =
-                    self.api
-                        .import_image_stream(ImportImageOptions::default(), byte_stream, None);
-                let mut local_image = String::new();
-                while let Some(response) = stream.next().await {
-                    local_image = RE_IMAGE_TAGS
-                        .captures_iter(&response?.stream.ok_or(OrcaError::from(
-                            Kind::EmptyResponseWhenLoadingContainerAltImage {
-                                path: location.clone(),
-                            },
-                        ))?)
-                        .find_map(|x| x.name("image").map(|name| name.as_str().to_owned()))
-                        .ok_or(OrcaError::from(Kind::NoTagFoundInContainerAltImage {
-                            path: location.clone(),
-                        }))?;
-                }
-                self.prepare_container_start_inputs(pod_job, local_image.clone())?
-            }
-        };
-        self.api
-            .create_container(container_options, container_config)
-            .await?;
-        self.api
-            .start_container(&assigned_name, None::<StartContainerOptions<String>>)
-            .await?;
-        Ok(PodRun {
-            pod_job: pod_job.clone(),
-            assigned_name,
-        })
-    }
-
-    async fn get_info_async(&self, pod_run: &PodRun) -> Result<RunInfo> {
-        let labels = vec![
-            "org.orcapod=true".to_owned(),
-            format!(
-                "org.orcapod.pod_job.annotation={}",
-                serde_json::to_string(&pod_run.pod_job.annotation)?
-            ),
-            format!("org.orcapod.pod_job.hash={}", pod_run.pod_job.hash),
-        ];
-        let (_, run_info) = self
-            .list_containers(HashMap::from([("label".to_owned(), labels)]))
-            .await?
-            .next()
-            .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
-                pod_job_hash: pod_run.pod_job.hash.clone(),
-            }))?;
-        Ok(run_info)
-    }
-
     #[expect(
         clippy::cast_possible_wrap,
         clippy::cast_possible_truncation,
@@ -330,7 +255,61 @@ impl LocalDockerOrchestrator {
             },
         ))
     }
-
+    #[expect(
+        clippy::try_err,
+        reason = r#"
+        - `map_err` workaround needed since `import_image_stream` requires resolved bytes
+        - Raising an error manually on occurrence to halt so we don't just ignore
+        - Should not get as far as `Ok(_)`
+        "#
+    )]
+    async fn start_with_altimage_async(
+        &self,
+        pod_job: &PodJob,
+        image: &ImageKind,
+    ) -> Result<PodRun> {
+        let (assigned_name, container_options, container_config) = match image {
+            ImageKind::Published(remote_image) => {
+                self.prepare_container_start_inputs(pod_job, remote_image.clone())?
+            }
+            ImageKind::Tarball(relative_location) => {
+                let location = self.data_directory.join(relative_location);
+                let byte_stream = FramedRead::new(File::open(&location).await?, BytesCodec::new())
+                    .map_err(|err| -> Result<BytesMut> {
+                        let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
+                        Ok(resolved_error)
+                    })
+                    .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
+                let mut stream =
+                    self.api
+                        .import_image_stream(ImportImageOptions::default(), byte_stream, None);
+                let mut local_image = String::new();
+                while let Some(response) = stream.next().await {
+                    local_image = RE_IMAGE_TAG
+                        .captures_iter(&response?.stream.ok_or(OrcaError::from(
+                            Kind::EmptyResponseWhenLoadingContainerAltImage {
+                                path: location.clone(),
+                            },
+                        ))?)
+                        .find_map(|x| x.name("image").map(|name| name.as_str().to_owned()))
+                        .ok_or(OrcaError::from(Kind::NoTagFoundInContainerAltImage {
+                            path: location.clone(),
+                        }))?;
+                }
+                self.prepare_container_start_inputs(pod_job, local_image.clone())?
+            }
+        };
+        self.api
+            .create_container(container_options, container_config)
+            .await?;
+        self.api
+            .start_container(&assigned_name, None::<StartContainerOptions<String>>)
+            .await?;
+        Ok(PodRun {
+            pod_job: pod_job.clone(),
+            assigned_name,
+        })
+    }
     #[expect(
         clippy::cast_sign_loss,
         clippy::string_slice,
@@ -435,5 +414,23 @@ impl LocalDockerOrchestrator {
                 },
             ))
         }))
+    }
+    async fn get_info_async(&self, pod_run: &PodRun) -> Result<RunInfo> {
+        let labels = vec![
+            "org.orcapod=true".to_owned(),
+            format!(
+                "org.orcapod.pod_job.annotation={}",
+                serde_json::to_string(&pod_run.pod_job.annotation)?
+            ),
+            format!("org.orcapod.pod_job.hash={}", pod_run.pod_job.hash),
+        ];
+        let (_, run_info) = self
+            .list_containers(HashMap::from([("label".to_owned(), labels)]))
+            .await?
+            .next()
+            .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
+                pod_job_hash: pod_run.pod_job.hash.clone(),
+            }))?;
+        Ok(run_info)
     }
 }
