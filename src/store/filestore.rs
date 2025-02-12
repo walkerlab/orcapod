@@ -137,7 +137,7 @@ impl LocalFileStore {
             "{}/{}/{}/{}",
             self.directory.to_string_lossy(),
             Self::MODEL_NAMESPACE,
-            get_type_name::<T>(),
+            get_type_name::<T>(true),
             hash
         ))
         .join(relpath)
@@ -175,7 +175,7 @@ impl LocalFileStore {
         .next()
         .ok_or_else(|| {
             OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<T>(),
+                class: get_type_name::<T>(true),
                 name: name.to_owned(),
                 version: version.to_owned(),
             })
@@ -227,7 +227,7 @@ impl LocalFileStore {
                 true,
             )?;
         }
-        // Save the pod and skip if it already exist, for the case of many annotation to a single pod
+        // Save the model specification and skip if it already exist e.g. on new annotations
         Self::save_file(
             self.make_path::<T>(hash, Self::SPEC_RELPATH),
             to_yaml(model)?,

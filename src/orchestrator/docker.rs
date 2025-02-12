@@ -81,10 +81,7 @@ impl Orchestrator for LocalDockerOrchestrator {
                     .hash
                     .clone_from(&run_info.labels["org.orcapod.pod_job.hash"]);
                 pod_job.pod = pod;
-                Ok(PodRun {
-                    pod_job,
-                    assigned_name,
-                })
+                Ok(PodRun::new::<Self>(&pod_job, assigned_name))
             })
             .collect()
     }
@@ -305,10 +302,7 @@ impl LocalDockerOrchestrator {
         self.api
             .start_container(&assigned_name, None::<StartContainerOptions<String>>)
             .await?;
-        Ok(PodRun {
-            pod_job: pod_job.clone(),
-            assigned_name,
-        })
+        Ok(PodRun::new::<Self>(pod_job, assigned_name))
     }
     #[expect(
         clippy::cast_sign_loss,

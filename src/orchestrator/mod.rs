@@ -1,6 +1,7 @@
 use crate::{
     error::Result,
     model::{PodJob, PodResult},
+    util::get_type_name,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, future::Future, path::PathBuf};
@@ -52,8 +53,20 @@ pub struct RunInfo {
 pub struct PodRun {
     /// Original compute request.
     pub pod_job: PodJob,
+    /// Name of orchestrator that created the run.
+    pub orchestrator_source: String,
     /// Name given by orchestrator.
     pub assigned_name: String,
+}
+
+impl PodRun {
+    fn new<O: Orchestrator>(pod_job: &PodJob, assigned_name: String) -> Self {
+        Self {
+            pod_job: pod_job.clone(),
+            orchestrator_source: get_type_name::<O>(false),
+            assigned_name,
+        }
+    }
 }
 
 /// API for standard behavior of any container orchestration engine supported.
