@@ -2,7 +2,9 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{add_storage, pod_job_style, pod_style, store_fixture, TestSetup, TestStore};
+use fixture::{
+    add_storage, pod_job_style, pod_result_style, pod_style, store_fixture, TestSetup, TestStore,
+};
 use orcapod::{
     error::Result,
     model::{Annotation, Pod},
@@ -25,8 +27,9 @@ fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     )
 }
 
-fn basic_test<T: TestSetup + Debug + Clone>(model: T, store: &TestStore) -> Result<(T::Target, T)>
+fn basic_test<T>(model: T, store: &TestStore) -> Result<(T::Target, T)>
 where
+    T: TestSetup + Debug + Clone,
     T::Target: PartialEq<T> + Debug,
 {
     let stored_model = add_storage(model, store)?;
@@ -65,6 +68,16 @@ fn pod_job_basic() -> Result<()> {
     let (loaded_model, mut stored_model) =
         basic_test(pod_job_style()?, &store_fixture(None, true)?)?;
     stored_model.pod.annotation = None;
+    assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
+    Ok(())
+}
+
+#[test]
+fn pod_result_basic() -> Result<()> {
+    let store = store_test(None, true)?;
+    let (loaded_model, mut stored_model) = basic_test(pod_result_style(&store.store)?, &store)?;
+    stored_model.pod_job.annotation = None;
+    stored_model.pod_job.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
 }
@@ -133,6 +146,12 @@ fn pod_load_from_hash() -> Result<()> {
 fn pod_annotation_delete() -> Result<()> {
     let store = store_fixture(None, false)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
+    let model_version = &stored_model
+        .model
+        .annotation
+        .as_ref()
+        .map(|x| x.version.clone());
+    let model_hash = &stored_model.model.hash;
     stored_model.model.annotation = Some(Annotation {
         name: "new-name".to_owned(),
         version: "0.5.0".to_owned(),
@@ -145,17 +164,17 @@ fn pod_annotation_delete() -> Result<()> {
             ModelInfo {
                 name: Some("new-name".to_owned()),
                 version: Some("0.5.0".to_owned()),
-                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+                hash: model_hash.to_owned(),
             },
             ModelInfo {
                 name: Some("style-transfer".to_owned()),
-                version: Some("0.67.0".to_owned()),
-                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+                version: model_version.to_owned(),
+                hash: model_hash.to_owned(),
             },
             ModelInfo {
                 name: None,
                 version: None,
-                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+                hash: model_hash.to_owned(),
             },
         ],
         "Pod list didn't return 3 expected entries."
@@ -166,24 +185,29 @@ fn pod_annotation_delete() -> Result<()> {
         vec![
             ModelInfo {
                 name: Some("style-transfer".to_owned()),
-                version: Some("0.67.0".to_owned()),
-                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+                version: model_version.to_owned(),
+                hash: model_hash.to_owned(),
             },
             ModelInfo {
                 name: None,
                 version: None,
-                hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned(),
+                hash: model_hash.to_owned(),
             },
         ],
         "Pod list didn't return 2 expected entry."
     );
-    store.delete_annotation::<Pod>("style-transfer", "0.67.0")?;
+    store.delete_annotation::<Pod>(
+        "style-transfer",
+        &model_version
+            .to_owned()
+            .expect("Version missing from `pod_style`"),
+    )?;
     assert_eq!(
         store.list_pod()?,
         vec![ModelInfo {
             name: None,
             version: None,
-            hash: "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085".to_owned()
+            hash: model_hash.to_owned()
         }],
         "Pod list didn't return 1 expected entry."
     );

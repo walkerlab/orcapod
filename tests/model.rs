@@ -1,7 +1,7 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_job_style, pod_style, store_fixture};
+use fixture::{pod_job_style, pod_result_style, pod_style, store_fixture, FakeStore};
 use indoc::indoc;
 use orcapod::{error::Result, model::to_yaml};
 
@@ -9,7 +9,7 @@ use orcapod::{error::Result, model::to_yaml};
 fn hash_pod() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085",
+        "8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094",
         "Hash didn't match."
     );
     Ok(())
@@ -21,8 +21,8 @@ fn pod_to_yaml() -> Result<()> {
         to_yaml(&pod_style()?)?,
         indoc! {r"
             class: pod
-            image: zenmldocker/zenml-server:0.67.0
-            command: tail -f /dev/null
+            image: example.server.com/user/style-transfer:1.0.0
+            command: python /run.py
             input_stream_map:
               image:
                 path: /input/image.jpeg
@@ -35,7 +35,7 @@ fn pod_to_yaml() -> Result<()> {
               result:
                 path: ./result.jpeg
                 match_pattern: .*\.jpeg
-            source_commit_url: https://github.com/zenml-io/zenml/tree/0.67.0
+            source_commit_url: https://github.com/user/style-transfer/tree/1.0.0
             recommended_cpus: 0.25
             recommended_memory: 1073741824
             required_gpu: null
@@ -75,7 +75,34 @@ fn pod_job_to_yaml() -> Result<()> {
             output_stream_mapping: output
             cpu_limit: 0.5
             memory_limit: 2147483648
-            retry_policy: NoRetry
+            env_vars: null
+        "},
+        "YAML serialization didn't match."
+    );
+    Ok(())
+}
+
+#[test]
+fn hash_pod_result() -> Result<()> {
+    assert_eq!(
+        pod_result_style(&FakeStore)?.hash,
+        "53e418976509b75b9fae778bde148d5f0e42567caa43f78b39b329d9d8409c62",
+        "Hash didn't match."
+    );
+    Ok(())
+}
+
+#[test]
+fn pod_result_to_yaml() -> Result<()> {
+    assert_eq!(
+        to_yaml(&pod_result_style(&FakeStore)?)?,
+        indoc! {"
+            class: pod_result
+            pod_job: 38f2021f67a8be0498ff1092789670661521e11c317d92ccebbc9dfeda98df7f
+            assigned_name: simple-endeavour
+            status: Completed
+            created: 1737922307
+            terminated: 1737925907
         "},
         "YAML serialization didn't match."
     );

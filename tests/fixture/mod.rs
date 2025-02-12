@@ -5,15 +5,26 @@
 )]
 #![expect(
     clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
     reason = "Integration tests won't be included in documentation."
 )]
 
+use names::{Generator, Name};
 use orcapod::{
     error::Result,
-    model::{Annotation, Blob, FileOrFolder, Input, Pod, PodJob, RetryPolicy, StreamInfo},
+    model::{
+        Annotation, Blob, FileOrFolder, Input, Pod, PodJob, PodResult, RetryPolicy, StreamInfo,
+    },
+    orchestrator::Status,
     store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore},
 };
-use std::{collections::BTreeMap, fs, ops::Deref, path::PathBuf, process::Command};
+use std::{
+    collections::BTreeMap,
+    fs::{self, File},
+    ops::Deref,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+};
 use tempfile::tempdir;
 
 // --- fixtures ---
@@ -23,11 +34,10 @@ pub fn pod_style() -> Result<Pod> {
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod.".to_owned(),
-            version: "0.67.0".to_owned(),
+            version: "1.0.0".to_owned(),
         }),
-        "https://github.com/zenml-io/zenml/tree/0.67.0".to_owned(),
-        "zenmldocker/zenml-server:0.67.0".to_owned(),
-        "tail -f /dev/null".to_owned(),
+        "example.server.com/user/style-transfer:1.0.0".to_owned(),
+        "python /run.py".to_owned(),
         BTreeMap::from([
             (
                 "style".to_owned(),
@@ -52,6 +62,7 @@ pub fn pod_style() -> Result<Pod> {
                 match_pattern: r".*\.jpeg".to_owned(),
             },
         )]),
+        "https://github.com/user/style-transfer/tree/1.0.0".to_owned(),
         0.25,        // 250 millicores as frac cores
         1_u64 << 30, // 1GiB in bytes
         None,
@@ -87,7 +98,7 @@ pub fn pod_job_style() -> Result<PodJob> {
         PathBuf::from("output"),
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes
-        RetryPolicy::NoRetry,
+        blob_interface,
     )
 }
 
@@ -108,6 +119,16 @@ pub fn store_fixture(store_directory: Option<&str>, with_data: bool) -> Result<T
             .output()?;
     }
     Ok(TestStore { store })
+}
+
+pub struct FakeStore;
+impl BlobInterface for FakeStore {
+    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
+        Ok(Blob {
+            checksum: Some("fake_hash".to_owned()),
+            ..blob
+        })
+    }
 }
 
 // --- helper functions ---
@@ -149,6 +170,24 @@ impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
         self.model
             .delete(self.store)
             .expect("Failed to teardown model.");
+    }
+}
+
+pub struct TestContainerImage {
+    pub image_name: String,
+    pub build_context_location: PathBuf,
+    pub binary_location: PathBuf,
+}
+
+impl Drop for TestContainerImage {
+    fn drop(&mut self) {
+        Command::new("docker")
+            .arg("rmi")
+            .arg(&self.image_name)
+            .stderr(Stdio::inherit())
+            .output()
+            .expect("Failed to teardown container image.");
+        fs::remove_file(&self.binary_location).expect("Failed to remove image binary.");
     }
 }
 
@@ -211,5 +250,31 @@ impl TestSetup for PodJob {
     }
     fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
         store.list_pod_job()
+    }
+}
+
+impl TestSetup for PodResult {
+    type Target = Self;
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
+        store.save_pod_result(self)
+    }
+    fn delete(&self, store: &LocalFileStore) -> Result<()> {
+        store.delete_pod_result(&ModelID::Hash(self.hash.clone()))
+    }
+    fn load(&self, store: &LocalFileStore) -> Result<Self::Target> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pod_result(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
+    fn list(&self, store: &LocalFileStore) -> Result<Vec<ModelInfo>> {
+        store.list_pod_result()
     }
 }

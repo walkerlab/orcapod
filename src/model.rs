@@ -1,11 +1,17 @@
 use crate::{
     crypto::hash_bytes,
     error::Result,
+    orchestrator::Status,
     store::DataStore,
     util::{get_type_name, hash},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{collections::BTreeMap, path::PathBuf, result};
+use serde_yaml;
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+    result,
+};
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -13,7 +19,7 @@ use std::{collections::BTreeMap, path::PathBuf, result};
 /// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mut yaml = serde_yaml::to_string(instance)?;
-    yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
+    yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>(true))); // replace class at top
 
     Ok(yaml)
 }
@@ -29,10 +35,14 @@ pub struct Pod {
     /// Unique id based on reproducibility.
     #[serde(skip)]
     pub hash: String,
-    image: String,
-    command: String,
-    input_stream_map: BTreeMap<String, StreamInfo>,
-    output_dir: PathBuf,
+    /// Reproducible environment for compute.
+    pub image: String,
+    /// Space-delimited shell command to begin computation.
+    pub command: String,
+    /// A dictionary of named input streams.
+    pub input_stream_map: BTreeMap<String, StreamInfo>,
+    /// Absolute output directory within the environment.
+    pub output_dir: PathBuf,
     output_stream_map: BTreeMap<String, StreamInfo>,
     source_commit_url: String,
     recommended_cpus: f32,
@@ -48,12 +58,12 @@ impl Pod {
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
     pub fn new(
         annotation: Option<Annotation>,
-        source_commit_url: String,
         image: String,
         command: String,
         input_stream_map: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
         output_stream_map: BTreeMap<String, StreamInfo>,
+        source_commit_url: String,
         recommended_cpus: f32,
         recommended_memory: u64,
         required_gpu: Option<GPURequirement>,
@@ -61,12 +71,12 @@ impl Pod {
         let pod_no_hash = Self {
             annotation,
             hash: String::new(),
-            source_commit_url,
             image,
             command,
             input_stream_map,
             output_dir,
             output_stream_map,
+            source_commit_url,
             recommended_cpus,
             recommended_memory,
             required_gpu,
@@ -96,7 +106,7 @@ where
 }
 
 /// A compute job that specifies resource requests and input/output targets.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct PodJob {
     /// Metadata that doesn't affect reproducibility.
     #[serde(skip)]
@@ -110,11 +120,25 @@ pub struct PodJob {
     /// Map stream ids to an input in user data target.
     pub input_stream_mapping: BTreeMap<String, Input>,
     /// Map output directory to a folder in user data target.
-    /// Will be replaced `output_store_mapping` when store pointer is implemented
-    pub output_stream_mapping: PathBuf,
-    cpu_limit: f32,
-    memory_limit: u64,
-    retry_policy: RetryPolicy,
+    pub output_stream_path: Blob<FolderOnly>,
+    /// Maximum allowable cores in fractional cores for the computation.
+    pub cpu_limit: f32,
+    /// Maximum allowable memory in bytes for the computation.
+    pub memory_limit: u64,
+    /// Environment variables to be set in environment.
+    pub env_vars: Option<HashMap<String, String>>,
+}
+
+/// An interface to access BLOB functions.
+pub trait BlobInterface {
+    /// How to evaluate a checksum of a BLOB.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue computing the checksum of a BLOB.
+    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
+        Ok(blob)
+    }
 }
 
 impl PodJob {
@@ -130,7 +154,8 @@ impl PodJob {
         output_stream_path: PathBuf,
         cpu_limit: f32,
         memory_limit: u64,
-        retry_policy: RetryPolicy,
+        env_vars: Option<HashMap<String, String>>,
+        blob_interface: &impl BlobInterface,
     ) -> Result<Self> {
         let pod_job_no_hash = Self {
             annotation,
@@ -140,7 +165,7 @@ impl PodJob {
             output_stream_mapping: output_stream_path,
             cpu_limit,
             memory_limit,
-            retry_policy,
+            env_vars,
         };
         Ok(Self {
             hash: hash(to_yaml(&pod_job_no_hash)?),
@@ -165,6 +190,78 @@ impl PodJob {
         Ok(())
     }
 }
+fn serialize_pod_job<S>(pod_job: &PodJob, serializer: S) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&pod_job.hash)
+}
+
+fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<PodJob, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(PodJob {
+        hash: String::deserialize(deserializer)?,
+        ..PodJob::default()
+    })
+}
+
+/// Result from a compute job run.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct PodResult {
+    /// Metadata that doesn't affect reproducibility.
+    #[serde(skip)]
+    pub annotation: Option<Annotation>,
+    /// Unique id based on reproducibility.
+    #[serde(skip)]
+    pub hash: String,
+    /// A pod job that originated the pod result.
+    #[serde(
+        serialize_with = "serialize_pod_job",
+        deserialize_with = "deserialize_pod_job"
+    )]
+    pub pod_job: PodJob,
+    /// Name given by orchestrator.
+    pub assigned_name: String,
+    /// Status of compute run when terminated.
+    pub status: Status,
+    /// Time in epoch when created in seconds.
+    pub created: u64,
+    /// Time in epoch when terminated in seconds.
+    pub terminated: u64,
+}
+
+impl PodResult {
+    /// Construct a new pod result instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `PodResult` instance.
+    pub fn new(
+        annotation: Option<Annotation>,
+        pod_job: PodJob,
+        assigned_name: String,
+        status: Status,
+        created: u64,
+        terminated: u64,
+    ) -> Result<Self> {
+        let pod_result_no_hash = Self {
+            annotation,
+            hash: String::new(),
+            pod_job,
+            assigned_name,
+            status,
+            created,
+            terminated,
+        };
+        Ok(Self {
+            hash: hash(to_yaml(&pod_result_no_hash)?),
+            ..pod_result_no_hash
+        })
+    }
+}
+
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
@@ -230,7 +327,7 @@ impl Input {
 }
 
 /// BLOB in user data target with metadata.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob<T> {
     /// BLOB available options.
     pub kind: T,
@@ -258,6 +355,12 @@ pub enum FileOrFolder {
     /// A single folder specified by its absolute path.
     Folder,
 }
+/// Folder-only option for BLOBs.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub enum FolderOnly {
+    /// A single folder specified by its absolute path.
+    #[default]
+    Folder,
 
 /// Pod job retry policy
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]

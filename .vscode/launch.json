@@ -20,7 +20,7 @@
             "args": [
                 "--exact",
                 "--nocapture",
-                "hash"
+                "hash_pod"
             ],
             "cwd": "${workspaceFolder}",
         },

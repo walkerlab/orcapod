@@ -1,10 +1,11 @@
+use bollard::errors::Error as BollardError;
 use colored::Colorize;
 use glob;
 use regex;
+use serde_json;
 use serde_yaml;
 use std::{
-    fmt,
-    fmt::{Display, Formatter},
+    fmt::{self, Display, Formatter},
     io,
     path::PathBuf,
     result,
@@ -23,6 +24,18 @@ pub(crate) enum Kind {
         name: String,
         version: String,
     },
+    #[error("No known container names.")]
+    NoContainerNames,
+    #[error("Out of generated random names.")]
+    GeneratedNamesOverflow,
+    #[error("No corresponding pod run found for pod job (hash: {pod_job_hash}).")]
+    NoMatchingPodRun { pod_job_hash: String },
+    #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
+    InvalidPodResultTerminatedDatetime { pod_job_hash: String },
+    #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
+    EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
+    #[error("No tags found in provided container alternate image: {path}.")]
+    NoTagFoundInContainerAltImage { path: PathBuf },
     #[error("Multiple hash found for annotation: (name: {}, ver: {})", name.bright_cyan(), ver.bright_cyan())]
     MultipleHashFound { name: String, ver: String },
     #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
@@ -36,7 +49,11 @@ pub(crate) enum Kind {
     #[error(transparent)]
     SerdeYamlError(#[from] serde_yaml::Error),
     #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error(transparent)]
     IoError(#[from] io::Error),
+    #[error(transparent)]
+    BollardError(#[from] BollardError),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -47,6 +64,10 @@ impl OrcaError {
     /// Returns `true` if the error was caused by an invalid model annotation.
     pub const fn is_invalid_annotation(&self) -> bool {
         matches!(self.kind, Kind::NoAnnotationFound { .. })
+    }
+    /// Returns `true` if the error was caused by querying a purged pod run.
+    pub const fn is_purged_pod_run(&self) -> bool {
+        matches!(self.kind, Kind::NoMatchingPodRun { .. })
     }
 }
 impl Display for OrcaError {
@@ -75,10 +96,24 @@ impl From<serde_yaml::Error> for OrcaError {
         }
     }
 }
+impl From<serde_json::Error> for OrcaError {
+    fn from(error: serde_json::Error) -> Self {
+        Self {
+            kind: Kind::SerdeJsonError(error),
+        }
+    }
+}
 impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self {
             kind: Kind::IoError(error),
+        }
+    }
+}
+impl From<BollardError> for OrcaError {
+    fn from(error: BollardError) -> Self {
+        Self {
+            kind: Kind::BollardError(error),
         }
     }
 }
