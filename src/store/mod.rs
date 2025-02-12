@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     error::Result,
-    model::{BlobInterface, Pod, PodJob, PodResult},
+    model::{Pod, PodJob, PodResult},
 };
 
 /// Options for identifying a model.
@@ -100,7 +100,7 @@ pub trait ModelStore: DataStore {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue storing `pod_result`.
-    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()>;
+    fn save_pod_result(&self, pod_result: &mut PodResult) -> Result<()>;
     /// How to load a stored pod result into a model instance.
     ///
     /// # Errors

@@ -1,9 +1,9 @@
 use crate::{
     crypto::{hash_buf_reader, hash_bytes},
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Blob, BlobInterface, FileOrFolder, Pod, PodJob, PodResult},
-    store::{ModelID, ModelInfo, Store},
-    util::{get_type_name, hash},
+    model::{to_yaml, Annotation, Pod, PodJob, PodResult},
+    store::{ModelID, ModelInfo},
+    util::get_type_name,
 };
 use colored::Colorize;
 use glob::glob;
@@ -24,6 +24,30 @@ static BUFFER_READER_CAP: usize = 2 << 13; // 8KB chunks to match with page size
 
 /// Relative path where model specification is stored within the model directory.
 pub const SPEC_RELPATH: &str = "spec.yaml";
+#[expect(clippy::expect_used, reason = "Valid static regex")]
+static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?x)
+            ^
+                (?<store_directory>.*)\/
+                    (?<namespace>[a-z_]+)\/
+                        (?<class>[a-z_]+)\/
+                            (?<hash>[0-9a-f]+)\/
+                                (
+                                    annotation\/
+                                        (?<name>[0-9a-zA-Z\s\-]+)
+                                        -
+                                        (?<version>[0-9]+\.[0-9]+\.[0-9]+)
+                                        \.yaml
+                                |
+                                    spec\.yaml
+                                )
+            $
+            ",
+    )
+    .expect("Invalid model metadata regex.")
+});
+
 /// Support for a storage backend on a local filesystem directory.
 #[derive(Debug)]
 pub struct LocalFileStore {
@@ -66,8 +90,8 @@ impl ModelStore for LocalFileStore {
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodJob>(model_id)
     }
-    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()> {
-        self.save_pod_job(&pod_result.pod_job)?;
+    fn save_pod_result(&self, pod_result: &mut PodResult) -> Result<()> {
+        self.save_pod_job(&mut pod_result.pod_job)?;
         self.save_model(pod_result, &pod_result.hash, pod_result.annotation.as_ref())
     }
     fn load_pod_result(&self, model_id: &ModelID) -> Result<PodResult> {
@@ -164,31 +188,11 @@ impl LocalFileStore {
         .join(relpath)
     }
 
-    fn find_model_metadata(glob_pattern: &Path) -> Result<Vec<ModelInfo>> {
-        let re = Regex::new(
-            r"(?x)
-            ^
-                (?<store_directory>.*)\/
-                    (?<namespace>[a-z_]+)\/
-                        (?<class>[a-z_]+)\/
-                            (?<hash>[0-9a-f]+)\/
-                                (
-                                    annotation\/
-                                        (?<name>[0-9a-zA-Z\-\s]+)
-                                        -
-                                        (?<version>[0-9]+\.[0-9]+\.[0-9]+)
-                                        \.yaml
-                                |
-                                    spec\.yaml
-                                )
-            $
-            ",
-        )?;
-
-        Ok(glob(&glob_pattern.to_string_lossy())?
-            .filter_map(move |filepath| {
+    fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
+        Ok(
+            glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
                 let filepath_string = String::from(filepath.ok()?.to_string_lossy());
-                let group = re.captures(&filepath_string)?;
+                let group = RE_MODEL_METADATA.captures(&filepath_string)?;
                 Some(ModelInfo {
                     name: group.name("name").map(|name| name.as_str().to_owned()),
                     version: group
@@ -196,24 +200,15 @@ impl LocalFileStore {
                         .map(|version| version.as_str().to_owned()),
                     hash: group["hash"].to_string(),
                 })
-            })
-            .collect())
-    }
-    /// Get the directory where store is located.
-    pub fn get_directory(&self) -> &Path {
-        &self.directory
-    }
-    /// Construct a local file store instance in a specific directory.
-    pub fn new(directory: impl AsRef<Path>) -> Self {
-        Self {
-            directory: directory.as_ref().into(),
-        }
+            }),
+        )
     }
 
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
-        let model_infos = Self::find_model_metadata(
+        let model_infos: Vec<_> = Self::find_model_metadata(
             &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
-        )?;
+        )?
+        .collect();
 
         if model_infos.len() > 1 {
             return Err(OrcaError::from(Kind::MultipleHashFound {
@@ -317,7 +312,7 @@ impl LocalFileStore {
     }
 
     fn list_model<T>(&self) -> Result<Vec<ModelInfo>> {
-        Self::find_model_metadata(&self.make_path::<T>("**", "*"))
+        Ok(Self::find_model_metadata(&self.make_path::<T>("**", "*"))?.collect())
     }
 
     fn delete_model<T>(&self, model_id: &ModelID) -> Result<()> {

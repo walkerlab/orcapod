@@ -166,9 +166,7 @@ impl LocalDockerOrchestrator {
         Config<String>,
     )> {
         // Ensure output directory exists to prevent permissions issues if daemon's owner is root
-        let host_output_directory = self
-            .data_directory
-            .join(pod_job.output_stream_path.location.clone());
+        let host_output_directory = self.data_directory.join(pod_job.output_stream_path.clone());
         fs::create_dir_all(&host_output_directory)?;
         // Prepare configuration
         let container_name = Generator::with_naming(Name::Plain)
@@ -200,7 +198,7 @@ impl LocalDockerOrchestrator {
             .input_stream_map
             .iter()
             .filter_map(|(stream_name, stream_info)| {
-                match &pod_job.input_stream_path[stream_name] {
+                match &pod_job.input_stream_mapping[stream_name] {
                     Input::Unary(blob) => Some(format!(
                         "{}:{}:{}",
                         self.data_directory

@@ -19,7 +19,7 @@ use std::{
 /// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mut yaml = serde_yaml::to_string(instance)?;
-    yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>(true))); // replace class at top
+    yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>())); // replace class at top
 
     Ok(yaml)
 }
@@ -120,13 +120,15 @@ pub struct PodJob {
     /// Map stream ids to an input in user data target.
     pub input_stream_mapping: BTreeMap<String, Input>,
     /// Map output directory to a folder in user data target.
-    pub output_stream_path: Blob<FolderOnly>,
+    pub output_stream_path: PathBuf,
     /// Maximum allowable cores in fractional cores for the computation.
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
     pub memory_limit: u64,
     /// Environment variables to be set in environment.
     pub env_vars: Option<HashMap<String, String>>,
+    /// Policy on how to handle retry
+    pub retry_policy: RetryPolicy,
 }
 
 /// An interface to access BLOB functions.
@@ -150,22 +152,23 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Pod,
-        input_stream_path: BTreeMap<String, Input>,
+        input_stream_mapping: BTreeMap<String, Input>,
         output_stream_path: PathBuf,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
-        blob_interface: &impl BlobInterface,
+        retry_policy: RetryPolicy,
     ) -> Result<Self> {
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
             pod,
-            input_stream_mapping: input_stream_path,
-            output_stream_mapping: output_stream_path,
+            input_stream_mapping,
+            output_stream_path,
             cpu_limit,
             memory_limit,
             env_vars,
+            retry_policy,
         };
         Ok(Self {
             hash: hash(to_yaml(&pod_job_no_hash)?),
@@ -361,11 +364,13 @@ pub enum FolderOnly {
     /// A single folder specified by its absolute path.
     #[default]
     Folder,
+}
 
 /// Pod job retry policy
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
 pub enum RetryPolicy {
     /// Will stop the job upon first failure
+    #[default]
     NoRetry,
     /// Will allow n number of failures within a time window of t seconds
     RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds

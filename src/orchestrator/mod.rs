@@ -63,7 +63,7 @@ impl PodRun {
     fn new<O: Orchestrator>(pod_job: &PodJob, assigned_name: String) -> Self {
         Self {
             pod_job: pod_job.clone(),
-            orchestrator_source: get_type_name::<O>(false),
+            orchestrator_source: get_type_name::<O>(),
             assigned_name,
         }
     }
