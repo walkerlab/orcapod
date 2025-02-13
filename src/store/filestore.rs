@@ -6,6 +6,7 @@ use crate::{
 };
 use colored::Colorize;
 use glob::glob;
+use heck::ToSnakeCase;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_yaml;
@@ -137,7 +138,7 @@ impl LocalFileStore {
             "{}/{}/{}/{}",
             self.directory.to_string_lossy(),
             Self::MODEL_NAMESPACE,
-            get_type_name::<T>(true),
+            get_type_name::<T>().to_snake_case(),
             hash
         ))
         .join(relpath)
@@ -175,7 +176,7 @@ impl LocalFileStore {
         .next()
         .ok_or_else(|| {
             OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<T>(true),
+                class: get_type_name::<T>().to_snake_case(),
                 name: name.to_owned(),
                 version: version.to_owned(),
             })

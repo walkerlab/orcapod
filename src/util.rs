@@ -1,4 +1,3 @@
-use heck::ToSnakeCase;
 use sha2::{Digest, Sha256};
 use std::any::type_name;
 
@@ -6,18 +5,12 @@ use std::any::type_name;
     clippy::unwrap_used,
     reason = "`last()` cannot return `None` since `type_name` always returns `&str`."
 )]
-pub fn get_type_name<T>(as_snake_case: bool) -> String {
-    let name = (*type_name::<T>()
+pub fn get_type_name<T>() -> String {
+    type_name::<T>()
         .split("::")
-        .collect::<Vec<&str>>()
+        .map(str::to_owned)
         .last()
-        .unwrap())
-    .to_owned();
-    if as_snake_case {
-        name.to_snake_case()
-    } else {
-        name
-    }
+        .unwrap()
 }
 
 pub fn hash(buffer: impl AsRef<[u8]>) -> String {

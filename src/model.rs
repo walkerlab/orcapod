@@ -3,6 +3,7 @@ use crate::{
     orchestrator::Status,
     util::{get_type_name, hash},
 };
+use heck::ToSnakeCase;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml;
 use std::{
@@ -17,7 +18,10 @@ use std::{
 /// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     let mut yaml = serde_yaml::to_string(instance)?;
-    yaml.insert_str(0, &format!("class: {}\n", get_type_name::<T>(true))); // replace class at top
+    yaml.insert_str(
+        0,
+        &format!("class: {}\n", get_type_name::<T>().to_snake_case()),
+    ); // replace class at top
 
     Ok(yaml)
 }
