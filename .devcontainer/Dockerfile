@@ -15,7 +15,7 @@ RUN \
 RUN \
     # dev setup
     apt update && \
-    apt-get install sudo jq git bash-completion -y && \
+    apt-get install sudo jq git bash-completion graphviz -y && \
     usermod -aG sudo vscode && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \
@@ -31,6 +31,8 @@ RUN \
     # rust style linter
     rustup component add clippy && \
     # rust code coverage
-    cargo install cargo-llvm-cov cargo-modules && \
-    rustup component add llvm-tools-preview
+    cargo install cargo-llvm-cov && \
+    rustup component add llvm-tools-preview && \
+    # rust crate structure diagram
+    cargo install cargo-modules
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

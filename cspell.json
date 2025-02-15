@@ -12,7 +12,8 @@
         "millicore",
         "millicores",
         "nanocore",
-        "numpy"
+        "numpy",
+        "graphviz"
     ],
     "ignoreWords": [
         "relpath",
