@@ -4,7 +4,6 @@ on:
   - push
 jobs:
   tests:
-    if: github.actor != 'github-actions'
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
