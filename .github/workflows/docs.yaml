@@ -28,12 +28,19 @@ jobs:
   api:
     if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Generate API docs
-        run: cargo doc --no-deps
-      - name: Publish
-        uses: peaceiris/actions-gh-pages@v4
+        run: |
+          cargo doc --no-deps
+          echo "<meta http-equiv=refresh content=0;url=orcapod/index.html>" > target/doc/index.html
+      - name: Upload
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: target/doc/orcapod
+          path: target/doc
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
