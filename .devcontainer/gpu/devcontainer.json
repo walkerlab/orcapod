@@ -6,12 +6,13 @@
 	"overrideCommand": false,
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 	"mounts": [
-		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume",
+		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume"
 	],
 	"remoteEnv": {
-		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+		"RUST_BACKTRACE": "1"
 	},
-	"postStartCommand": "docker system prune -fa && docker volume prune -f",
+	"postStartCommand": "docker system prune -fa && docker volume prune -f && apt update && apt install fish -y && chsh -s /usr/bin/fish",
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
@@ -31,7 +32,8 @@
 				"vadimcn.vscode-lldb", // Rust CodeLLDB debugger
 				"ms-vscode.hexeditor", // Binary preview in HEX
 				"tamasfe.even-better-toml", // *.toml language support
-				"eamodio.gitlens" // Git explorer in VSCode
+				"eamodio.gitlens", // Git explorer in VSCode
+				"streetsidesoftware.code-spell-checker" // Catch spelling errors in docs
 			]
 		}
 	}

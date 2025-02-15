@@ -3,14 +3,16 @@
     "editor.formatOnSave": true,
     "notebook.formatOnSave.enabled": true,
     "editor.rulers": [
-        88
+        100
     ],
     "[markdown]": {
         "editor.defaultFormatter": null
     },
-    "[rust]": {
-        "editor.inlayHints.enabled": "off",
-    },
+    "rust-analyzer.rustfmt.extraArgs": [
+        "--config",
+        "max_width=100"
+    ],
+    "rust-analyzer.check.command": "clippy",
     "files.autoSave": "off",
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,

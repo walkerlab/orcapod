@@ -24,8 +24,13 @@ RUN \
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 RUN apt-get update && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y && \
-    # rust auto styling
+    # rust auto formatting
     rustup component add rustfmt && \
+    # rust style linter
+    rustup component add clippy && \
+    # rust code coverage
+    cargo install cargo-llvm-cov && \
+    rustup component add llvm-tools-preview && \
     apt-get clean
 
 ENV PATH=${PATH}:/root/.local/bin

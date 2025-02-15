@@ -1,6 +1,5 @@
 # DevContainer image
-FROM rust:1.81-slim
-
+FROM rust:1.84-slim
 RUN \
     adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
     # install docker
@@ -13,19 +12,27 @@ RUN \
     apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y && \
     usermod -aG docker vscode && \
     apt-get clean
-
 RUN \
     # dev setup
     apt update && \
-    apt-get install sudo jq git bash-completion -y && \
+    apt-get install sudo jq git bash-completion graphviz -y && \
     usermod -aG sudo vscode && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \
     echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /home/vscode/.bashrc && \
-    # rust auto styling
-    rustup component add rustfmt && \
     apt-get clean
 
 USER vscode
-ENV PATH=${PATH}:/home/vscode/.local/bin
+ENV CARGO_HOME=/home/vscode/.cargo \
+    PATH=/home/vscode/.cargo/bin:/home/vscode/.local/bin:$PATH
+RUN \
+    # rust auto formatting
+    rustup component add rustfmt && \
+    # rust style linter
+    rustup component add clippy && \
+    # rust code coverage
+    cargo install cargo-llvm-cov && \
+    rustup component add llvm-tools-preview && \
+    # rust crate structure diagram
+    cargo install cargo-modules
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

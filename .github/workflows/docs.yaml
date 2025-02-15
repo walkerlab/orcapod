@@ -1,0 +1,39 @@
+name: Docs
+on:
+  - push
+jobs:
+  diagram:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install graphviz -y
+          cargo install cargo-modules
+      - uses: actions/checkout@v4
+      - name: Generate crate diagram
+        run: |
+          mkdir -p docs
+          cargo modules dependencies \
+            --no-uses --no-fns \
+            --focus-on "orcapod::model::{Pod}" \
+            --layout dot | dot -T png > docs/crate_diagram.png
+      - name: Sync GitHub
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add docs/crate_diagram.png
+          git commit -m "Update crate diagram." || echo "Diagram unchanged, skipping commit."
+          git push
+  api:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate API docs
+        run: cargo doc --no-deps
+      - name: Publish
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: target/doc/orcapod
