@@ -15,6 +15,7 @@ cargo llvm-cov --html -- --nocapture      # integration tests w/ coverage report
 
 ```bash
 cargo doc --no-deps                       # gen api docs (target/doc/orcapod/index.html)
+cargo modules dependencies --no-externs --no-fns --no-sysroot --no-traits --no-types --no-uses > mods.dot # update system architecture diagram
 ```
 
 ## Project Management

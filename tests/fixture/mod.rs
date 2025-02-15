@@ -1,12 +1,10 @@
-#![expect(clippy::expect_used, reason = "Expect OK in tests.")]
 #![expect(
-    clippy::unwrap_in_result,
-    reason = "Expect OK in tests that return result."
-)]
-#![expect(
+    clippy::expect_used,
     clippy::missing_errors_doc,
+    missing_docs,
     clippy::missing_panics_doc,
-    reason = "Integration tests won't be included in documentation."
+    clippy::unwrap_in_result,
+    reason = "OK in tests."
 )]
 
 use names::{Generator, Name};
@@ -17,7 +15,7 @@ use orcapod::{
         StreamInfo,
     },
     orchestrator::Status,
-    store::{filestore::LocalFileStore, ModelID, ModelInfo, Store},
+    store::{filestore::LocalFileStore, ModelID, ModelInfo, Store as _},
 };
 use std::{
     collections::BTreeMap,
@@ -231,7 +229,7 @@ impl Drop for TestStore {
     }
 }
 
-impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
+impl<T: TestSetup> Drop for TestStoredModel<'_, T> {
     fn drop(&mut self) {
         self.model
             .delete(self.store)

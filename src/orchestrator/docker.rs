@@ -15,7 +15,7 @@ use bollard::{
 use chrono::DateTime;
 use futures_util::{
     future::join_all,
-    stream::{StreamExt, TryStreamExt},
+    stream::{StreamExt as _, TryStreamExt as _},
 };
 use names::{Generator, Name};
 use regex::Regex;

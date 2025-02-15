@@ -1,5 +1,9 @@
-#![expect(clippy::expect_used, reason = "Expect OK in tests.")]
-#![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
+#![expect(
+    clippy::expect_used,
+    missing_docs,
+    clippy::panic_in_result_fn,
+    reason = "OK in tests."
+)]
 
 pub mod fixture;
 use fixture::{
@@ -9,8 +13,8 @@ use fixture::{
 use orcapod::{
     error::Result,
     model::{BlobInterface, PodJob},
-    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator, PodRun, Status},
-    store::{filestore::LocalFileStore, Store},
+    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator as _, PodRun, Status},
+    store::{filestore::LocalFileStore, Store as _},
 };
 use std::{
     collections::{BTreeMap, HashMap},
