@@ -14,15 +14,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Generate crate diagram
         run: |
+          mkdir docs
           cargo modules dependencies \
             --no-uses --no-fns \
             --focus-on "orcapod::model::{Pod}" \
-            --layout dot | dot -Tpng > orcapod.png
+            --layout dot | dot -T png > docs/crate_diagram.png
       - name: Sync GitHub
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git commit -i orcapod.png -m "Update crate diagram."
+          git add docs/crate_diagram.png
+          git commit -m "Update crate diagram."
           git push
   api:
     if: github.ref == 'refs/heads/dev'

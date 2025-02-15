@@ -1,6 +1,6 @@
 # orcapod
 
-![orcapod crate diagram](orcapod.png "Orcapod Crate Diagram")
+![orcapod crate diagram](docs/crate_diagram.png "Orcapod Crate Diagram")
 
 ## Tests
 
@@ -17,8 +17,8 @@ cargo llvm-cov --html -- --nocapture      # integration tests w/ coverage report
 
 ```bash
 cargo doc --no-deps                       # gen api docs (target/doc/orcapod/index.html)
-cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::model::{Pod}" --layout dot > orcapod.dot # orcapod diagram as DOT
-cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::model::{Pod}" --layout dot | dot -Tpng > orcapod.png # orcapod diagram as PNG
+cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::model::{Pod}" --layout dot > docs/crate_diagram.dot # orcapod diagram as DOT
+cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::model::{Pod}" --layout dot | dot -T png > docs/crate_diagram.png # orcapod diagram as PNG
 ```
 
 ## Project Management

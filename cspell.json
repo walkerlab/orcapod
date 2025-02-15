@@ -57,6 +57,8 @@
         "imread",
         "imencode",
         "tobytes",
-        "bitflags"
+        "bitflags",
+        "peaceiris",
+        "tintinweb"
     ]
 }
