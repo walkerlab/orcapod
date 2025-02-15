@@ -1,6 +1,6 @@
 name: Docs
 on:
-  push:
+  - push
 jobs:
   diagram:
     if: github.ref != 'refs/heads/gh-pages'
