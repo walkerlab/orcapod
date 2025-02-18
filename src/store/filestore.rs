@@ -1,16 +1,19 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Blob, BlobInterface, FileOrFolder, Pod, PodJob},
+    model::{to_yaml, Annotation, Blob, BlobInterface, FileOrFolder, Pod, PodJob, PodResult},
     store::{ModelID, ModelInfo, Store},
     util::{get_type_name, hash},
 };
 use colored::Colorize;
 use glob::glob;
+use heck::ToSnakeCase;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
+use serde_yaml;
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
 /// Support for a storage backend on a local filesystem directory.
 #[derive(Debug)]
@@ -23,27 +26,22 @@ impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<()> {
         self.save_model(pod, &pod.hash, pod.annotation.as_ref())
     }
-
     fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
         let (mut pod, annotation, hash) = self.load_model::<Pod>(model_id)?;
         pod.annotation = annotation;
         pod.hash = hash;
         Ok(pod)
     }
-
     fn list_pod(&self) -> Result<Vec<ModelInfo>> {
         self.list_model::<Pod>()
     }
-
     fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<Pod>(model_id)
     }
-
     fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
         self.save_pod(&pod_job.pod)?;
         self.save_model(pod_job, &pod_job.hash, pod_job.annotation.as_ref())
     }
-
     fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob> {
         let (mut pod_job, annotation, hash) = self.load_model::<PodJob>(model_id)?;
         pod_job.annotation = annotation;
@@ -51,15 +49,29 @@ impl Store for LocalFileStore {
         pod_job.pod = self.load_pod(&ModelID::Hash(pod_job.pod.hash))?;
         Ok(pod_job)
     }
-
     fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
         self.list_model::<PodJob>()
     }
-
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodJob>(model_id)
     }
-
+    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()> {
+        self.save_pod_job(&pod_result.pod_job)?;
+        self.save_model(pod_result, &pod_result.hash, pod_result.annotation.as_ref())
+    }
+    fn load_pod_result(&self, model_id: &ModelID) -> Result<PodResult> {
+        let (mut pod_result, annotation, hash) = self.load_model::<PodResult>(model_id)?;
+        pod_result.annotation = annotation;
+        pod_result.hash = hash;
+        pod_result.pod_job = self.load_pod_job(&ModelID::Hash(pod_result.pod_job.hash))?;
+        Ok(pod_result)
+    }
+    fn list_pod_result(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<PodResult>()
+    }
+    fn delete_pod_result(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<PodResult>(model_id)
+    }
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
         let hash = self.lookup_hash::<T>(name, version)?;
         let annotation_file =
@@ -89,38 +101,10 @@ impl BlobInterface for LocalFileStore {
     }
 }
 
-impl LocalFileStore {
-    /// Get the directory where store is located.
-    pub fn get_directory(&self) -> &Path {
-        &self.directory
-    }
-    /// Construct a local file store instance in a specific directory.
-    pub fn new(directory: impl AsRef<Path>) -> Self {
-        Self {
-            directory: directory.as_ref().into(),
-        }
-    }
-    /// Relative path where model specification is stored within the model directory.
-    pub const SPEC_RELPATH: &str = "spec.yaml";
-    /// Relative path where model annotation is stored within the model directory.
-    pub fn make_annotation_relpath(name: &str, version: &str) -> PathBuf {
-        PathBuf::from(format!("annotation/{name}-{version}.yaml"))
-    }
-    /// Build the storage path with the model directory (`hash`) and a file's relative path.
-    pub fn make_path<T>(&self, hash: &str, relpath: impl AsRef<Path>) -> PathBuf {
-        PathBuf::from(format!(
-            "{}/{}/{}/{}",
-            self.directory.to_string_lossy(),
-            Self::MODEL_NAMESPACE,
-            get_type_name::<T>(),
-            hash
-        ))
-        .join(relpath)
-    }
-
-    fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
-        let re = Regex::new(
-            r"(?x)
+#[expect(clippy::expect_used, reason = "Valid static regex")]
+static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?x)
             ^
                 (?<store_directory>.*)\/
                     (?<namespace>[a-z_]+)\/
@@ -137,10 +121,33 @@ impl LocalFileStore {
                                 )
             $
             ",
-        )?;
+    )
+    .expect("Invalid model metadata regex.")
+});
+
+impl LocalFileStore {
+    /// Relative path where model specification is stored within the model directory.
+    pub const SPEC_RELPATH: &str = "spec.yaml";
+    /// Relative path where model annotation is stored within the model directory.
+    pub fn make_annotation_relpath(name: &str, version: &str) -> PathBuf {
+        PathBuf::from(format!("annotation/{name}-{version}.yaml"))
+    }
+    /// Build the storage path with the model directory (`hash`) and a file's relative path.
+    pub fn make_path<T>(&self, hash: &str, relpath: impl AsRef<Path>) -> PathBuf {
+        PathBuf::from(format!(
+            "{}/{}/{}/{}",
+            self.directory.to_string_lossy(),
+            Self::MODEL_NAMESPACE,
+            get_type_name::<T>().to_snake_case(),
+            hash
+        ))
+        .join(relpath)
+    }
+
+    fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
         let paths = glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
             let filepath_string = String::from(filepath.ok()?.to_string_lossy());
-            let group = re.captures(&filepath_string)?;
+            let group = RE_MODEL_METADATA.captures(&filepath_string)?;
             Some(ModelInfo {
                 name: group.name("name").map(|name| name.as_str().to_owned()),
                 version: group
@@ -151,6 +158,16 @@ impl LocalFileStore {
         });
         Ok(paths)
     }
+    /// Get the directory where store is located.
+    pub fn get_directory(&self) -> &Path {
+        &self.directory
+    }
+    /// Construct a local file store instance in a specific directory.
+    pub fn new(directory: impl AsRef<Path>) -> Self {
+        Self {
+            directory: directory.as_ref().into(),
+        }
+    }
 
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
         let model_info = Self::find_model_metadata(
@@ -159,7 +176,7 @@ impl LocalFileStore {
         .next()
         .ok_or_else(|| {
             OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<T>(),
+                class: get_type_name::<T>().to_snake_case(),
                 name: name.to_owned(),
                 version: version.to_owned(),
             })
@@ -211,7 +228,7 @@ impl LocalFileStore {
                 true,
             )?;
         }
-        // Save the pod and skip if it already exist, for the case of many annotation to a single pod
+        // Save the model specification and skip if it already exist e.g. on new annotations
         Self::save_file(
             self.make_path::<T>(hash, Self::SPEC_RELPATH),
             to_yaml(model)?,
@@ -231,7 +248,7 @@ impl LocalFileStore {
                     self.make_path::<T>(hash, Self::SPEC_RELPATH),
                 )?)?,
                 None,
-                hash.clone(),
+                hash.to_owned(),
             )),
             ModelID::Annotation(name, version) => {
                 let hash = self.lookup_hash::<T>(name, version)?;

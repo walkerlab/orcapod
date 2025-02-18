@@ -1,9 +1,10 @@
 use crate::{
     error::Result,
-    model::{BlobInterface, Pod, PodJob},
+    model::{BlobInterface, Pod, PodJob, PodResult},
 };
 
 /// Options for identifying a model.
+#[derive(Debug, Clone)]
 pub enum ModelID {
     /// Identifying by the hash value of a model as a string.
     Hash(String),
@@ -82,6 +83,34 @@ pub trait Store: BlobInterface {
     /// Will return `Err` if there is an issue deleting a pod job from the store using `name` and
     /// `version`.
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
+    /// How a pod result is stored.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue storing `pod_result`.
+    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()>;
+    /// How to load a stored pod result into a model instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue loading a pod result from the store using `name` and
+    /// `version`.
+    fn load_pod_result(&self, model_id: &ModelID) -> Result<PodResult>;
+    /// How to query stored pod results.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue querying metadata from existing pod results in the
+    /// store.
+    fn list_pod_result(&self) -> Result<Vec<ModelInfo>>;
+    /// How to explicitly delete a stored pod result and all associated annotations (does not
+    /// propagate).
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue deleting a pod result from the store using `name` and
+    /// `version`.
+    fn delete_pod_result(&self, model_id: &ModelID) -> Result<()>;
     /// How to explicitly delete an annotation.
     ///
     /// # Errors

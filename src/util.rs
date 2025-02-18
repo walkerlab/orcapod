@@ -1,4 +1,3 @@
-use heck::ToSnakeCase;
 use sha2::{Digest, Sha256};
 use std::any::type_name;
 
@@ -9,10 +8,9 @@ use std::any::type_name;
 pub fn get_type_name<T>() -> String {
     type_name::<T>()
         .split("::")
-        .collect::<Vec<&str>>()
+        .map(str::to_owned)
         .last()
         .unwrap()
-        .to_snake_case()
 }
 
 pub fn hash(buffer: impl AsRef<[u8]>) -> String {
