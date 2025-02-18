@@ -3,6 +3,7 @@ on:
   - push
 jobs:
   diagram:
+    if: github.actor == 'guzman-raphael'
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
@@ -26,7 +27,7 @@ jobs:
           git commit -m "Update crate diagram." || echo "Diagram unchanged, skipping commit."
           git push
   api:
-    if: github.ref == 'refs/heads/dev'
+    if: github.actor == 'guzman-raphael' && github.ref == 'refs/heads/docs' 
     runs-on: ubuntu-latest
     permissions:
       pages: write
