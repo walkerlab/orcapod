@@ -1,8 +1,8 @@
 use crate::{
     crypto::hash_bytes,
-    error::Result,
+    error::{Kind, OrcaError, Result},
     orchestrator::Status,
-    store::DataStore,
+    store::{self, DataStore},
     util::{get_type_name, hash},
 };
 use heck::ToSnakeCase;
@@ -10,7 +10,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml;
 use std::{
     collections::{BTreeMap, HashMap},
-    path::PathBuf,
+    path::{Path, PathBuf},
     result,
 };
 /// Converts a model instance into a consistent yaml.
@@ -179,24 +179,8 @@ impl PodJob {
             ..pod_job_no_hash
         })
     }
-
-    /// Helper function to compute the hash for the `input_stream_path` that is typically used when saving the model
-    /// This is using last min save, basically do not compute the checksum, until it is actually written, but can be used
-    /// before hand in memory.
-    ///
-    /// # Errors
-    /// Error if fails to compute checksum, mainly due to `FileIO`
-    ///
-    pub fn compute_checksum_for_input_stream_path<T: DataStore>(
-        &mut self,
-        model_store: &T,
-    ) -> Result<()> {
-        for input in self.input_stream_mapping.values_mut() {
-            input.compute_checksum(model_store)?;
-        }
-        Ok(())
-    }
 }
+
 fn serialize_pod_job<S>(pod_job: &PodJob, serializer: S) -> result::Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -318,21 +302,6 @@ pub enum Input {
     Collection(Vec<Blob<FileOrFolder>>),
 }
 
-impl Input {
-    fn compute_checksum<T: DataStore>(&mut self, model_store: &T) -> Result<()> {
-        match self {
-            Self::Unary(blob) => blob.compute_checksum(model_store),
-            Self::Collection(blobs) => {
-                for blob in blobs {
-                    blob.compute_checksum(model_store)?;
-                }
-
-                Ok(())
-            }
-        }
-    }
-}
-
 /// BLOB in user data target with metadata.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob<T> {
@@ -340,17 +309,32 @@ pub struct Blob<T> {
     pub kind: T,
     /// BLOB location.
     pub location: PathBuf,
+    /// Name of store
+    pub store_name: Option<String>,
     /// BLOB contents checksum.
-    pub checksum: Option<String>,
+    pub checksum: String,
 }
 
 impl Blob<FileOrFolder> {
-    // Function to compute the checksum based with handling for default case
-    /// We are assuming the datastore to always be the same as model store for now
-    /// until store pointer is implmented
-    fn compute_checksum<T: DataStore>(&mut self, model_store: &T) -> Result<()> {
-        self.checksum = Some(model_store.compute_checksum(&self.location)?);
-        Ok(())
+    ///
+    /// # Errors
+    /// Will error out if unable to compute checksum on blob contents
+    pub fn new(
+        kind: FileOrFolder,
+        location: impl AsRef<Path>,
+        store_name: Option<String>,
+        store_map: &StoreMap<impl DataStore>,
+    ) -> Result<Self> {
+        let checksum = store_map
+            .get_data_store(store_name.as_deref())?
+            .compute_checksum(&location)?;
+
+        Ok(Self {
+            kind,
+            location: location.as_ref().to_path_buf(),
+            store_name,
+            checksum,
+        })
     }
 }
 
@@ -378,4 +362,34 @@ pub enum RetryPolicy {
     NoRetry,
     /// Will allow n number of failures within a time window of t seconds
     RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
+}
+
+/// Same as blob interface, but renamed due to possible additional of features for store pointer.
+pub struct StoreMap<T: DataStore> {
+    /// Map `store_name` to a Store
+    mapping: BTreeMap<String, T>,
+}
+
+impl<T: DataStore> StoreMap<T> {
+    /// Function to create new `StoreMap` that expects at least on of the mapping to be set as default
+    ///
+    /// # Errors
+    /// Will fail if the mapping does not contain a default `DataStore`
+    pub fn new(mapping: BTreeMap<String, T>) -> Result<Self> {
+        // Check if one the of store_name is named default
+        if !mapping.contains_key("default") {
+            return Err(OrcaError::from(Kind::NoDefaultStore));
+        }
+        Ok(Self { mapping })
+    }
+
+    fn get_data_store(&self, store_name: Option<&str>) -> Result<&T> {
+        let key = store_name.unwrap_or("default");
+
+        self.mapping.get(key).ok_or_else(|| {
+            OrcaError::from(Kind::StoreNotFound {
+                store_name: key.to_owned(),
+            })
+        })
+    }
 }

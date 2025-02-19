@@ -9,18 +9,19 @@
     reason = "Integration tests won't be included in documentation."
 )]
 
-use names::{Generator, Name};
 use orcapod::{
     error::Result,
     model::{
-        Annotation, Blob, FileOrFolder, Input, Pod, PodJob, PodResult, RetryPolicy, StreamInfo,
+        Annotation, Blob, FileOrFolder, Input, Pod, PodJob, PodResult, RetryPolicy, StoreMap,
+        StreamInfo,
     },
     orchestrator::Status,
-    store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore},
+    store::{filestore::LocalFileStore, DataStore, ModelID, ModelInfo, ModelStore},
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fs::{self, File},
+    fs::{self},
     ops::Deref,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -69,7 +70,7 @@ pub fn pod_style() -> Result<Pod> {
     )
 }
 
-pub fn pod_job_style() -> Result<PodJob> {
+pub fn pod_job_style(store_map: &StoreMap<impl DataStore>) -> Result<PodJob> {
     PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -80,57 +81,74 @@ pub fn pod_job_style() -> Result<PodJob> {
         BTreeMap::from([
             (
                 "style".to_owned(),
-                Input::Unary(Blob {
-                    kind: FileOrFolder::File,
-                    location: PathBuf::from("styles/mosaic.t7"),
-                    checksum: None,
-                }),
+                Input::Unary(Blob::new(
+                    FileOrFolder::File,
+                    "styles/mosaic.t7",
+                    None,
+                    store_map,
+                )?),
             ),
             (
                 "image".to_owned(),
-                Input::Unary(Blob {
-                    kind: FileOrFolder::File,
-                    location: PathBuf::from("images/dog.jpeg"),
-                    checksum: None,
-                }),
+                Input::Unary(Blob::new(
+                    FileOrFolder::File,
+                    "images/dog.jpeg",
+                    None,
+                    store_map,
+                )?),
             ),
         ]),
         PathBuf::from("output"),
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes
-        blob_interface,
+        None,
+        RetryPolicy::NoRetry,
     )
 }
 
-pub fn store_fixture(store_directory: Option<&str>, with_data: bool) -> Result<TestStore> {
+pub fn pod_result_style(store_map: &StoreMap<impl DataStore>) -> Result<PodResult> {
+    PodResult::new(
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod result.".to_owned(),
+            version: "0.0.0".to_owned(),
+        }),
+        pod_job_style(store_map)?,
+        "simple-endeavour".to_owned(),
+        Status::Completed,
+        1_737_922_307,
+        1_737_925_907,
+    )
+}
+
+/// Create the temp dir and copy the data over to the default data-store location
+pub fn store_map_fixture() -> Result<StoreMap<impl DataStore>> {
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
-    let store =
-        store_directory.map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new);
-    fs::create_dir_all(store.get_directory())?;
-    if with_data {
-        Command::new("cp")
-            .arg("-r")
-            .arg("./tests/data")
-            .arg(format!(
-                "{}/{}",
-                store.get_directory().to_string_lossy(),
-                LocalFileStore::DEFAULT_DATA_NAMESPACE
-            ))
-            .output()?;
-    }
-    Ok(TestStore { store })
+    fs::create_dir_all(tmp_directory.clone())?;
+
+    Command::new("cp")
+        .arg("-r")
+        .arg("./tests/data")
+        .arg(format!(
+            "{}/{}",
+            tmp_directory,
+            LocalFileStore::DEFAULT_DATA_NAMESPACE
+        ))
+        .output()?;
+
+    StoreMap::new(BTreeMap::from([(
+        "default".to_owned(),
+        store_fixture(Some(&tmp_directory))?,
+    )]))
 }
 
-pub struct FakeStore;
-impl BlobInterface for FakeStore {
-    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
-        Ok(Blob {
-            checksum: Some("fake_hash".to_owned()),
-            ..blob
-        })
-    }
+pub fn store_fixture(store_directory: Option<&str>) -> Result<TestStore> {
+    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
+    Ok(TestStore {
+        store: store_directory
+            .map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new),
+    })
 }
-
 // --- helper functions ---
 
 pub fn add_storage<T: TestSetup>(mut model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
@@ -141,7 +159,7 @@ pub fn add_storage<T: TestSetup>(mut model: T, store: &TestStore) -> Result<Test
 
 // --- util ---
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TestStore {
     pub store: LocalFileStore,
 }
@@ -170,6 +188,12 @@ impl<'base, T: TestSetup> Drop for TestStoredModel<'base, T> {
         self.model
             .delete(self.store)
             .expect("Failed to teardown model.");
+    }
+}
+
+impl DataStore for TestStore {
+    fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String> {
+        self.store.compute_checksum(path)
     }
 }
 
@@ -255,7 +279,7 @@ impl TestSetup for PodJob {
 
 impl TestSetup for PodResult {
     type Target = Self;
-    fn save(&self, store: &LocalFileStore) -> Result<()> {
+    fn save(&mut self, store: &LocalFileStore) -> Result<()> {
         store.save_pod_result(self)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {

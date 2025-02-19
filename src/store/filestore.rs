@@ -9,7 +9,7 @@ use colored::Colorize;
 use glob::glob;
 use heck::ToSnakeCase;
 use regex::Regex;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml;
 use std::fs;
 use std::{
@@ -50,7 +50,7 @@ static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Support for a storage backend on a local filesystem directory.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LocalFileStore {
     /// A local path to a directory where store will be located.
     directory: PathBuf,
@@ -73,8 +73,7 @@ impl ModelStore for LocalFileStore {
         self.delete_model::<Pod>(model_id)
     }
 
-    fn save_pod_job(&self, pod_job: &mut PodJob) -> Result<()> {
-        pod_job.compute_checksum_for_input_stream_path(self)?;
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
         self.save_pod(&pod_job.pod)?;
         self.save_model(pod_job, &pod_job.hash, pod_job.annotation.as_ref())
     }
@@ -92,7 +91,7 @@ impl ModelStore for LocalFileStore {
         self.delete_model::<PodJob>(model_id)
     }
     fn save_pod_result(&self, pod_result: &mut PodResult) -> Result<()> {
-        self.save_pod_job(&mut pod_result.pod_job)?;
+        self.save_pod_job(&pod_result.pod_job)?;
         self.save_model(pod_result, &pod_result.hash, pod_result.annotation.as_ref())
     }
     fn load_pod_result(&self, model_id: &ModelID) -> Result<PodResult> {
@@ -200,43 +199,9 @@ impl LocalFileStore {
             directory: directory.as_ref().into(),
         }
     }
-
     fn make_data_path(&self) -> PathBuf {
         self.directory.join(Self::DEFAULT_DATA_NAMESPACE)
     }
-
-    /// Relative path where model annotation is stored within the model directory.
-    pub fn make_annotation_relpath(name: &str, version: &str) -> PathBuf {
-        PathBuf::from(format!("annotation/{name}-{version}.yaml"))
-    }
-    /// Build the storage path with the model directory (`hash`) and a file's relative path.
-    pub fn make_path<T>(&self, hash: &str, relpath: impl AsRef<Path>) -> PathBuf {
-        PathBuf::from(format!(
-            "{}/{}/{}/{}",
-            self.directory.to_string_lossy(),
-            Self::MODEL_NAMESPACE,
-            get_type_name::<T>(),
-            hash
-        ))
-        .join(relpath)
-    }
-
-    fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
-        Ok(
-            glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
-                let filepath_string = String::from(filepath.ok()?.to_string_lossy());
-                let group = RE_MODEL_METADATA.captures(&filepath_string)?;
-                Some(ModelInfo {
-                    name: group.name("name").map(|name| name.as_str().to_owned()),
-                    version: group
-                        .name("version")
-                        .map(|version| version.as_str().to_owned()),
-                    hash: group["hash"].to_string(),
-                })
-            }),
-        )
-    }
-
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
         let model_infos: Vec<_> = Self::find_model_metadata(
             &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
@@ -262,7 +227,6 @@ impl LocalFileStore {
             .hash
             .clone())
     }
-
     fn save_file(
         file: impl AsRef<Path>,
         content: impl AsRef<[u8]>,
@@ -286,7 +250,6 @@ impl LocalFileStore {
         }
         Ok(())
     }
-
     fn save_model<T: Serialize>(
         &self,
         model: &T,
@@ -316,7 +279,6 @@ impl LocalFileStore {
 
         Ok(())
     }
-
     fn load_model<T: DeserializeOwned>(
         &self,
         model_id: &ModelID,
@@ -343,11 +305,9 @@ impl LocalFileStore {
             }
         }
     }
-
     fn list_model<T>(&self) -> Result<Vec<ModelInfo>> {
         Ok(Self::find_model_metadata(&self.make_path::<T>("**", "*"))?.collect())
     }
-
     fn delete_model<T>(&self, model_id: &ModelID) -> Result<()> {
         // assumes propagate = false
         let hash = match model_id {

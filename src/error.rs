@@ -40,6 +40,10 @@ pub(crate) enum Kind {
     MultipleHashFound { name: String, ver: String },
     #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
     UnsupportedPath { path: PathBuf },
+    #[error("Store name {} not found", store_name.bright_cyan())]
+    StoreNotFound { store_name: String },
+    #[error("No default store found in store_map! Please set one datastore with the name default")]
+    NoDefaultStore,
     #[error("Path: {} does not exists", path.to_string_lossy().bright_cyan())]
     PathDoesNotExist { path: PathBuf },
     #[error(transparent)]

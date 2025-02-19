@@ -122,7 +122,7 @@ fn remote_container_image_basic() -> Result<()> {
     stored_pod_job.model.pod.image = "alpine:3.14".to_owned();
     stored_pod_job.model.pod.command = "sleep 5".to_owned();
     stored_pod_job.model.pod.input_stream_map = BTreeMap::new();
-    stored_pod_job.model.input_stream_path = BTreeMap::new();
+    stored_pod_job.model.input_stream_mapping = BTreeMap::new();
     let pod_run = orchestrator.start_blocking(&stored_pod_job.model)?;
     basic_test(
         &orchestrator,

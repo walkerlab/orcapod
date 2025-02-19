@@ -1,7 +1,7 @@
 #![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_job_style, pod_result_style, pod_style, store_fixture, FakeStore};
+use fixture::{pod_job_style, pod_result_style, pod_style, store_map_fixture};
 use indoc::indoc;
 use orcapod::{error::Result, model::to_yaml};
 
@@ -47,10 +47,10 @@ fn pod_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_job() -> Result<()> {
-    let mut pod_job = pod_job_style()?;
-    pod_job.compute_checksum_for_input_stream_path(&store_fixture(None, true)?.store)?;
+    let store_map = store_map_fixture()?;
+    let pod_job = pod_job_style(&store_map)?;
     assert_eq!(
-        pod_job.hash, "ff0f48e9edf63a5170f78b6fc9e6231cbdf2fae9f2665753992bb1a7bd0f60a6",
+        pod_job.hash, "6ea724495cf4cd4e507a8ac3e062f6f52bd14847b3246b88c2e3d778b7a40d22",
         "Hash didn't match."
     );
     Ok(())
@@ -58,24 +58,28 @@ fn hash_pod_job() -> Result<()> {
 
 #[test]
 fn pod_job_to_yaml() -> Result<()> {
+    let store_map = store_map_fixture()?;
     assert_eq!(
-        to_yaml(&pod_job_style()?)?,
+        to_yaml(&pod_job_style(&store_map)?)?,
         indoc! {"
             class: pod_job
-            pod: 61d893c39c059b3f6d5e6490edbff1ec2118404ace5031f0b1f5da8a06861085
+            pod: 8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094
             input_stream_mapping:
               image:
                 kind: File
                 location: images/dog.jpeg
-                checksum: null
+                store_name: null
+                checksum: 8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd
               style:
                 kind: File
                 location: styles/mosaic.t7
-                checksum: null
-            output_stream_mapping: output
+                store_name: null
+                checksum: fbd7d882e9e02aafb57366e726762025ff6b2e12cd41abd44b874542b7693771
+            output_stream_path: output
             cpu_limit: 0.5
             memory_limit: 2147483648
             env_vars: null
+            retry_policy: NoRetry
         "},
         "YAML serialization didn't match."
     );
@@ -84,9 +88,10 @@ fn pod_job_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_result() -> Result<()> {
+    let store_map = store_map_fixture()?;
     assert_eq!(
-        pod_result_style(&FakeStore)?.hash,
-        "53e418976509b75b9fae778bde148d5f0e42567caa43f78b39b329d9d8409c62",
+        pod_result_style(&store_map)?.hash,
+        "445e937309e6f8742f906b2a39e21aa1b23df1ba52f2d92e04b1010c0e0200dc",
         "Hash didn't match."
     );
     Ok(())
@@ -94,11 +99,12 @@ fn hash_pod_result() -> Result<()> {
 
 #[test]
 fn pod_result_to_yaml() -> Result<()> {
+    let store_map = store_map_fixture()?;
     assert_eq!(
-        to_yaml(&pod_result_style(&FakeStore)?)?,
+        to_yaml(&pod_result_style(&store_map)?)?,
         indoc! {"
             class: pod_result
-            pod_job: 38f2021f67a8be0498ff1092789670661521e11c317d92ccebbc9dfeda98df7f
+            pod_job: bc7de776c396e788d2db19af222437fd08f73e95cc981ce1791e0d64480dcf74
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307

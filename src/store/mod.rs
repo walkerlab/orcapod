@@ -1,4 +1,6 @@
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
+
+use serde::{de::DeserializeOwned, Serialize, Serializer};
 
 use crate::{
     error::Result,
@@ -26,7 +28,7 @@ pub struct ModelInfo {
 }
 
 /// Standard behavior of any store backend supported.
-pub trait ModelStore: DataStore {
+pub trait ModelStore {
     /// Namespace where models will be stored.
     const MODEL_NAMESPACE: &str = "orcapod_model";
 
@@ -69,7 +71,7 @@ pub trait ModelStore: DataStore {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue storing `pod_job`.
-    fn save_pod_job(&self, pod_job: &mut PodJob) -> Result<()>;
+    fn save_pod_job(&self, pod_job: &PodJob) -> Result<()>;
 
     /// How to load a stored pod job into a model instance.
     ///
@@ -132,8 +134,7 @@ pub trait ModelStore: DataStore {
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 }
 
-/// Same as blob interface, but renamed due to possible additional of features for store pointer.
-pub trait DataStore: Sized {
+pub trait DataStore: Serialize + DeserializeOwned {
     /// How to evaluate a checksum of a BLOB.
     ///
     /// # Errors
@@ -141,6 +142,5 @@ pub trait DataStore: Sized {
     /// Will return `Err` if there is an issue computing the checksum of a BLOB.
     fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String>;
 }
-
 /// Store implementation on a local filesystem.
 pub mod filestore;
