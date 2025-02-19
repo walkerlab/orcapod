@@ -6,12 +6,11 @@ use std::any::type_name;
     reason = "`last()` cannot return `None` since `type_name` always returns `&str`."
 )]
 pub fn get_type_name<T>() -> String {
-    (*type_name::<T>()
+    type_name::<T>()
         .split("::")
-        .collect::<Vec<&str>>()
+        .map(str::to_owned)
         .last()
-        .unwrap())
-    .to_owned()
+        .unwrap()
 }
 
 pub fn hash(buffer: impl AsRef<[u8]>) -> String {

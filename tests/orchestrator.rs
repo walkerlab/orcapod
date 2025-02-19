@@ -37,31 +37,31 @@ fn basic_test(
     expected_command: String,
 ) -> Result<()> {
     assert_eq!(
-        orchestrator.get_info(pod_run)?.status,
+        orchestrator.get_info_blocking(pod_run)?.status,
         Status::Running,
         "Unexpected state."
     );
     assert_eq!(
         orchestrator
-            .list()?
+            .list_blocking()?
             .iter()
-            .map(|run| Ok(orchestrator.get_info(run)?.command))
+            .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command.clone()],
         "Unexpected list."
     );
     // await result
-    let pod_result_1 = orchestrator.get_result(pod_run)?;
+    let pod_result_1 = orchestrator.get_result_blocking(pod_run)?;
     assert_eq!(
-        orchestrator.get_info(pod_run)?.status,
+        orchestrator.get_info_blocking(pod_run)?.status,
         Status::Completed,
         "Unexpected state."
     );
     assert_eq!(
         orchestrator
-            .list()?
+            .list_blocking()?
             .iter()
-            .map(|run| Ok(orchestrator.get_info(run)?.command))
+            .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command],
         "Unexpected list."
@@ -71,18 +71,18 @@ fn basic_test(
         "Unexpected name."
     );
     // try generating result again
-    let pod_result_2 = orchestrator.get_result(pod_run)?;
+    let pod_result_2 = orchestrator.get_result_blocking(pod_run)?;
     assert_eq!(pod_result_1, pod_result_2, "Pod results don't match.");
     // test delete
-    orchestrator.delete(pod_run)?;
+    orchestrator.delete_blocking(pod_run)?;
     assert!(
-        orchestrator.list()?.is_empty(),
+        orchestrator.list_blocking()?.is_empty(),
         "Unexpected container remains."
     );
     // try getting info of a purged pod run
     assert!(
         orchestrator
-            .get_info(pod_run)
+            .get_info_blocking(pod_run)
             .expect_err("Unexpectedly succeeded.")
             .is_purged_pod_run(),
         "Returned a different OrcaError than one expected when getting info of a purged pod run."
@@ -105,7 +105,8 @@ fn offline_container_image_basic() -> Result<()> {
 
     stored_pod_job.model.env_vars = Some(HashMap::from([("DELAY".to_owned(), "5".to_owned())]));
     let container_image_kind = ImageKind::Tarball(PathBuf::from(container_image_relative_location));
-    let pod_run = orchestrator.start_with_altimage(&stored_pod_job.model, &container_image_kind)?;
+    let pod_run =
+        orchestrator.start_with_altimage_blocking(&stored_pod_job.model, &container_image_kind)?;
     basic_test(
         &orchestrator,
         &pod_run,
@@ -122,7 +123,7 @@ fn remote_container_image_basic() -> Result<()> {
     stored_pod_job.model.pod.command = "sleep 5".to_owned();
     stored_pod_job.model.pod.input_stream_map = BTreeMap::new();
     stored_pod_job.model.input_stream_path = BTreeMap::new();
-    let pod_run = orchestrator.start(&stored_pod_job.model)?;
+    let pod_run = orchestrator.start_blocking(&stored_pod_job.model)?;
     basic_test(
         &orchestrator,
         &pod_run,

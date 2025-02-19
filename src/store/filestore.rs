@@ -7,6 +7,7 @@ use crate::{
 };
 use colored::Colorize;
 use glob::glob;
+use heck::ToSnakeCase;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_yaml;
@@ -157,6 +158,38 @@ impl DataStore for LocalFileStore {
 }
 
 impl LocalFileStore {
+    /// Relative path where model specification is stored within the model directory.
+    pub const SPEC_RELPATH: &str = "spec.yaml";
+    /// Relative path where model annotation is stored within the model directory.
+    pub fn make_annotation_relpath(name: &str, version: &str) -> PathBuf {
+        PathBuf::from(format!("annotation/{name}-{version}.yaml"))
+    }
+    /// Build the storage path with the model directory (`hash`) and a file's relative path.
+    pub fn make_path<T>(&self, hash: &str, relpath: impl AsRef<Path>) -> PathBuf {
+        PathBuf::from(format!(
+            "{}/{}/{}/{}",
+            self.directory.to_string_lossy(),
+            Self::MODEL_NAMESPACE,
+            get_type_name::<T>().to_snake_case(),
+            hash
+        ))
+        .join(relpath)
+    }
+
+    fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
+        let paths = glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
+            let filepath_string = String::from(filepath.ok()?.to_string_lossy());
+            let group = RE_MODEL_METADATA.captures(&filepath_string)?;
+            Some(ModelInfo {
+                name: group.name("name").map(|name| name.as_str().to_owned()),
+                version: group
+                    .name("version")
+                    .map(|version| version.as_str().to_owned()),
+                hash: group["hash"].to_string(),
+            })
+        });
+        Ok(paths)
+    }
     /// Get the directory where store is located.
     pub fn get_directory(&self) -> &Path {
         &self.directory

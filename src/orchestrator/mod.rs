@@ -71,48 +71,82 @@ impl PodRun {
 
 /// API for standard behavior of any container orchestration engine supported.
 pub trait Orchestrator {
-    /// How to start containers with an alternate image.
+    /// How to synchronously start containers with an alternate image.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start_with_altimage(&self, pod_job: &PodJob, image: &ImageKind) -> Result<PodRun>;
-    /// How to start containers. Assumes `PodJob` image is published.
+    fn start_with_altimage_blocking(&self, pod_job: &PodJob, image: &ImageKind) -> Result<PodRun>;
+    /// How to synchronously start containers. Assumes `PodJob` image is published.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start(&self, pod_job: &PodJob) -> Result<PodRun>;
-    /// How to query containers.
+    fn start_blocking(&self, pod_job: &PodJob) -> Result<PodRun>;
+    /// How to synchronously query containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from containers.
-    fn list(&self) -> Result<Vec<PodRun>>;
-    /// How to delete containers.
+    fn list_blocking(&self) -> Result<Vec<PodRun>>;
+    /// How to synchronously delete containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue deleting a container.
-    fn delete(&self, pod_run: &PodRun) -> Result<()>;
-    /// How to get container info if still in orchestrator memory.
+    fn delete_blocking(&self, pod_run: &PodRun) -> Result<()>;
+    /// How to synchronously get container info if still in orchestrator memory.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo>;
-    /// How to wait for pod result to be ready.
+    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    /// How to synchronously wait for pod result to be ready.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod result.
-    fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
-    /// How to (asynchronously) wait for pod result to be ready.
+    fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// How to asynchronously start containers with an alternate image.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue starting the container.
+    fn start_with_altimage(
+        &self,
+        pod_job: &PodJob,
+        image: &ImageKind,
+    ) -> impl Future<Output = Result<PodRun>> + Send;
+    /// How to asynchronously start containers. Assumes `PodJob` image is published.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue starting the container.
+    fn start(&self, pod_job: &PodJob) -> impl Future<Output = Result<PodRun>> + Send;
+    /// How to asynchronously query containers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue querying metadata from containers.
+    fn list(&self) -> impl Future<Output = Result<Vec<PodRun>>> + Send;
+    /// How to asynchronously delete containers.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue deleting a container.
+    fn delete(&self, pod_run: &PodRun) -> impl Future<Output = Result<()>> + Send;
+    /// How to asynchronously get container info if still in orchestrator memory.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue accessing container info.
+    fn get_info(&self, pod_run: &PodRun) -> impl Future<Output = Result<RunInfo>> + Send;
+    /// How to asynchronously wait for pod result to be ready.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod result.
-    fn get_result_async(&self, pod_run: &PodRun) -> impl Future<Output = Result<PodResult>> + Send;
+    fn get_result(&self, pod_run: &PodRun) -> impl Future<Output = Result<PodResult>> + Send;
 }
 
 /// Orchestration implementation for Docker backend.
