@@ -119,6 +119,7 @@ pub fn pod_result_style(store_map: &StoreMap<impl DataStore>) -> Result<PodResul
         Status::Completed,
         1_737_922_307,
         1_737_925_907,
+        String::from("Test Logs"),
     )
 }
 

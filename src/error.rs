@@ -9,6 +9,7 @@ use std::{
     io,
     path::PathBuf,
     result,
+    string::FromUtf8Error,
 };
 use thiserror::Error;
 /// Shorthand for a Result that returns an `OrcaError`.
@@ -26,6 +27,8 @@ pub(crate) enum Kind {
     GeneratedNamesOverflow,
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
+    #[error(transparent)]
+    FromUtf8Error(#[from] FromUtf8Error),
     #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
     InvalidPodResultTerminatedDatetime { pod_job_hash: String },
     #[error(transparent)]
@@ -113,6 +116,13 @@ impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self {
             kind: Kind::IoError(error),
+        }
+    }
+}
+impl From<FromUtf8Error> for OrcaError {
+    fn from(error: FromUtf8Error) -> Self {
+        Self {
+            kind: Kind::FromUtf8Error(error),
         }
     }
 }

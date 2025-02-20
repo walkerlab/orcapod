@@ -91,7 +91,7 @@ fn hash_pod_result() -> Result<()> {
     let store_map = store_map_fixture()?;
     assert_eq!(
         pod_result_style(&store_map)?.hash,
-        "445e937309e6f8742f906b2a39e21aa1b23df1ba52f2d92e04b1010c0e0200dc",
+        "3d63c823e222d4087199eb8d2fdab3c08857d55684b804ab0394584154d9b8ef",
         "Hash didn't match."
     );
     Ok(())
@@ -109,6 +109,7 @@ fn pod_result_to_yaml() -> Result<()> {
             status: Completed
             created: 1737922307
             terminated: 1737925907
+            logs: Test Logs
         "},
         "YAML serialization didn't match."
     );

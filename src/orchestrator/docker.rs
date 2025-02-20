@@ -5,8 +5,8 @@ use crate::{
 };
 use bollard::{
     container::{
-        Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
-        StartContainerOptions, WaitContainerOptions,
+        Config, CreateContainerOptions, ListContainersOptions, LogOutput, LogsOptions,
+        RemoveContainerOptions, StartContainerOptions, WaitContainerOptions,
     },
     image::{CreateImageOptions, ImportImageOptions},
     models::{ContainerStateStatusEnum, HostConfig},
@@ -179,12 +179,51 @@ impl Orchestrator for LocalDockerOrchestrator {
         }
         Ok(run_info)
     }
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "We don't care about the result output here"
+    )]
+    #[expect(
+        clippy::let_underscore_untyped,
+        reason = "We don't care about the result output here"
+    )]
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api
-            .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
+        // Wait for the container to complete or fail (ignoring result of wait)
+        let _ = self
+            .api
+            .wait_container(
+                &pod_run.assigned_name,
+                Some(WaitContainerOptions::<String>::default()),
+            )
             .try_collect::<Vec<_>>()
-            .await?;
+            .await;
+
         let result_info = self.get_info(pod_run).await?;
+
+        // Get logs (For now it is only doing stdout and doesn't deal with stderr)
+        // NOTE: this probably can be improved. Just not sure what is the correct syntax to avoid the two collects
+        let logs = String::from_utf8(
+            self.api
+                .logs::<String>(
+                    &pod_run.assigned_name,
+                    Some(LogsOptions {
+                        stdout: true,
+                        stderr: true,
+                        ..Default::default()
+                    }),
+                )
+                .try_collect::<Vec<_>>()
+                .await?
+                .iter()
+                .flat_map(|log_output| match log_output {
+                    LogOutput::StdOut { message } => message.to_vec(),
+                    LogOutput::StdErr { message } => message.to_vec(),
+                    LogOutput::StdIn { .. } => todo!(),
+                    LogOutput::Console { .. } => todo!(),
+                })
+                .collect::<Vec<u8>>(),
+        )?;
+
         PodResult::new(
             None,
             pod_run.pod_job.clone(),
@@ -196,6 +235,7 @@ impl Orchestrator for LocalDockerOrchestrator {
                     pod_job_hash: pod_run.pod_job.hash.clone(),
                 },
             ))?,
+            logs,
         )
     }
 }

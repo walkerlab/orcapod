@@ -55,7 +55,8 @@ fn basic_test(
     assert_eq!(
         orchestrator.get_info_blocking(pod_run)?.status,
         Status::Completed,
-        "Unexpected state."
+        "Pod error out with {}",
+        pod_result_1.logs
     );
     // assert_eq!(
     //     orchestrator
@@ -95,6 +96,7 @@ fn offline_container_image_basic() -> Result<()> {
     let store = store_fixture(None)?;
     let store_map = store_map_fixture()?;
     let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
+    println!("{stored_pod_job:?}");
     let container_image_relative_location =
         "container_images/style-transfer/image.tar.gz".to_owned();
     let _container_image = container_image_style(
