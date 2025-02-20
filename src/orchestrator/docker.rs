@@ -180,7 +180,6 @@ impl Orchestrator for LocalDockerOrchestrator {
         Ok(run_info)
     }
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api.wait_container(&pod_run.assigned_name, &WaitContainerOptions::default())
         self.api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()
