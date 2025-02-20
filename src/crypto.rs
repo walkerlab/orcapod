@@ -1,7 +1,7 @@
-use sha2::{Digest, Sha256};
+use sha2::{Digest as _, Sha256};
 
 use crate::error::Result;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead as _, BufReader, Read};
 
 /// Size of the output that the crypto function spit out
 pub static HASH_SIZE_IN_BYTES: usize = 32;

@@ -20,8 +20,9 @@
 	},
 	"runArgs": [
 		"--name=${localWorkspaceFolderBasename}_devcontainer",
+		"--gpus=all",
 		"--privileged",
-		"--gpus=all"
+		"--cgroupns=host"
 	],
 	"customizations": {
 		"vscode": {

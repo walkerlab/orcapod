@@ -15,7 +15,7 @@ use bollard::{
 use chrono::DateTime;
 use futures_util::{
     future::join_all,
-    stream::{StreamExt, TryStreamExt},
+    stream::{StreamExt as _, TryStreamExt as _},
 };
 use names::{Generator, Name};
 use regex::Regex;
@@ -163,16 +163,24 @@ impl Orchestrator for LocalDockerOrchestrator {
             ),
             format!("org.orcapod.pod_job.hash={}", pod_run.pod_job.hash),
         ];
-        let (_, run_info) = self
+
+        let mut containers = self
             .list_containers(HashMap::from([("label".to_owned(), labels)]))
-            .await?
+            .await?;
+
+        let (_, run_info) = containers
             .next()
             .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
                 pod_job_hash: pod_run.pod_job.hash.clone(),
             }))?;
+
+        if containers.next().is_none() {
+            return Err(OrcaError::from(Kind::MultipleMatchingPodRunsFound {}));
+        }
         Ok(run_info)
     }
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
+        self.api.wait_container(&pod_run.assigned_name, &WaitContainerOptions::default())
         self.api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()

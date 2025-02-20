@@ -17,7 +17,7 @@ use orcapod::{
         StreamInfo,
     },
     orchestrator::Status,
-    store::{filestore::LocalFileStore, DataStore, ModelID, ModelInfo, ModelStore},
+    store::{filestore::LocalFileStore, DataStore, ModelID, ModelInfo, ModelStore as _},
 };
 use serde::{Deserialize, Serialize};
 use std::{
