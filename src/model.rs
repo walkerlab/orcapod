@@ -2,7 +2,7 @@ use crate::{
     crypto::hash_bytes,
     error::{Kind, OrcaError, Result},
     orchestrator::Status,
-    store::{self, DataStore},
+    store::DataStore,
     util::{get_type_name, hash},
 };
 use heck::ToSnakeCase;

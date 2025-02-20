@@ -11,7 +11,7 @@ use heck::ToSnakeCase;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml;
-use std::fs;
+use std::fs::{self, create_dir_all};
 use std::{
     collections::BTreeMap,
     fs::File,
@@ -194,10 +194,14 @@ impl LocalFileStore {
         &self.directory
     }
     /// Construct a local file store instance in a specific directory.
-    pub fn new(directory: impl AsRef<Path>) -> Self {
-        Self {
+    /// # Errors
+    /// Wil return an error if the directory cannot be created.
+    pub fn new(directory: impl AsRef<Path>) -> Result<Self> {
+        // Create dir if doesn't exists
+        create_dir_all(&directory)?;
+        Ok(Self {
             directory: directory.as_ref().into(),
-        }
+        })
     }
     fn make_data_path(&self) -> PathBuf {
         self.directory.join(Self::DEFAULT_DATA_NAMESPACE)
