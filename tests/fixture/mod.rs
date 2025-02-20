@@ -9,6 +9,7 @@
     reason = "Integration tests won't be included in documentation."
 )]
 
+use names::{Generator, Name};
 use orcapod::{
     error::Result,
     model::{
@@ -21,7 +22,7 @@ use orcapod::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    fs::{self},
+    fs::{self, File},
     ops::Deref,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -142,11 +143,56 @@ pub fn store_map_fixture() -> Result<StoreMap<impl DataStore>> {
     )]))
 }
 
+pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
+    let build_context_location = PathBuf::from("./tests/example_pod/style_transfer");
+
+    if let Some(parent) = binary_location.as_ref().parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let image_name = format!(
+        "{}:0.0.0",
+        Generator::with_naming(Name::Plain)
+            .next()
+            .expect("Name generation overflowed.")
+    );
+    Command::new("docker")
+        .arg("build")
+        .arg(&build_context_location)
+        .arg("-t")
+        .arg(&image_name)
+        .stderr(Stdio::inherit())
+        .output()?;
+    let docker_save = Command::new("docker")
+        .arg("save")
+        .arg(&image_name)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::piped())
+        .spawn()?;
+    Command::new("gzip")
+        .stdin(Stdio::from(
+            docker_save.stdout.expect("No pipe data received."),
+        ))
+        .stderr(Stdio::inherit())
+        .stdout(File::create(&binary_location).expect("Failed to open image tarball location."))
+        .output()?;
+    Command::new("docker")
+        .arg("rmi")
+        .arg(&image_name)
+        .stderr(Stdio::inherit())
+        .output()?;
+
+    Ok(TestContainerImage {
+        image_name,
+        build_context_location,
+        binary_location: binary_location.as_ref().to_path_buf(),
+    })
+}
+
 pub fn store_fixture(store_directory: Option<&str>) -> Result<TestStore> {
     let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
     Ok(TestStore {
         store: store_directory
-            .map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new),
+            .map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new)?,
     })
 }
 // --- helper functions ---

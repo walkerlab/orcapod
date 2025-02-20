@@ -3,14 +3,14 @@
 
 pub mod fixture;
 use fixture::{
-    add_storage, container_image_style, pod_job_style, store_test, FakeStore, TestStore,
+    add_storage, container_image_style, pod_job_style, store_fixture, store_map_fixture, TestStore,
     TestStoredModel,
 };
 use orcapod::{
     error::Result,
-    model::{BlobInterface, PodJob},
+    model::{PodJob, StoreMap},
     orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator, PodRun, Status},
-    store::{filestore::LocalFileStore, Store},
+    store::{filestore::LocalFileStore, DataStore, ModelStore},
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -19,10 +19,10 @@ use std::{
 
 fn setup<'store>(
     store: &'store TestStore,
-    blob_interface: &impl BlobInterface,
+    store_map: &StoreMap<impl DataStore>,
 ) -> Result<(TestStoredModel<'store, PodJob>, LocalDockerOrchestrator)> {
     Ok((
-        add_storage(pod_job_style(blob_interface)?, store)?,
+        add_storage(pod_job_style(store_map)?, store)?,
         LocalDockerOrchestrator::new(
             store
                 .get_directory()
@@ -92,8 +92,9 @@ fn basic_test(
 
 #[test]
 fn offline_container_image_basic() -> Result<()> {
-    let store = store_test(None, true)?;
-    let (mut stored_pod_job, orchestrator) = setup(&store, &store.store)?;
+    let store = store_fixture(None)?;
+    let store_map = store_map_fixture()?;
+    let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
     let container_image_relative_location =
         "container_images/style-transfer/image.tar.gz".to_owned();
     let _container_image = container_image_style(
@@ -116,8 +117,9 @@ fn offline_container_image_basic() -> Result<()> {
 
 #[test]
 fn remote_container_image_basic() -> Result<()> {
-    let store = store_test(None, false)?;
-    let (mut stored_pod_job, orchestrator) = setup(&store, &FakeStore)?;
+    let store = store_fixture(None)?;
+    let store_map = store_map_fixture()?;
+    let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
 
     stored_pod_job.model.pod.image = "alpine:3.14".to_owned();
     stored_pod_job.model.pod.command = "sleep 5".to_owned();

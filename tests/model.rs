@@ -50,7 +50,7 @@ fn hash_pod_job() -> Result<()> {
     let store_map = store_map_fixture()?;
     let pod_job = pod_job_style(&store_map)?;
     assert_eq!(
-        pod_job.hash, "6ea724495cf4cd4e507a8ac3e062f6f52bd14847b3246b88c2e3d778b7a40d22",
+        pod_job.hash, "bc7de776c396e788d2db19af222437fd08f73e95cc981ce1791e0d64480dcf74",
         "Hash didn't match."
     );
     Ok(())

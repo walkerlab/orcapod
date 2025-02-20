@@ -3,7 +3,8 @@
 
 pub mod fixture;
 use fixture::{
-    add_storage, pod_job_style, pod_result_style, pod_style, store_fixture, TestSetup, TestStore,
+    add_storage, pod_job_style, pod_result_style, pod_style, store_fixture, store_map_fixture,
+    TestSetup, TestStore,
 };
 use orcapod::{
     error::Result,
@@ -58,15 +59,16 @@ where
 
 #[test]
 fn pod_basic() -> Result<()> {
-    let (loaded_model, stored_model) = basic_test(pod_style()?, &store_fixture(None, false)?)?;
+    let (loaded_model, stored_model) = basic_test(pod_style()?, &store_fixture(None)?)?;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
 }
 
 #[test]
 fn pod_job_basic() -> Result<()> {
+    let store_map = store_map_fixture()?;
     let (loaded_model, mut stored_model) =
-        basic_test(pod_job_style()?, &store_fixture(None, true)?)?;
+        basic_test(pod_job_style(&store_map)?, &store_fixture(None)?)?;
     stored_model.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
@@ -74,8 +76,9 @@ fn pod_job_basic() -> Result<()> {
 
 #[test]
 fn pod_result_basic() -> Result<()> {
-    let store = store_test(None, true)?;
-    let (loaded_model, mut stored_model) = basic_test(pod_result_style(&store.store)?, &store)?;
+    let store_map = store_map_fixture()?;
+    let (loaded_model, mut stored_model) =
+        basic_test(pod_result_style(&store_map)?, &store_fixture(None)?)?;
     stored_model.pod_job.annotation = None;
     stored_model.pod_job.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
@@ -87,7 +90,7 @@ fn pod_files() -> Result<()> {
     let store_directory = String::from(tempdir()?.path().to_string_lossy());
     {
         let pod_style = pod_style()?;
-        let store = store_fixture(Some(&store_directory), false)?;
+        let store = store_fixture(Some(&store_directory))?;
         let annotation = pod_style
             .annotation
             .as_ref()
@@ -122,14 +125,14 @@ fn pod_files() -> Result<()> {
 
 #[test]
 fn pod_list_empty() -> Result<()> {
-    let store = store_fixture(None, false)?;
+    let store = store_fixture(None)?;
     assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
 
 #[test]
 fn pod_load_from_hash() -> Result<()> {
-    let store = store_fixture(None, false)?;
+    let store = store_fixture(None)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     stored_model.model.annotation = None;
     let loaded_pod = stored_model
@@ -144,7 +147,7 @@ fn pod_load_from_hash() -> Result<()> {
 
 #[test]
 fn pod_annotation_delete() -> Result<()> {
-    let store = store_fixture(None, false)?;
+    let store = store_fixture(None)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     let model_version = &stored_model
         .model

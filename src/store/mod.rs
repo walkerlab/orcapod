@@ -1,6 +1,6 @@
-use std::{collections::BTreeMap, path::Path};
+use std::path::Path;
 
-use serde::{de::DeserializeOwned, Serialize, Serializer};
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     error::Result,
@@ -134,6 +134,7 @@ pub trait ModelStore {
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 }
 
+/// Trait to define required functions for any data store
 pub trait DataStore: Serialize + DeserializeOwned {
     /// How to evaluate a checksum of a BLOB.
     ///
