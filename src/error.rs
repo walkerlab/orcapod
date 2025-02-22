@@ -1,5 +1,5 @@
 use bollard::errors::Error as BollardError;
-use colored::Colorize;
+use colored::Colorize as _;
 use glob;
 use regex;
 use serde_json;

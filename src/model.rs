@@ -3,7 +3,7 @@ use crate::{
     orchestrator::Status,
     util::{get_type_name, hash},
 };
-use heck::ToSnakeCase;
+use heck::ToSnakeCase as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml;
 use std::{

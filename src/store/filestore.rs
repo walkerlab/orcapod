@@ -4,9 +4,9 @@ use crate::{
     store::{ModelID, ModelInfo, Store},
     util::{get_type_name, hash},
 };
-use colored::Colorize;
+use colored::Colorize as _;
 use glob::glob;
-use heck::ToSnakeCase;
+use heck::ToSnakeCase as _;
 use regex::Regex;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_yaml;

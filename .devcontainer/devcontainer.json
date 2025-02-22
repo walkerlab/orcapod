@@ -33,7 +33,9 @@
 				"ms-vscode.hexeditor", // Binary preview in HEX
 				"tamasfe.even-better-toml", // *.toml language support
 				"eamodio.gitlens", // Git explorer in VSCode
-				"streetsidesoftware.code-spell-checker" // Catch spelling errors in docs
+				"streetsidesoftware.code-spell-checker", // Catch spelling errors in docs
+				"GitHub.copilot-chat", // GitHub Copilot AI assistant
+				"tintinweb.graphviz-interactive-preview" // Graphviz DOT preview
 			]
 		}
 	}
