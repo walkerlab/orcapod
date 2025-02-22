@@ -3,7 +3,7 @@ on:
   - push
 jobs:
   diagram:
-    if: github.actor == 'walkerlab'
+    if: github.repository_owner == 'walkerlab'
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
@@ -27,7 +27,7 @@ jobs:
           git commit -m "Update crate diagram." || echo "Diagram unchanged, skipping commit."
           git push
   api:
-    if: github.actor == 'walkerlab' && github.ref == 'refs/heads/dev' 
+    if: github.repository_owner == 'walkerlab' && github.ref == 'refs/heads/dev' 
     runs-on: ubuntu-latest
     permissions:
       pages: write
