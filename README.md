@@ -1,3 +1,6 @@
+[![orcapod API docs](https://img.shields.io/website?url=https://walkerlab.github.io/orcapod/&label=docs)
+](https://walkerlab.github.io/orcapod/)
+
 # orcapod
 
 ![orcapod crate diagram](docs/crate_diagram.svg "Orcapod Crate Diagram")
