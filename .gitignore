@@ -5,3 +5,4 @@ target
 lcov.info
 *.tar.gz
 test_store
+*.dot
