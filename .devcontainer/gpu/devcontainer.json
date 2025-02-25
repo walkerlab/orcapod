@@ -22,8 +22,8 @@
 		"--name=${localWorkspaceFolderBasename}_devcontainer",
 		"--cpus=2",
 		"--memory=8gb",
-		"--privileged",
 		"--gpus=all",
+		"--privileged",
 		"--cgroupns=host"
 	],
 	"customizations": {

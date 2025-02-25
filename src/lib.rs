@@ -1,6 +1,7 @@
 //! Intuitive compute pipeline orchestration with reproducibility, performance, and scalability in
 //! mind.
 
+mod crypto;
 /// Error handling based on enumeration.
 pub mod error;
 /// Components of the data model.
