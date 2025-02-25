@@ -1,5 +1,9 @@
-#![expect(clippy::expect_used, reason = "Expect OK in tests.")]
-#![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
+#![expect(
+    clippy::expect_used,
+    missing_docs,
+    clippy::panic_in_result_fn,
+    reason = "OK in tests."
+)]
 
 pub mod fixture;
 use fixture::{

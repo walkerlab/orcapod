@@ -1,4 +1,4 @@
-#![expect(clippy::panic_in_result_fn, reason = "Panics OK in tests.")]
+#![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 pub mod fixture;
 use fixture::{pod_job_style, pod_result_style, pod_style, store_map_fixture};

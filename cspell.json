@@ -12,7 +12,8 @@
         "millicore",
         "millicores",
         "nanocore",
-        "numpy"
+        "numpy",
+        "graphviz"
     ],
     "ignoreWords": [
         "relpath",
@@ -56,6 +57,8 @@
         "imread",
         "imencode",
         "tobytes",
-        "bitflags"
+        "bitflags",
+        "peaceiris",
+        "tintinweb"
     ]
 }

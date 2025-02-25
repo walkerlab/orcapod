@@ -216,8 +216,9 @@ impl Orchestrator for LocalDockerOrchestrator {
                 .await?
                 .iter()
                 .flat_map(|log_output| match log_output {
-                    LogOutput::StdOut { message } => message.to_vec(),
-                    LogOutput::StdErr { message } => message.to_vec(),
+                    LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
+                        message.to_vec()
+                    }
                     LogOutput::StdIn { .. } => todo!(),
                     LogOutput::Console { .. } => todo!(),
                 })
