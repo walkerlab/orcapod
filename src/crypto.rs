@@ -37,10 +37,8 @@ pub fn hash_buf_reader<R: Read>(mut reader: BufReader<R>) -> Result<String> {
 
 /// Function to hash data that is already in memory. This is much cleaner and less overhead compare
 /// to mapping data in memory into a ``BufReader``
-pub fn hash_bytes(data: impl AsRef<[u8]>) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    format!("{:x}", hasher.finalize())
+pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> String {
+    format!("{:x}", Sha256::digest(bytes.as_ref()))
 }
 
 /// Compute the checksum of the content of a folder or file

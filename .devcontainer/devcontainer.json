@@ -1,5 +1,5 @@
 {
-	"name": "Development (GPU)",
+	"name": "Development",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
