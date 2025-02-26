@@ -34,6 +34,6 @@ pub fn hash_buf_reader<R: Read>(mut reader: BufReader<R>) -> Result<String> {
 #[expect(dead_code, reason = "temporary for next pull request")]
 /// Function to hash data that is already in memory. This is much cleaner and less overhead compare
 /// to mapping data in memory into a ``BufReader``
-pub fn hash_bytes(data: impl AsRef<[u8]>) -> String {
-    format!("{:x}", Sha256::digest(data.as_ref()))
+pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> String {
+    format!("{:x}", Sha256::digest(bytes.as_ref()))
 }
