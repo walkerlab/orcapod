@@ -23,18 +23,24 @@ pub(crate) enum Kind {
     EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
     FileExists { path: PathBuf },
+    #[error(transparent)]
+    FromUtf8Error(#[from] FromUtf8Error),
     #[error("Out of generated random names.")]
     GeneratedNamesOverflow,
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
-    #[error(transparent)]
-    FromUtf8Error(#[from] FromUtf8Error),
+    #[error("Input file or folder at path {path} not found")]
+    InputFileOrFolderNotFound { path: PathBuf },
     #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
     InvalidPodResultTerminatedDatetime { pod_job_hash: String },
     #[error(transparent)]
     IoError(#[from] io::Error),
+    #[error("Unable to find {} in pod_job's input_store_mapping", stream_name.bright_cyan())]
+    MissingStreamInPodJob { stream_name: String },
     #[error("Multiple hash found for annotation: (name: {}, ver: {})", name.bright_cyan(), ver.bright_cyan())]
     MultipleHashFound { name: String, ver: String },
+    #[error("Multiple matching pod runs")]
+    MultipleMatchingPodRunsFound,
     #[error("No annotation found for `{name}:{version}` {class}.")]
     NoAnnotationFound {
         class: String,
@@ -44,13 +50,9 @@ pub(crate) enum Kind {
     #[error("No known container names.")]
     NoContainerNames,
     #[error("No default store found in store_map! Please set one datastore with the name default")]
-    NoDefaultStore,
-    #[error("No corresponding pod run found for pod job (hash: {pod_job_hash}).")]
     NoMatchingPodRun { pod_job_hash: String },
     #[error("No tags found in provided container alternate image: {path}.")]
     NoTagFoundInContainerAltImage { path: PathBuf },
-    #[error("Multiple matching pod runs")]
-    MultipleMatchingPodRunsFound,
     #[error("Path: {} does not exists", path.to_string_lossy().bright_cyan())]
     PathDoesNotExist { path: PathBuf },
     #[error(transparent)]
@@ -60,7 +62,9 @@ pub(crate) enum Kind {
     #[error(transparent)]
     SerdeYamlError(#[from] serde_yaml::Error),
     #[error("Store name {} not found", store_name.bright_cyan())]
-    StoreNotFound { store_name: String },
+    StoreNameNotFound { store_name: String },
+    #[error("fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
+    FailedToExtractFileName { path: PathBuf },
     #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
     UnsupportedPath { path: PathBuf },
 }

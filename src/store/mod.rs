@@ -1,7 +1,3 @@
-use std::path::Path;
-
-use serde::{de::DeserializeOwned, Serialize};
-
 use crate::{
     error::Result,
     model::{Pod, PodJob, PodResult},
@@ -102,7 +98,7 @@ pub trait ModelStore {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue storing `pod_result`.
-    fn save_pod_result(&self, pod_result: &mut PodResult) -> Result<()>;
+    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()>;
     /// How to load a stored pod result into a model instance.
     ///
     /// # Errors
@@ -134,14 +130,5 @@ pub trait ModelStore {
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 }
 
-/// Trait to define required functions for any data store
-pub trait DataStore: Serialize + DeserializeOwned {
-    /// How to evaluate a checksum of a BLOB.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue computing the checksum of a BLOB.
-    fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String>;
-}
 /// Store implementation on a local filesystem.
 pub mod filestore;

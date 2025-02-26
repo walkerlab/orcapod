@@ -1,5 +1,4 @@
 use crate::{
-    crypto::{hash_buf_reader, hash_bytes},
     error::{Kind, OrcaError, Result},
     model::{to_yaml, Annotation, Pod, PodJob, PodResult},
     store::{ModelID, ModelInfo},
@@ -13,15 +12,11 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_yaml;
 use std::fs::{self, create_dir_all};
 use std::{
-    collections::BTreeMap,
-    fs::File,
-    io::BufReader,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
 
-use super::{DataStore, ModelStore};
-static BUFFER_READER_CAP: usize = 2 << 13; // 8KB chunks to match with page size typically found
+use super::ModelStore;
 
 /// Relative path where model specification is stored within the model directory.
 pub const SPEC_RELPATH: &str = "spec.yaml";
@@ -90,7 +85,7 @@ impl ModelStore for LocalFileStore {
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodJob>(model_id)
     }
-    fn save_pod_result(&self, pod_result: &mut PodResult) -> Result<()> {
+    fn save_pod_result(&self, pod_result: &PodResult) -> Result<()> {
         self.save_pod_job(&pod_result.pod_job)?;
         self.save_model(pod_result, &pod_result.hash, pod_result.annotation.as_ref())
     }
@@ -117,45 +112,6 @@ impl ModelStore for LocalFileStore {
     }
 }
 
-impl DataStore for LocalFileStore {
-    fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String> {
-        let full_path = self.make_data_path().join(path.as_ref());
-
-        if !full_path.exists() {
-            return Err(OrcaError::from(Kind::PathDoesNotExist { path: full_path }));
-        }
-
-        if full_path.is_file() {
-            // Read and hash in chunks
-            let buf_reader = BufReader::with_capacity(BUFFER_READER_CAP, File::open(full_path)?);
-
-            // Use the buf_reader hashing
-            hash_buf_reader(buf_reader)
-        } else if full_path.is_dir() {
-            // Path is a directory, thus we will need to recursively hash and sort
-            let hashes = path
-                .as_ref()
-                .read_dir()?
-                .map(|dir_entry| Ok((self.compute_checksum(&dir_entry?.path())?, ())))
-                .collect::<Result<BTreeMap<String, ()>>>()?;
-
-            // Combine all the hashes by alpha numeric order
-            let mut hashes_buffer = String::new();
-            for hash in hashes.keys() {
-                hashes_buffer.push_str(hash);
-            }
-
-            // Hash the buffer
-            Ok(hash_bytes(hashes_buffer))
-        } else {
-            // Unknown type of path or unsupported, thus panic for now
-            Err(OrcaError::from(Kind::UnsupportedPath {
-                path: path.as_ref().to_path_buf(),
-            }))
-        }
-    }
-}
-
 impl LocalFileStore {
     /// Relative path where model specification is stored within the model directory.
     pub const SPEC_RELPATH: &str = "spec.yaml";
@@ -174,7 +130,6 @@ impl LocalFileStore {
         ))
         .join(relpath)
     }
-
     fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
         let paths = glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
             let filepath_string = String::from(filepath.ok()?.to_string_lossy());
@@ -202,9 +157,6 @@ impl LocalFileStore {
         Ok(Self {
             directory: directory.as_ref().into(),
         })
-    }
-    fn make_data_path(&self) -> PathBuf {
-        self.directory.join(Self::DEFAULT_DATA_NAMESPACE)
     }
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
         let model_infos: Vec<_> = Self::find_model_metadata(

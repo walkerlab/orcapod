@@ -1,6 +1,6 @@
 use crate::{
     error::Result,
-    model::{PodJob, PodResult},
+    model::{PodJob, PodResult, StoreMap},
     util::get_type_name,
 };
 use serde::{Deserialize, Serialize};
@@ -76,13 +76,18 @@ pub trait Orchestrator {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start_with_altimage_blocking(&self, pod_job: &PodJob, image: &ImageKind) -> Result<PodRun>;
+    fn start_with_altimage_blocking(
+        &self,
+        pod_job: &PodJob,
+        image: &ImageKind,
+        store_map: &StoreMap,
+    ) -> Result<PodRun>;
     /// How to synchronously start containers. Assumes `PodJob` image is published.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start_blocking(&self, pod_job: &PodJob) -> Result<PodRun>;
+    fn start_blocking(&self, pod_job: &PodJob, store_map: &StoreMap) -> Result<PodRun>;
     /// How to synchronously query containers.
     ///
     /// # Errors
@@ -116,13 +121,18 @@ pub trait Orchestrator {
         &self,
         pod_job: &PodJob,
         image: &ImageKind,
+        store_map: &StoreMap,
     ) -> impl Future<Output = Result<PodRun>> + Send;
     /// How to asynchronously start containers. Assumes `PodJob` image is published.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start(&self, pod_job: &PodJob) -> impl Future<Output = Result<PodRun>> + Send;
+    fn start(
+        &self,
+        pod_job: &PodJob,
+        store_map: &StoreMap,
+    ) -> impl Future<Output = Result<PodRun>> + Send;
     /// How to asynchronously query containers.
     ///
     /// # Errors

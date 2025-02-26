@@ -1,8 +1,7 @@
 use crate::{
-    crypto::hash_bytes,
+    crypto::{compute_checksum_for_path, hash_bytes},
     error::{Kind, OrcaError, Result},
     orchestrator::Status,
-    store::DataStore,
     util::{get_type_name, hash},
 };
 use heck::ToSnakeCase as _;
@@ -13,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
     result,
 };
+
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -29,7 +29,6 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
 }
 
 // --- core model structs ---
-
 /// A reusable, containerized computational unit.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
 pub struct Pod {
@@ -258,7 +257,6 @@ impl PodResult {
 }
 
 // --- util types ---
-
 /// Standard metadata structure for all model instances.
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
@@ -269,6 +267,7 @@ pub struct Annotation {
     /// A long form description.
     pub description: String,
 }
+
 /// Specification for GPU requirements in computation.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
@@ -279,6 +278,7 @@ pub struct GPURequirement {
     /// Number of GPU cards required.
     pub count: u16,
 }
+
 /// GPU model specification.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
@@ -287,6 +287,7 @@ pub enum GPUModel {
     /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
+
 /// Streams are named and represent an abstraction for the file(s) that represent some particular
 /// data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -296,6 +297,7 @@ pub struct StreamInfo {
     /// Naming pattern for the stream.
     pub match_pattern: String,
 }
+
 /// Input options sourced from user data target.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
@@ -312,9 +314,9 @@ pub struct Blob<T> {
     /// BLOB available options.
     pub kind: T,
     /// BLOB location.
-    pub location: PathBuf,
+    pub rel_path: PathBuf,
     /// Name of store
-    pub store_name: Option<String>,
+    pub store_name: String,
     /// BLOB contents checksum.
     pub checksum: String,
 }
@@ -325,20 +327,37 @@ impl Blob<FileOrFolder> {
     /// Will error out if unable to compute checksum on blob contents
     pub fn new(
         kind: FileOrFolder,
-        location: impl AsRef<Path>,
-        store_name: Option<String>,
-        store_map: &StoreMap<impl DataStore>,
+        rel_path: impl AsRef<Path>,
+        store_name: String,
+        store_map: &StoreMap,
     ) -> Result<Self> {
-        let checksum = store_map
-            .get_data_store(store_name.as_deref())?
-            .compute_checksum(&location)?;
+        let blob = Self {
+            kind,
+            rel_path: rel_path.as_ref().to_path_buf(),
+            store_name,
+            checksum: String::new(),
+        };
 
         Ok(Self {
-            kind,
-            location: location.as_ref().to_path_buf(),
-            store_name,
-            checksum,
+            checksum: compute_checksum_for_path(&blob.resolve_absolute_path(store_map)?)?,
+            ..blob
         })
+    }
+
+    /// Utility function where given a `store_map`, it will return the absolute path to the blob
+    ///
+    /// # Errors
+    /// Will failed if a given `store_name` was not found in the mapping
+    pub fn resolve_absolute_path(&self, store_map: &StoreMap) -> Result<PathBuf> {
+        Ok(store_map
+            .mapping
+            .get(&self.store_name)
+            .ok_or_else(|| {
+                OrcaError::from(Kind::StoreNameNotFound {
+                    store_name: self.store_name.clone(),
+                })
+            })?
+            .join(&self.rel_path))
     }
 }
 
@@ -350,6 +369,7 @@ pub enum FileOrFolder {
     /// A single folder specified by its absolute path.
     Folder,
 }
+
 /// Folder-only option for BLOBs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum FolderOnly {
@@ -369,31 +389,7 @@ pub enum RetryPolicy {
 }
 
 /// Same as blob interface, but renamed due to possible additional of features for store pointer.
-pub struct StoreMap<T: DataStore> {
+pub struct StoreMap {
     /// Map `store_name` to a Store
-    mapping: BTreeMap<String, T>,
-}
-
-impl<T: DataStore> StoreMap<T> {
-    /// Function to create new `StoreMap` that expects at least on of the mapping to be set as default
-    ///
-    /// # Errors
-    /// Will fail if the mapping does not contain a default `DataStore`
-    pub fn new(mapping: BTreeMap<String, T>) -> Result<Self> {
-        // Check if one the of store_name is named default
-        if !mapping.contains_key("default") {
-            return Err(OrcaError::from(Kind::NoDefaultStore));
-        }
-        Ok(Self { mapping })
-    }
-
-    fn get_data_store(&self, store_name: Option<&str>) -> Result<&T> {
-        let key = store_name.unwrap_or("default");
-
-        self.mapping.get(key).ok_or_else(|| {
-            OrcaError::from(Kind::StoreNotFound {
-                store_name: key.to_owned(),
-            })
-        })
-    }
+    mapping: BTreeMap<String, PathBuf>,
 }
