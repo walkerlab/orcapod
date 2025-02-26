@@ -8,12 +8,10 @@ use std::{
     path::Path,
 };
 
-#[expect(dead_code, reason = "temporary for next pull request")]
 /// Size of the output that the crypto function spit out
 pub static HASH_SIZE_IN_BYTES: usize = 32;
 static BUFFER_READER_CAP: usize = 2 << 13; // 8KB chunks to match with page size typically found
 
-#[expect(dead_code, reason = "temporary for next pull request")]
 /// Function to hash data from a ``BufReader``
 ///
 /// # Errors
@@ -37,14 +35,12 @@ pub fn hash_buf_reader<R: Read>(mut reader: BufReader<R>) -> Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-#[expect(dead_code, reason = "temporary for next pull request")]
 /// Function to hash data that is already in memory. This is much cleaner and less overhead compare
 /// to mapping data in memory into a ``BufReader``
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(bytes.as_ref()))
 }
 
-#[expect(dead_code, reason = "temporary for next pull request")]
 /// Compute the checksum of the content of a folder or file
 ///
 /// # Errors
