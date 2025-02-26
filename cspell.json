@@ -13,7 +13,8 @@
         "millicores",
         "nanocore",
         "numpy",
-        "graphviz"
+        "graphviz",
+        "unref"
     ],
     "ignoreWords": [
         "relpath",

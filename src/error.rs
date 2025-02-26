@@ -16,8 +16,20 @@ pub type Result<T> = result::Result<T, OrcaError>;
 /// Possible errors you may encounter.
 #[derive(Error, Debug)]
 pub(crate) enum Kind {
+    #[error(transparent)]
+    BollardError(#[from] BollardError),
+    #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
+    EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
     FileExists { path: PathBuf },
+    #[error("Out of generated random names.")]
+    GeneratedNamesOverflow,
+    #[error(transparent)]
+    GlobPatternError(#[from] glob::PatternError),
+    #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
+    InvalidPodResultTerminatedDatetime { pod_job_hash: String },
+    #[error(transparent)]
+    IoError(#[from] io::Error),
     #[error("No annotation found for `{name}:{version}` {class}.")]
     NoAnnotationFound {
         class: String,
@@ -26,28 +38,20 @@ pub(crate) enum Kind {
     },
     #[error("No known container names.")]
     NoContainerNames,
-    #[error("Out of generated random names.")]
-    GeneratedNamesOverflow,
     #[error("No corresponding pod run found for pod job (hash: {pod_job_hash}).")]
     NoMatchingPodRun { pod_job_hash: String },
-    #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
-    InvalidPodResultTerminatedDatetime { pod_job_hash: String },
-    #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
-    EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("No tags found in provided container alternate image: {path}.")]
     NoTagFoundInContainerAltImage { path: PathBuf },
-    #[error(transparent)]
-    GlobPatternError(#[from] glob::PatternError),
+    #[error("Path: {} does not exists", path.to_string_lossy().bright_cyan())]
+    PathDoesNotExist { path: PathBuf },
     #[error(transparent)]
     RegexError(#[from] regex::Error),
     #[error(transparent)]
-    SerdeYamlError(#[from] serde_yaml::Error),
-    #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
-    IoError(#[from] io::Error),
-    #[error(transparent)]
-    BollardError(#[from] BollardError),
+    SerdeYamlError(#[from] serde_yaml::Error),
+    #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
+    UnsupportedPath { path: PathBuf },
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
