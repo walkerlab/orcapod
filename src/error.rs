@@ -49,7 +49,7 @@ pub(crate) enum Kind {
     },
     #[error("No known container names.")]
     NoContainerNames,
-    #[error("No default store found in store_map! Please set one datastore with the name default")]
+    #[error("No corresponding pod run found for pod job (hash: {pod_job_hash}).")]
     NoMatchingPodRun { pod_job_hash: String },
     #[error("No tags found in provided container alternate image: {path}.")]
     NoTagFoundInContainerAltImage { path: PathBuf },
