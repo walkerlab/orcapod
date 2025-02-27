@@ -1,38 +1,31 @@
 use sha2::{Digest as _, Sha256};
 
 use crate::error::{Kind, OrcaError, Result};
-use std::{
-    collections::BTreeSet,
-    fs::File,
-    io::{BufRead as _, BufReader, Read},
-    path::Path,
-};
+use std::{collections::BTreeSet, fs::File, io::Read, path::Path};
 
 /// Size of the output that the crypto function spit out
 pub static HASH_SIZE_IN_BYTES: usize = 32;
-static BUFFER_READER_CAP: usize = 2 << 13; // 8KB chunks to match with page size typically found
+static BUFFER_READER_CAP: usize = 1 << 13; // 8KB chunks to match with page size typically found
 
-/// Function to hash data from a ``BufReader``
+/// Function to hash data from a `stream`
 ///
 /// # Errors
 /// Will error out if failed to fill buffer for some reason
-pub fn hash_buf_reader<R: Read>(mut reader: BufReader<R>) -> Result<String> {
-    let mut hasher = Sha256::new();
+pub fn hash_stream(stream: &mut impl Read) -> Result<String> {
+    let mut hash = Sha256::new();
+
+    let mut buffer: [u8; BUFFER_READER_CAP] = [0; BUFFER_READER_CAP];
 
     loop {
-        let buffer_len = {
-            let buffer = reader.fill_buf()?;
-            hasher.update(buffer);
-            buffer.len()
-        };
-
-        if buffer_len == 0 {
+        let num_bytes = stream.read(&mut buffer)?;
+        if num_bytes > 0 {
+            hash.update(&buffer[..num_bytes]);
+        } else {
             break;
         }
-        reader.consume(buffer_len);
     }
 
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(format!("{:x}", hash.finalize()))
 }
 
 /// Function to hash data that is already in memory. This is much cleaner and less overhead compare
@@ -55,10 +48,7 @@ pub fn compute_checksum_for_path(path: &dyn AsRef<Path>) -> Result<String> {
 
     if unref_path.is_file() {
         // Read and hash in chunks
-        let buf_reader = BufReader::with_capacity(BUFFER_READER_CAP, File::open(unref_path)?);
-
-        // Use the buf_reader hashing
-        hash_buf_reader(buf_reader)
+        hash_stream(&mut File::open(unref_path)?)
     } else if unref_path.is_dir() {
         // Path is a directory, thus we will need to recursively hash and sort
         let hashes = unref_path
