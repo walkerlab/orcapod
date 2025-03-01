@@ -1,6 +1,6 @@
-use sha2::{Digest as _, Sha256};
-
 use crate::error::Result;
+use serde_yaml;
+use sha2::{Digest as _, Sha256};
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
 
 /// Evaluate checksum hash of streamed data i.e. chunked buffers.
