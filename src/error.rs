@@ -6,7 +6,7 @@ use serde_json;
 use serde_yaml;
 use std::{
     fmt::{self, Display, Formatter},
-    io,
+    io, path,
     path::PathBuf,
     result,
 };
@@ -48,6 +48,8 @@ pub(crate) enum Kind {
     IoError(#[from] io::Error),
     #[error(transparent)]
     BollardError(#[from] BollardError),
+    #[error(transparent)]
+    PathPrefixError(#[from] path::StripPrefixError),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -108,6 +110,13 @@ impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError(error),
+        }
+    }
+}
+impl From<path::StripPrefixError> for OrcaError {
+    fn from(error: path::StripPrefixError) -> Self {
+        Self {
+            kind: Kind::PathPrefixError(error),
         }
     }
 }

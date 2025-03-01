@@ -22,8 +22,9 @@
 		"--name=${localWorkspaceFolderBasename}_devcontainer",
 		"--cpus=2",
 		"--memory=8gb",
+		"--gpus=all",
 		"--privileged",
-		"--gpus=all"
+		"--cgroupns=host"
 	],
 	"customizations": {
 		"vscode": {
