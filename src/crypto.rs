@@ -3,15 +3,16 @@ use sha2::{Digest as _, Sha256};
 use crate::error::Result;
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
 
-/// Function to hash data from a `stream`
+/// Evaluate checksum hash of streamed data i.e. chunked buffers.
 ///
 /// # Errors
-/// Will error out if failed to fill buffer for some reason
+///
+/// Will return error if unable to read from stream.
 pub fn hash_stream(stream: &mut impl Read) -> Result<String> {
     const BUFFER_SIZE: usize = 8 << 10; // 8KB chunks to match with page size typically found
     let mut hash = Sha256::new();
 
-    let mut buffer: [u8; BUFFER_SIZE] = [0; BUFFER_SIZE];
+    let mut buffer = [0; BUFFER_SIZE];
 
     while {
         let read_size = stream.read(&mut buffer)?;
@@ -22,8 +23,7 @@ pub fn hash_stream(stream: &mut impl Read) -> Result<String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 
-/// Function to hash data that is already in memory. This is much cleaner and less overhead compare
-/// to mapping data in memory into a ``BufReader``
+/// Evaluate checksum hash of raw data in memory.
 pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(buffer.as_ref()))
 }
