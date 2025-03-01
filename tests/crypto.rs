@@ -1,24 +1,29 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
-use orcapod::{crypto::compute_checksum_for_path, error::Result};
-use std::path::PathBuf;
+use orcapod::{
+    crypto::{hash_buffer, hash_dir, hash_file},
+    error::Result,
+};
+use std::fs::read;
 
 #[test]
-fn compute_checksum_file() -> Result<()> {
+fn consistent_hash() -> Result<()> {
+    let filepath = "./tests/data/images/dog.jpeg";
     assert_eq!(
-        compute_checksum_for_path(&PathBuf::from("./tests/data/images/dog.jpeg"))?,
-        "8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd",
-        "checksum didn't match"
+        hash_file(filepath)?,
+        hash_buffer(&read(filepath)?),
+        "Checksum not consistent."
     );
     Ok(())
 }
 
 #[test]
-fn compute_checksum_folder() -> Result<()> {
+fn complex_hash() -> Result<()> {
+    let dirpath = "./tests/data/images";
     assert_eq!(
-        compute_checksum_for_path(&PathBuf::from("./tests/data/images"))?,
-        "5a924c9d848e55371d68435058ed6d95bd58ae2e6ca86c0267563dbd57e8f2c6",
-        "checksum didn't match"
+        hash_dir(dirpath)?,
+        "e53ed7c8d7ddd4337ccc65f2691eeb1a7a21d52f66de293751dd78c33c31d4f6".to_owned(),
+        "Directory checksum didn't match."
     );
     Ok(())
 }
