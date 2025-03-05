@@ -3,7 +3,7 @@ on:
   - push
 jobs:
   diagram:
-    if: github.repository_owner == 'walkerlab'
+    if: github.repository_owner == 'walkerlab' && github.event.pusher.name != 'walkerlab-repo-writer[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies
@@ -11,7 +11,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install graphviz -y
           cargo install cargo-modules
+      - uses: actions/create-github-app-token@v1
+        id: generate_app_token
+        with:
+          app-id: ${{ secrets.WALKERLAB_REPO_WRITER_APP_ID }}
+          private-key: ${{ secrets.WALKERLAB_REPO_WRITER_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate_app_token.outputs.token }}
       - name: Generate crate diagram
         run: |
           mkdir -p docs
@@ -27,7 +34,7 @@ jobs:
           git commit -m "Update crate diagram." || echo "Diagram unchanged, skipping commit."
           git push
   api:
-    if: github.repository_owner == 'walkerlab' && github.ref == 'refs/heads/dev' 
+    if: github.repository_owner == 'walkerlab' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     permissions:
       pages: write

@@ -6,7 +6,7 @@ use serde_json;
 use serde_yaml;
 use std::{
     fmt::{self, Display, Formatter},
-    io,
+    io, path,
     path::PathBuf,
     result,
     string::FromUtf8Error,
@@ -17,30 +17,16 @@ pub type Result<T> = result::Result<T, OrcaError>;
 /// Possible errors you may encounter.
 #[derive(Error, Debug)]
 pub(crate) enum Kind {
-    #[error(transparent)]
-    BollardError(#[from] BollardError),
     #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
     EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
+    #[error("fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
+    FailedToExtractFileName { path: PathBuf },
     #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
     FileExists { path: PathBuf },
-    #[error(transparent)]
-    FromUtf8Error(#[from] FromUtf8Error),
     #[error("Out of generated random names.")]
     GeneratedNamesOverflow,
-    #[error(transparent)]
-    GlobPatternError(#[from] glob::PatternError),
-    #[error("Input file or folder at path {path} not found")]
-    InputFileOrFolderNotFound { path: PathBuf },
     #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
     InvalidPodResultTerminatedDatetime { pod_job_hash: String },
-    #[error(transparent)]
-    IoError(#[from] io::Error),
-    #[error("Unable to find {} in pod_job's input_store_mapping", stream_name.bright_cyan())]
-    MissingStreamInPodJob { stream_name: String },
-    #[error("Multiple hash found for annotation: (name: {}, ver: {})", name.bright_cyan(), ver.bright_cyan())]
-    MultipleHashFound { name: String, ver: String },
-    #[error("Multiple matching pod runs")]
-    MultipleMatchingPodRunsFound,
     #[error("No annotation found for `{name}:{version}` {class}.")]
     NoAnnotationFound {
         class: String,
@@ -53,20 +39,25 @@ pub(crate) enum Kind {
     NoMatchingPodRun { pod_job_hash: String },
     #[error("No tags found in provided container alternate image: {path}.")]
     NoTagFoundInContainerAltImage { path: PathBuf },
-    #[error("Path: {} does not exists", path.to_string_lossy().bright_cyan())]
-    PathDoesNotExist { path: PathBuf },
+    #[error("Store name {} not found", store_name.bright_cyan())]
+    StoreNameNotFound { store_name: String },
+    #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
+    UnsupportedPath { path: PathBuf },
+
+    #[error(transparent)]
+    GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]
     RegexError(#[from] regex::Error),
     #[error(transparent)]
+    SerdeYamlError(#[from] serde_yaml::Error),
+    #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
-    SerdeYamlError(#[from] serde_yaml::Error),
-    #[error("Store name {} not found", store_name.bright_cyan())]
-    StoreNameNotFound { store_name: String },
-    #[error("fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
-    FailedToExtractFileName { path: PathBuf },
-    #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
-    UnsupportedPath { path: PathBuf },
+    IoError(#[from] io::Error),
+    #[error(transparent)]
+    BollardError(#[from] BollardError),
+    #[error(transparent)]
+    PathPrefixError(#[from] path::StripPrefixError),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -134,6 +125,13 @@ impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError(error),
+        }
+    }
+}
+impl From<path::StripPrefixError> for OrcaError {
+    fn from(error: path::StripPrefixError) -> Self {
+        Self {
+            kind: Kind::PathPrefixError(error),
         }
     }
 }

@@ -14,7 +14,6 @@
         "nanocore",
         "numpy",
         "graphviz",
-        "unref"
     ],
     "ignoreWords": [
         "unref",
