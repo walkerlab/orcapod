@@ -179,8 +179,11 @@ impl Orchestrator for LocalDockerOrchestrator {
                 pod_job_hash: pod_run.pod_job.hash.clone(),
             }))?;
 
-        if containers.next().is_none() {
-            return Err(OrcaError::from(Kind::MultipleMatchingPodRunsFound {}));
+        if containers.next().is_some() {
+            return Err(OrcaError::from(Kind::MultipleMatchingPodRunsFound {
+                annotation: pod_run.pod_job.annotation.clone(),
+                hash: pod_run.pod_job.hash.clone(),
+            }));
         }
         Ok(run_info)
     }

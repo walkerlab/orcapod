@@ -12,6 +12,8 @@ use std::{
     string::FromUtf8Error,
 };
 use thiserror::Error;
+
+use crate::model::Annotation;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T> = result::Result<T, OrcaError>;
 /// Possible errors you may encounter.
@@ -25,8 +27,23 @@ pub(crate) enum Kind {
     FileExists { path: PathBuf },
     #[error("Out of generated random names.")]
     GeneratedNamesOverflow,
+    #[error("Input file or folder at path {path} not found")]
+    InputFileOrFolderNotFound { path: PathBuf },
     #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
     InvalidPodResultTerminatedDatetime { pod_job_hash: String },
+    #[error("Unable to find {} in pod_job's input_store_mapping", stream_name.bright_cyan())]
+    MissingStreamInPodJob { stream_name: String },
+    #[error("Multiple hash found for {} and {}", name, version)]
+    MultipleHashFound { name: String, version: String },
+    #[error(
+        "Multiple pod runs were found for pod job with annotation: {:?} and hash: {}: ",
+        annotation,
+        hash
+    )]
+    MultipleMatchingPodRunsFound {
+        annotation: Option<Annotation>,
+        hash: String,
+    },
     #[error("No annotation found for `{name}:{version}` {class}.")]
     NoAnnotationFound {
         class: String,
@@ -41,9 +58,9 @@ pub(crate) enum Kind {
     NoTagFoundInContainerAltImage { path: PathBuf },
     #[error("Store name {} not found", store_name.bright_cyan())]
     StoreNameNotFound { store_name: String },
-    #[error("Path: {} is an unsupported path type", path.to_string_lossy().bright_cyan())]
-    UnsupportedPath { path: PathBuf },
 
+    #[error(transparent)]
+    FromUtf8Error(#[from] FromUtf8Error),
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]

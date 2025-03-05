@@ -1,5 +1,5 @@
 use crate::{
-    crypto::{compute_checksum_for_path, hash_bytes},
+    crypto::{hash_buffer, hash_dir, hash_file},
     error::{Kind, OrcaError, Result},
     orchestrator::Status,
     util::{get_type_name, hash},
@@ -85,7 +85,7 @@ impl Pod {
             required_gpu,
         };
         Ok(Self {
-            hash: hash_bytes(to_yaml(&pod_no_hash)?),
+            hash: hash_buffer(to_yaml(&pod_no_hash)?),
             ..pod_no_hash
         })
     }
@@ -339,7 +339,10 @@ impl Blob<FileOrFolder> {
         };
 
         Ok(Self {
-            checksum: compute_checksum_for_path(&blob.resolve_absolute_path(store_map)?)?,
+            checksum: match blob.kind {
+                FileOrFolder::File => hash_file(&blob.resolve_absolute_path(store_map)?)?,
+                FileOrFolder::Folder => hash_dir(&blob.resolve_absolute_path(store_map)?)?,
+            },
             ..blob
         })
     }

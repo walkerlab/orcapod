@@ -167,7 +167,7 @@ impl LocalFileStore {
         if model_infos.len() > 1 {
             return Err(OrcaError::from(Kind::MultipleHashFound {
                 name: name.to_owned(),
-                ver: version.to_owned(),
+                version: version.to_owned(),
             }));
         }
 
