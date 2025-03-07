@@ -80,13 +80,11 @@ indexing_slicing = { level = "allow", priority = 127 }                 # allow s
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
-min_ident_chars = { level = "allow", priority = 127 }                  # Allow for variables that are name a and b
 missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing assert before indexing ok
 missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok
 missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
 missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
 must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
-multiple-crate-versions = { level = "allow", priority = 127 }          # allow mutiple crate version to deal with dependencies issues
 mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok
 module_name_repetitions = { level = "allow", priority = 127 }          # name should be explicit to avoid confusion
 non_ascii_literal = { level = "allow", priority = 127 }                # non-ascii char in string literal ok

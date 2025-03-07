@@ -21,6 +21,23 @@ use orcapod::{
 use std::{fmt::Debug, fs, path::Path};
 use tempfile::tempdir;
 
+#[test]
+fn store_map_test() -> Result<()> {
+    let temp_dir;
+    {
+        let store_map = store_map_fixture()?;
+        temp_dir = store_map.mapping["test_data"].clone();
+    };
+
+    // Check if temp_dir got removed
+    assert!(
+        !temp_dir.exists(),
+        "temp dir for store_map didn't get cleaned up after deallocation"
+    );
+
+    Ok(())
+}
+
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     Some(
         file.ancestors()

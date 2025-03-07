@@ -80,9 +80,9 @@ impl Orchestrator for LocalDockerOrchestrator {
                 let byte_stream = FramedRead::new(
                     match File::open(&path).await {
                         Ok(file) => file,
-                        Err(e) => {
+                        Err(error) => {
                             return Err(OrcaError::from(Kind::IoErrorWithPath {
-                                error: e,
+                                error,
                                 path: path.into(),
                             }))
                         }

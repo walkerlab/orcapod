@@ -25,7 +25,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
 
 // --- fixtures ---
 
@@ -125,20 +125,36 @@ pub fn pod_result_style(store_map: &StoreMap) -> Result<PodResult> {
 }
 
 /// Create the temp dir and copy the data over to the default data-store location
-pub fn store_map_fixture() -> Result<StoreMap> {
-    let temp_dir = tempdir()?.path().to_string_lossy().to_string();
-    fs::create_dir_all(temp_dir.clone())?;
+pub fn store_map_fixture() -> Result<StoreMapFixture> {
+    let temp_dir = tempdir()?;
+
+    fs::create_dir_all(&temp_dir)?;
 
     Command::new("cp")
         .arg("-r")
         .arg("./tests/data/.")
-        .arg(&temp_dir)
+        .arg(temp_dir.path())
         .output()?;
 
     let mut mapping = BTreeMap::new();
-    mapping.insert("test_data".to_owned(), PathBuf::from(temp_dir));
+    mapping.insert("test_data".to_owned(), temp_dir.path().to_path_buf());
 
-    Ok(StoreMap { mapping })
+    Ok(StoreMapFixture {
+        _temp_dir_handle: temp_dir,
+        store_map: StoreMap { mapping },
+    })
+}
+
+pub struct StoreMapFixture {
+    _temp_dir_handle: TempDir, // Handle that when the object get drop, the temp_dir is deleted
+    store_map: StoreMap,
+}
+
+impl Deref for StoreMapFixture {
+    type Target = StoreMap;
+    fn deref(&self) -> &Self::Target {
+        &self.store_map
+    }
 }
 
 pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
@@ -195,7 +211,7 @@ pub fn store_fixture(store_directory: Option<&str>) -> Result<TestStore> {
 }
 // --- helper functions ---
 
-pub fn add_storage<T: TestSetup>(mut model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
+pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStoredModel<T>> {
     model.save(store)?;
     let model_with_storage = TestStoredModel { store, model };
     Ok(model_with_storage)
@@ -255,7 +271,7 @@ impl Drop for TestContainerImage {
 
 pub trait TestSetup {
     type Target;
-    fn save(&mut self, store: &LocalFileStore) -> Result<()>;
+    fn save(&self, store: &LocalFileStore) -> Result<()>;
     fn delete(&self, store: &LocalFileStore) -> Result<()>;
     fn load(&self, store: &LocalFileStore) -> Result<Self::Target>;
     fn get_annotation(&self) -> Option<&Annotation>;
@@ -265,7 +281,7 @@ pub trait TestSetup {
 
 impl TestSetup for Pod {
     type Target = Self;
-    fn save(&mut self, store: &LocalFileStore) -> Result<()> {
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
         store.save_pod(self)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {
@@ -291,7 +307,7 @@ impl TestSetup for Pod {
 
 impl TestSetup for PodJob {
     type Target = Self;
-    fn save(&mut self, store: &LocalFileStore) -> Result<()> {
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
         store.save_pod_job(self)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {
@@ -317,7 +333,7 @@ impl TestSetup for PodJob {
 
 impl TestSetup for PodResult {
     type Target = Self;
-    fn save(&mut self, store: &LocalFileStore) -> Result<()> {
+    fn save(&self, store: &LocalFileStore) -> Result<()> {
         store.save_pod_result(self)
     }
     fn delete(&self, store: &LocalFileStore) -> Result<()> {
