@@ -14,12 +14,8 @@ use orcapod::{
     error::Result,
     model::{PodJob, StoreMap},
     orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator as _, PodRun, Status},
-    store::{filestore::LocalFileStore, ModelStore as _},
 };
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-};
+use std::collections::{BTreeMap, HashMap};
 use tempfile::TempDir;
 
 fn setup<'store>(
