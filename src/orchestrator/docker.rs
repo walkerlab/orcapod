@@ -77,12 +77,23 @@ impl Orchestrator for LocalDockerOrchestrator {
                 Self::prepare_container_start_inputs(pod_job, remote_image.clone(), store_map)?
             }
             ImageKind::Tarball(path) => {
-                let byte_stream = FramedRead::new(File::open(&path).await?, BytesCodec::new())
-                    .map_err(|err| -> Result<BytesMut> {
-                        let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
-                        Ok(resolved_error)
-                    })
-                    .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
+                let byte_stream = FramedRead::new(
+                    match File::open(&path).await {
+                        Ok(file) => file,
+                        Err(e) => {
+                            return Err(OrcaError::from(Kind::IoErrorWithPath {
+                                error: e,
+                                path: path.into(),
+                            }))
+                        }
+                    },
+                    BytesCodec::new(),
+                )
+                .map_err(|err| -> Result<BytesMut> {
+                    let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
+                    Ok(resolved_error)
+                })
+                .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
                 let mut stream =
                     self.api
                         .import_image_stream(ImportImageOptions::default(), byte_stream, None);
@@ -298,14 +309,11 @@ impl LocalDockerOrchestrator {
 
         for (stream_name, stream_info) in &pod_job.pod.input_stream_map {
             // Find the correct mapping in pod_job.input_stream_mapping and create the mapping string
-            match pod_job
-                .input_stream_mapping
-                .get(stream_name)
-                .ok_or_else(|| {
-                    OrcaError::from(Kind::MissingStreamInPodJob {
-                        stream_name: stream_name.to_owned(),
-                    })
-                })? {
+            match pod_job.input_stream_map.get(stream_name).ok_or_else(|| {
+                OrcaError::from(Kind::MissingStreamInPodJob {
+                    stream_name: stream_name.to_owned(),
+                })
+            })? {
                 Input::Unary(blob) => {
                     // Check if exists first
                     if !blob.resolve_absolute_path(store_map)?.exists() {
@@ -346,12 +354,13 @@ impl LocalDockerOrchestrator {
             }
         }
 
+        let output_full_path = &pod_job.output_stream_map.resolve_absolute_path(store_map)?;
         // Ensure output directory exists to prevent permissions issues if daemon's owner is root
-        fs::create_dir_all(&pod_job.output_stream_path)?;
+        fs::create_dir_all(output_full_path)?;
 
         let output_bind = [format!(
             "{}:{}",
-            pod_job.output_stream_path.to_string_lossy(),
+            output_full_path.to_string_lossy(),
             pod_job.pod.output_dir.to_string_lossy(),
         )];
 

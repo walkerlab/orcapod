@@ -15,7 +15,7 @@ use orcapod::{
     model::{Annotation, Pod},
     store::{
         filestore::{LocalFileStore, SPEC_RELPATH},
-        ModelID, ModelInfo, ModelStore,
+        ModelID, ModelInfo, ModelStore as _,
     },
 };
 use std::{fmt::Debug, fs, path::Path};

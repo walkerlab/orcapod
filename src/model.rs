@@ -121,9 +121,9 @@ pub struct PodJob {
     #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
     pub pod: Pod,
     /// Map stream ids to an input in user data target.
-    pub input_stream_mapping: BTreeMap<String, Input>,
+    pub input_stream_map: BTreeMap<String, Input>,
     /// Map output directory to a folder in user data target.
-    pub output_stream_path: PathBuf,
+    pub output_stream_map: Output,
     /// Maximum allowable cores in fractional cores for the computation.
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
@@ -141,7 +141,7 @@ pub trait BlobInterface {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue computing the checksum of a BLOB.
-    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
+    fn compute_checksum(&self, blob: Blob) -> Result<Blob> {
         Ok(blob)
     }
 }
@@ -156,7 +156,7 @@ impl PodJob {
         annotation: Option<Annotation>,
         pod: Pod,
         input_stream_mapping: BTreeMap<String, Input>,
-        output_stream_path: PathBuf,
+        output_stream_map: Output,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
@@ -166,13 +166,14 @@ impl PodJob {
             annotation,
             hash: String::new(),
             pod,
-            input_stream_mapping,
-            output_stream_path,
+            input_stream_map: input_stream_mapping,
+            output_stream_map,
             cpu_limit,
             memory_limit,
             env_vars,
             retry_policy,
         };
+
         Ok(Self {
             hash: hash(to_yaml(&pod_job_no_hash)?),
             ..pod_job_no_hash
@@ -303,16 +304,16 @@ pub struct StreamInfo {
 #[serde(untagged)]
 pub enum Input {
     /// A single BLOB.
-    Unary(Blob<FileOrFolder>),
+    Unary(Blob),
     /// A series of BLOBs.
-    Collection(Vec<Blob<FileOrFolder>>),
+    Collection(Vec<Blob>),
 }
 
 /// BLOB in user data target with metadata.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct Blob<T> {
+pub struct Blob {
     /// BLOB available options.
-    pub kind: T,
+    pub kind: PathType,
     /// BLOB location.
     pub rel_path: PathBuf,
     /// Name of store
@@ -321,12 +322,11 @@ pub struct Blob<T> {
     pub checksum: String,
 }
 
-impl Blob<FileOrFolder> {
-    ///
+impl Blob {
     /// # Errors
     /// Will error out if unable to compute checksum on blob contents
     pub fn new(
-        kind: FileOrFolder,
+        kind: PathType,
         rel_path: impl AsRef<Path>,
         store_name: String,
         store_map: &StoreMap,
@@ -340,8 +340,8 @@ impl Blob<FileOrFolder> {
 
         Ok(Self {
             checksum: match blob.kind {
-                FileOrFolder::File => hash_file(&blob.resolve_absolute_path(store_map)?)?,
-                FileOrFolder::Folder => hash_dir(&blob.resolve_absolute_path(store_map)?)?,
+                PathType::File => hash_file(&blob.resolve_absolute_path(store_map)?)?,
+                PathType::Directory => hash_dir(&blob.resolve_absolute_path(store_map)?)?,
             },
             ..blob
         })
@@ -365,20 +365,40 @@ impl Blob<FileOrFolder> {
 }
 
 /// File or folder options for BLOBs.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum FileOrFolder {
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub enum PathType {
     /// A single file specified by its absolute path.
     File,
     /// A single folder specified by its absolute path.
-    Folder,
+    #[default]
+    Directory,
 }
 
-/// Folder-only option for BLOBs.
+/// Struct to handle `pod_job` output
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub enum FolderOnly {
-    /// A single folder specified by its absolute path.
-    #[default]
-    Folder,
+pub struct Output {
+    /// DIR location.
+    pub rel_path: PathBuf,
+    /// Name of store
+    pub store_name: String,
+}
+
+impl Output {
+    /// Utility function where given a `store_map`, it will return the absolute path to the blob
+    ///
+    /// # Errors
+    /// Will failed if a given `store_name` was not found in the mapping
+    pub fn resolve_absolute_path(&self, store_map: &StoreMap) -> Result<PathBuf> {
+        Ok(store_map
+            .mapping
+            .get(&self.store_name)
+            .ok_or_else(|| {
+                OrcaError::from(Kind::StoreNameNotFound {
+                    store_name: self.store_name.clone(),
+                })
+            })?
+            .join(&self.rel_path))
+    }
 }
 
 /// Pod job retry policy
@@ -394,5 +414,5 @@ pub enum RetryPolicy {
 /// Same as blob interface, but renamed due to possible additional of features for store pointer.
 pub struct StoreMap {
     /// Map `store_name` to a Store
-    mapping: BTreeMap<String, PathBuf>,
+    pub mapping: BTreeMap<String, PathBuf>,
 }

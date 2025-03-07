@@ -27,6 +27,8 @@ pub(crate) enum Kind {
     FileExists { path: PathBuf },
     #[error("Out of generated random names.")]
     GeneratedNamesOverflow,
+    #[error("IO Error: {} for path: {}", error, path.to_string_lossy())]
+    IoErrorWithPath { error: io::Error, path: PathBuf },
     #[error("Input file or folder at path {path} not found")]
     InputFileOrFolderNotFound { path: PathBuf },
     #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
@@ -64,13 +66,14 @@ pub(crate) enum Kind {
     #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
     #[error(transparent)]
+    IoError(#[from] io::Error),
+    #[error(transparent)]
     RegexError(#[from] regex::Error),
     #[error(transparent)]
     SerdeYamlError(#[from] serde_yaml::Error),
     #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
-    #[error(transparent)]
-    IoError(#[from] io::Error),
+
     #[error(transparent)]
     BollardError(#[from] BollardError),
     #[error(transparent)]

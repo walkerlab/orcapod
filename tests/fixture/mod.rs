@@ -11,7 +11,7 @@ use names::{Generator, Name};
 use orcapod::{
     error::Result,
     model::{
-        Annotation, Blob, FileOrFolder, Input, Pod, PodJob, PodResult, RetryPolicy, StoreMap,
+        Annotation, Blob, Input, Output, PathType, Pod, PodJob, PodResult, RetryPolicy, StoreMap,
         StreamInfo,
     },
     orchestrator::Status,
@@ -69,7 +69,7 @@ pub fn pod_style() -> Result<Pod> {
     )
 }
 
-pub fn pod_job_style(store_map: &StoreMap<impl DataStore>) -> Result<PodJob> {
+pub fn pod_job_style(store_map: &StoreMap) -> Result<PodJob> {
     PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -81,23 +81,26 @@ pub fn pod_job_style(store_map: &StoreMap<impl DataStore>) -> Result<PodJob> {
             (
                 "style".to_owned(),
                 Input::Unary(Blob::new(
-                    FileOrFolder::File,
+                    PathType::File,
                     "styles/mosaic.t7",
-                    None,
+                    "test_data".to_owned(),
                     store_map,
                 )?),
             ),
             (
                 "image".to_owned(),
                 Input::Unary(Blob::new(
-                    FileOrFolder::File,
+                    PathType::File,
                     "images/dog.jpeg",
-                    None,
+                    "test_data".to_owned(),
                     store_map,
                 )?),
             ),
         ]),
-        PathBuf::from("output"),
+        Output {
+            rel_path: "output".into(),
+            store_name: "test_data".into(),
+        },
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes
         None,
@@ -105,7 +108,7 @@ pub fn pod_job_style(store_map: &StoreMap<impl DataStore>) -> Result<PodJob> {
     )
 }
 
-pub fn pod_result_style(store_map: &StoreMap<impl DataStore>) -> Result<PodResult> {
+pub fn pod_result_style(store_map: &StoreMap) -> Result<PodResult> {
     PodResult::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -122,24 +125,20 @@ pub fn pod_result_style(store_map: &StoreMap<impl DataStore>) -> Result<PodResul
 }
 
 /// Create the temp dir and copy the data over to the default data-store location
-pub fn store_map_fixture() -> Result<StoreMap<impl DataStore>> {
-    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
-    fs::create_dir_all(tmp_directory.clone())?;
+pub fn store_map_fixture() -> Result<StoreMap> {
+    let temp_dir = tempdir()?.path().to_string_lossy().to_string();
+    fs::create_dir_all(temp_dir.clone())?;
 
     Command::new("cp")
         .arg("-r")
-        .arg("./tests/data")
-        .arg(format!(
-            "{}/{}",
-            tmp_directory,
-            LocalFileStore::DEFAULT_DATA_NAMESPACE
-        ))
+        .arg("./tests/data/.")
+        .arg(&temp_dir)
         .output()?;
 
-    StoreMap::new(BTreeMap::from([(
-        "default".to_owned(),
-        store_fixture(Some(&tmp_directory))?,
-    )]))
+    let mut mapping = BTreeMap::new();
+    mapping.insert("test_data".to_owned(), PathBuf::from(temp_dir));
+
+    Ok(StoreMap { mapping })
 }
 
 pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
@@ -233,12 +232,6 @@ impl<T: TestSetup> Drop for TestStoredModel<'_, T> {
         self.model
             .delete(self.store)
             .expect("Failed to teardown model.");
-    }
-}
-
-impl DataStore for TestStore {
-    fn compute_checksum(&self, path: &dyn AsRef<Path>) -> Result<String> {
-        self.store.compute_checksum(path)
     }
 }
 

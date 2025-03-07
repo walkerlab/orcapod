@@ -50,7 +50,7 @@ fn hash_pod_job() -> Result<()> {
     let store_map = store_map_fixture()?;
     let pod_job = pod_job_style(&store_map)?;
     assert_eq!(
-        pod_job.hash, "bc7de776c396e788d2db19af222437fd08f73e95cc981ce1791e0d64480dcf74",
+        pod_job.hash, "14d1f9b107f0e9c01a4b7a57c8c7baee2eec7d1d09b5cd94f0af5dab8d189b64",
         "Hash didn't match."
     );
     Ok(())
@@ -64,18 +64,20 @@ fn pod_job_to_yaml() -> Result<()> {
         indoc! {"
             class: pod_job
             pod: 8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094
-            input_stream_mapping:
+            input_stream_map:
               image:
                 kind: File
-                location: images/dog.jpeg
-                store_name: null
+                rel_path: images/dog.jpeg
+                store_name: test_data
                 checksum: 8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd
               style:
                 kind: File
-                location: styles/mosaic.t7
-                store_name: null
+                rel_path: styles/mosaic.t7
+                store_name: test_data
                 checksum: fbd7d882e9e02aafb57366e726762025ff6b2e12cd41abd44b874542b7693771
-            output_stream_path: output
+            output_stream_map:
+              rel_path: output
+              store_name: test_data
             cpu_limit: 0.5
             memory_limit: 2147483648
             env_vars: null
@@ -91,7 +93,7 @@ fn hash_pod_result() -> Result<()> {
     let store_map = store_map_fixture()?;
     assert_eq!(
         pod_result_style(&store_map)?.hash,
-        "3d63c823e222d4087199eb8d2fdab3c08857d55684b804ab0394584154d9b8ef",
+        "7f41a35170ccb420c5ec091f400d432dc368f1439427e5af550742c856c691b2",
         "Hash didn't match."
     );
     Ok(())
@@ -104,7 +106,7 @@ fn pod_result_to_yaml() -> Result<()> {
         to_yaml(&pod_result_style(&store_map)?)?,
         indoc! {"
             class: pod_result
-            pod_job: bc7de776c396e788d2db19af222437fd08f73e95cc981ce1791e0d64480dcf74
+            pod_job: 14d1f9b107f0e9c01a4b7a57c8c7baee2eec7d1d09b5cd94f0af5dab8d189b64
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307
