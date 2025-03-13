@@ -158,7 +158,7 @@ fn expect_pod_run_fail() -> Result<()> {
 
     // Start job and sleep for a few second ensuring the job has time to fail
     let pod_run = orchestrator.start_blocking(&stored_pod_job.model, &store_map)?;
-    sleep(Duration::from_secs(5));
+    sleep(Duration::from_secs(1));
 
     // Should be in failed state
     assert_eq!(
