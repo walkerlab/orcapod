@@ -17,4 +17,3 @@
 FROM python:3.9-slim
 RUN pip install opencv-python-headless numpy imutils
 COPY ./run.py /run.py
-CMD ["python", "/run.py"]
