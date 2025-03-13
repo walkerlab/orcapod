@@ -114,9 +114,18 @@ impl Orchestrator for LocalDockerOrchestrator {
         self.api
             .create_container(container_options, container_config)
             .await?;
-        self.api
+        match self
+            .api
             .start_container(&assigned_name, None::<StartContainerOptions<String>>)
-            .await?;
+            .await
+        {
+            Ok(()) => (),
+            Err(error) => {
+                return Err(OrcaError::from(Kind::FailedToStartPod {
+                    bollard_error: error,
+                }))
+            }
+        };
         Ok(PodRun::new::<Self>(pod_job, assigned_name))
     }
     async fn start(&self, pod_job: &PodJob, store_map: &StoreMap) -> Result<PodRun> {
@@ -180,9 +189,15 @@ impl Orchestrator for LocalDockerOrchestrator {
             format!("org.orcapod.pod_job.hash={}", pod_run.pod_job.hash),
         ];
 
-        let mut containers = self
-            .list_containers(HashMap::from([("label".to_owned(), labels)]))
-            .await?;
+        let container_filters = HashMap::from([
+            ("label".to_owned(), labels),
+            (
+                "name".to_owned(),
+                Vec::from([pod_run.assigned_name.clone()]),
+            ),
+        ]);
+
+        let mut containers = self.list_containers(container_filters).await?;
 
         let (_, run_info) = containers
             .next()

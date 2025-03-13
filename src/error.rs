@@ -21,8 +21,10 @@ pub type Result<T> = result::Result<T, OrcaError>;
 pub(crate) enum Kind {
     #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
     EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
-    #[error("fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
+    #[error("Fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
     FailedToExtractFileName { path: PathBuf },
+    #[error("{}{}", "Fail to start pod with error: ".bright_red(), bollard_error.to_string().bright_cyan())]
+    FailedToStartPod { bollard_error: BollardError },
     #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
     FileExists { path: PathBuf },
     #[error("Out of generated random names.")]
