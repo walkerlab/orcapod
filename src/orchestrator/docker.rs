@@ -26,6 +26,11 @@ use tokio_util::{
     codec::{BytesCodec, FramedRead},
 };
 
+#[expect(clippy::expect_used, reason = "Valid static regex")]
+static RE_FOR_CMD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"[^\s"']+|"[^"]*"|'[^']*'"#).expect("Invalid model metadata regex.")
+});
+
 /// Support for an orchestration engine using a local docker installation.
 #[derive(Debug)]
 pub struct LocalDockerOrchestrator {
@@ -197,12 +202,13 @@ impl Orchestrator for LocalDockerOrchestrator {
             ),
         ]);
 
-        let mut containers = self.list_containers(container_filters).await?;
+        let mut containers = self.list_containers(container_filters.clone()).await?;
 
         let (_, run_info) = containers
             .next()
             .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
                 pod_job_hash: pod_run.pod_job.hash.clone(),
+                filters: container_filters.clone(),
             }))?;
 
         if containers.next().is_some() {
@@ -405,12 +411,26 @@ impl LocalDockerOrchestrator {
             ),
         ]);
 
-        let command = pod_job
-            .pod
-            .command
-            .split_whitespace()
-            .map(String::from)
+        let captures = RE_FOR_CMD.captures(&pod_job.pod.command).ok_or_else(|| {
+            OrcaError::from(Kind::FailToParseCommandIntoArray {
+                command: pod_job.pod.command.clone(),
+            })
+        })?;
+
+        println!("{:?}", RE_FOR_CMD);
+        println!("{:?}", captures);
+        let command = RE_FOR_CMD
+            .captures_iter(&pod_job.pod.command)
+            .map(|capture| {
+                capture
+                    .extract::<0>()
+                    .0
+                    .to_owned()
+                    .replace(['\'', '\"'], "")
+            })
             .collect::<Vec<_>>();
+
+        println!("command:{:?}", command);
 
         Ok((
             container_name.clone(),

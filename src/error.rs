@@ -5,9 +5,10 @@ use regex;
 use serde_json;
 use serde_yaml;
 use std::{
+    collections::HashMap,
     fmt::{self, Display, Formatter},
-    io, path,
-    path::PathBuf,
+    io,
+    path::{self, PathBuf},
     result,
     string::FromUtf8Error,
 };
@@ -23,6 +24,8 @@ pub(crate) enum Kind {
     EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("Fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
     FailedToExtractFileName { path: PathBuf },
+    #[error("{}{}{}", "Fail to parse command: ", command.bright_cyan(), " into array format".bright_red())]
+    FailToParseCommandIntoArray { command: String },
     #[error("{}{}", "Fail to start pod with error: ".bright_red(), bollard_error.to_string().bright_cyan())]
     FailedToStartPod { bollard_error: BollardError },
     #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
@@ -56,8 +59,14 @@ pub(crate) enum Kind {
     },
     #[error("No known container names.")]
     NoContainerNames,
-    #[error("No corresponding pod run found for pod job (hash: {pod_job_hash}).")]
-    NoMatchingPodRun { pod_job_hash: String },
+    #[error(
+        "No corresponding pod run found for pod job (hash: {pod_job_hash}) and filters = {:?}.",
+        filters
+    )]
+    NoMatchingPodRun {
+        pod_job_hash: String,
+        filters: HashMap<String, Vec<String>>,
+    },
     #[error("No tags found in provided container alternate image: {path}.")]
     NoTagFoundInContainerAltImage { path: PathBuf },
     #[error("Store name {} not found", store_name.bright_cyan())]
