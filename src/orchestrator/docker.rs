@@ -5,8 +5,8 @@ use crate::{
 };
 use bollard::{
     container::{
-        Config, CreateContainerOptions, ListContainersOptions, LogOutput, LogsOptions,
-        RemoveContainerOptions, StartContainerOptions, WaitContainerOptions,
+        Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
+        StartContainerOptions, WaitContainerOptions,
     },
     image::{CreateImageOptions, ImportImageOptions},
     models::{ContainerStateStatusEnum, HostConfig},
@@ -219,31 +219,6 @@ impl Orchestrator for LocalDockerOrchestrator {
 
         let result_info = self.get_info(pod_run).await?;
 
-        // Get logs (For now it is only doing stdout and doesn't deal with stderr)
-        // NOTE: this probably can be improved. Just not sure what is the correct syntax to avoid the two collects
-        let logs = String::from_utf8(
-            self.api
-                .logs::<String>(
-                    &pod_run.assigned_name,
-                    Some(LogsOptions {
-                        stdout: true,
-                        stderr: true,
-                        ..Default::default()
-                    }),
-                )
-                .try_collect::<Vec<_>>()
-                .await?
-                .iter()
-                .flat_map(|log_output| match log_output {
-                    LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
-                        message.to_vec()
-                    }
-                    LogOutput::StdIn { .. } => todo!(),
-                    LogOutput::Console { .. } => todo!(),
-                })
-                .collect::<Vec<u8>>(),
-        )?;
-
         PodResult::new(
             None,
             pod_run.pod_job.clone(),
@@ -255,7 +230,6 @@ impl Orchestrator for LocalDockerOrchestrator {
                     pod_job_hash: pod_run.pod_job.hash.clone(),
                 },
             ))?,
-            logs,
         )
     }
 }

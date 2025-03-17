@@ -130,8 +130,6 @@ pub struct PodJob {
     pub memory_limit: u64,
     /// Environment variables to be set in environment.
     pub env_vars: Option<HashMap<String, String>>,
-    /// Policy on how to handle retry
-    pub retry_policy: RetryPolicy,
 }
 
 /// An interface to access BLOB functions.
@@ -160,7 +158,6 @@ impl PodJob {
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
-        retry_policy: RetryPolicy,
     ) -> Result<Self> {
         let pod_job_no_hash = Self {
             annotation,
@@ -171,7 +168,6 @@ impl PodJob {
             cpu_limit,
             memory_limit,
             env_vars,
-            retry_policy,
         };
 
         Ok(Self {
@@ -221,8 +217,6 @@ pub struct PodResult {
     pub created: u64,
     /// Time in epoch when terminated in seconds.
     pub terminated: u64,
-    /// Output logs of container
-    pub logs: String,
 }
 
 impl PodResult {
@@ -238,7 +232,6 @@ impl PodResult {
         status: Status,
         created: u64,
         terminated: u64,
-        logs: String,
     ) -> Result<Self> {
         let pod_result_no_hash = Self {
             annotation,
@@ -248,7 +241,6 @@ impl PodResult {
             status,
             created,
             terminated,
-            logs,
         };
         Ok(Self {
             hash: hash(to_yaml(&pod_result_no_hash)?),
@@ -399,16 +391,6 @@ impl Output {
             })?
             .join(&self.rel_path))
     }
-}
-
-/// Pod job retry policy
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
-pub enum RetryPolicy {
-    /// Will stop the job upon first failure
-    #[default]
-    NoRetry,
-    /// Will allow n number of failures within a time window of t seconds
-    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
 }
 
 /// Same as blob interface, but renamed due to possible additional of features for store pointer.

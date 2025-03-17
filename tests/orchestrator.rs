@@ -49,12 +49,6 @@ fn basic_test(
     );
     let pod_result_1 = orchestrator.get_result_blocking(pod_run)?;
     assert_eq!(
-        orchestrator.get_info_blocking(pod_run)?.status,
-        Status::Completed,
-        "Pod error out with {}",
-        pod_result_1.logs
-    );
-    assert_eq!(
         orchestrator
             .list_blocking()?
             .iter()

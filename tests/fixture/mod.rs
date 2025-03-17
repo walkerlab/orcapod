@@ -11,8 +11,7 @@ use names::{Generator, Name};
 use orcapod::{
     error::Result,
     model::{
-        Annotation, Blob, Input, Output, PathType, Pod, PodJob, PodResult, RetryPolicy, StoreMap,
-        StreamInfo,
+        Annotation, Blob, Input, Output, PathType, Pod, PodJob, PodResult, StoreMap, StreamInfo,
     },
     orchestrator::Status,
     store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore as _},
@@ -104,7 +103,6 @@ pub fn pod_job_style(store_map: &StoreMap) -> Result<PodJob> {
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes
         None,
-        RetryPolicy::NoRetry,
     )
 }
 
@@ -120,7 +118,6 @@ pub fn pod_result_style(store_map: &StoreMap) -> Result<PodResult> {
         Status::Completed,
         1_737_922_307,
         1_737_925_907,
-        String::from("Test Logs"),
     )
 }
 
