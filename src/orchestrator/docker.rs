@@ -411,14 +411,6 @@ impl LocalDockerOrchestrator {
             ),
         ]);
 
-        let captures = RE_FOR_CMD.captures(&pod_job.pod.command).ok_or_else(|| {
-            OrcaError::from(Kind::FailToParseCommandIntoArray {
-                command: pod_job.pod.command.clone(),
-            })
-        })?;
-
-        println!("{:?}", RE_FOR_CMD);
-        println!("{:?}", captures);
         let command = RE_FOR_CMD
             .captures_iter(&pod_job.pod.command)
             .map(|capture| {
@@ -430,7 +422,13 @@ impl LocalDockerOrchestrator {
             })
             .collect::<Vec<_>>();
 
-        println!("command:{:?}", command);
+        println!("{command:?}");
+
+        if command.is_empty() {
+            return Err(OrcaError::from(Kind::FailToParseCommandIntoArray {
+                command: pod_job.pod.command.clone(),
+            }));
+        }
 
         Ok((
             container_name.clone(),
@@ -464,11 +462,13 @@ impl LocalDockerOrchestrator {
         clippy::string_slice,
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
+        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
         - No issue in core casting if between 0 - 3.40e38(f32:MAX)
         - No issue in exit code casting if between -3.27e4(i16:MIN) - 3.27e4(i16:MAX)
+        - There is a lot of boiler plate code needed to extract the information, hence the many lines
         "#
     )]
     async fn list_containers(
@@ -537,8 +537,25 @@ impl LocalDockerOrchestrator {
                     ) {
                         (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
                         (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
-                        (ContainerStateStatusEnum::EXITED, code) => Status::Failed(code),
-                        _ => todo!(),
+                        (
+                            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD,
+                            code,
+                        ) => Status::Failed(code),
+                        (
+                            ContainerStateStatusEnum::CREATED
+                            | ContainerStateStatusEnum::RESTARTING,
+                            code,
+                        ) => match container_spec.state {
+                            Some(state) => {
+                                if state.error.is_some() {
+                                    Status::Failed(code)
+                                } else {
+                                    Status::Queued
+                                }
+                            }
+                            None => todo!(),
+                        },
+                        _ => Status::Unknown,
                     },
                     mounts: container_spec
                         .mounts

@@ -17,12 +17,16 @@ pub enum ImageKind {
 /// Status of a particular compute run.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub enum Status {
+    /// Container is created and is pending execution
+    Queued,
     /// Run is ongoing.
     Running,
     /// Run has completed successfully.
     Completed,
     /// Run failed with the provided error code.
     Failed(i16),
+    /// Catch all for all undefine behavior
+    Unknown,
 }
 /// Run metadata
 #[derive(Debug)]
@@ -49,7 +53,7 @@ pub struct RunInfo {
     pub memory_limit: u64,
 }
 /// Current computation managed by orchestrator.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct PodRun {
     /// Original compute request.
     pub pod_job: PodJob,

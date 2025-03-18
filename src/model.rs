@@ -130,8 +130,6 @@ pub struct PodJob {
     pub memory_limit: u64,
     /// Environment variables to be set in environment.
     pub env_vars: Option<HashMap<String, String>>,
-    /// Policy on how to handle retry
-    pub retry_policy: RetryPolicy,
 }
 
 /// An interface to access BLOB functions.
@@ -160,7 +158,6 @@ impl PodJob {
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
-        retry_policy: RetryPolicy,
     ) -> Result<Self> {
         let pod_job_no_hash = Self {
             annotation,
@@ -171,7 +168,6 @@ impl PodJob {
             cpu_limit,
             memory_limit,
             env_vars,
-            retry_policy,
         };
 
         Ok(Self {

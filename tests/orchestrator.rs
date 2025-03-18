@@ -41,16 +41,6 @@ fn basic_test(
         Status::Running,
         "Unexpected state."
     );
-    assert_eq!(
-        orchestrator
-            .list_blocking()?
-            .iter()
-            .filter(|run| run.assigned_name == pod_run.assigned_name)
-            .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
-            .collect::<Result<Vec<_>>>()?,
-        vec![expected_command.clone()],
-        "Unexpected list."
-    );
 
     let pod_result_1 = orchestrator.get_result_blocking(pod_run)?;
     assert_eq!(
@@ -59,15 +49,18 @@ fn basic_test(
         "Pod error out with {}",
         pod_result_1.logs
     );
-    // assert_eq!(
-    //     orchestrator
-    //         .list_blocking()?
-    //         .iter()
-    //         .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
-    //         .collect::<Result<Vec<_>>>()?,
-    //     vec![expected_command],
-    //     "Unexpected list."
-    // );
+
+    assert_eq!(
+        orchestrator
+            .list_blocking()?
+            .into_iter()
+            .filter_map(|pod_run_from_list| (pod_run_from_list == *pod_run)
+                .then_some(pod_run_from_list.pod_job.pod.command))
+            .collect::<Vec<_>>(),
+        vec![expected_command],
+        "Unexpected list."
+    );
+
     assert_eq!(
         pod_result_1.assigned_name, pod_run.assigned_name,
         "Unexpected name."
@@ -75,13 +68,9 @@ fn basic_test(
     // try generating result again
     let pod_result_2 = orchestrator.get_result_blocking(pod_run)?;
     assert_eq!(pod_result_1, pod_result_2, "Pod results don't match.");
+
     // test delete
-    orchestrator.delete_blocking(pod_run)?;
-    println!("{:?}", orchestrator.list_blocking());
-    assert!(
-        orchestrator.list_blocking()?.is_empty(),
-        "Unexpected container remains."
-    );
+    delete_pod_run(orchestrator, pod_run)?;
 
     assert!(
         orchestrator
@@ -130,7 +119,7 @@ fn remote_container_image_basic() -> Result<()> {
     let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
 
     stored_pod_job.model.pod.image = "alpine:3.14".to_owned();
-    stored_pod_job.model.pod.command = "sleep 1".to_owned();
+    stored_pod_job.model.pod.command = "sleep 5".to_owned();
     stored_pod_job.model.pod.input_stream_map = BTreeMap::new();
     stored_pod_job.model.input_stream_map = BTreeMap::new();
     let pod_run = orchestrator.start_blocking(&stored_pod_job.model, &store_map)?;
@@ -148,6 +137,7 @@ fn expect_pod_start_fail() -> Result<()> {
     let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
 
     stored_pod_job.model.pod.image = "alpine:3.14".to_owned();
+    stored_pod_job.model.pod.command = "python file_does_not_exist.py".to_owned();
     match orchestrator.start_blocking(&stored_pod_job.model, &store_map) {
         Ok(_) => panic!("Pod was launched successfully when it should have failed."),
         Err(err) => assert_eq!(
@@ -157,6 +147,32 @@ fn expect_pod_start_fail() -> Result<()> {
             )
         ),
     }
+
+    // Check that there is a container that is created
+    let pod_runs = orchestrator
+        .list_blocking()?
+        .into_iter()
+        .filter_map(|pod_run| (pod_run.pod_job == stored_pod_job.model).then_some(pod_run))
+        .collect::<Vec<PodRun>>();
+
+    println!("{pod_runs:?}");
+    // Make sure there is only 1
+    assert!(
+        pod_runs.len() == 1,
+        "Pod Run List return more than 1 result after filtering"
+    );
+
+    let target_pod_run = &pod_runs[0];
+
+    // Check the status
+    assert_eq!(
+        orchestrator.get_info_blocking(target_pod_run)?.status,
+        Status::Failed(127),
+        "Unexpected state."
+    );
+
+    // Clean up Container
+    delete_pod_run(&orchestrator, target_pod_run)?;
 
     Ok(())
 }
@@ -187,10 +203,14 @@ fn command_parse() -> Result<()> {
         Status::Completed,
         "Pod status is not completed"
     );
+
     assert_eq!(
-        pod_result.logs, "'hi 1' && echo \"hi 2\"\n",
+        pod_result.logs, "hi 1 && echo hi 2\n",
         "Logs do not match error"
     );
+
+    delete_pod_run(&orchestrator, &pod_run)?;
+
     Ok(())
 }
 
@@ -201,29 +221,50 @@ fn expect_pod_run_fail() -> Result<()> {
     let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
 
     stored_pod_job.model.pod.image = "alpine:3.14".to_owned();
-    stored_pod_job.model.pod.command = r#"bin/sh -c "echo 'hi'""#.to_owned();
+    stored_pod_job.model.pod.command = r#"bin/sh -c 'echo "hi" && bad_command'"#.to_owned();
     stored_pod_job.model.pod.input_stream_map = BTreeMap::new();
     stored_pod_job.model.input_stream_map = BTreeMap::new();
 
     // Start job and sleep for a few second ensuring the job has time to fail
     let pod_run = orchestrator.start_blocking(&stored_pod_job.model, &store_map)?;
 
-    // assert_eq!(
-    //     orchestrator.get_info_blocking(&pod_run)?.status,
-    //     Status::Failed(2),
-    //     "Should be in failed state"
-    // );
+    assert_eq!(
+        orchestrator.get_info_blocking(&pod_run)?.status,
+        Status::Failed(127),
+        "Should be in failed state"
+    );
 
     let pod_result = orchestrator.get_result_blocking(&pod_run)?;
 
-    // assert_eq!(
-    //     pod_result.status,
-    //     Status::Failed(2),
-    //     "Should be in failed state"
-    // );
     assert_eq!(
-        pod_result.logs, "/bin/sh: bad_command: not found\n",
+        pod_result.status,
+        Status::Failed(127),
+        "Should be in failed state"
+    );
+
+    assert_eq!(
+        pod_result.logs, "hi\nbin/sh: bad_command: not found\n",
         "Logs do not match error"
+    );
+
+    delete_pod_run(&orchestrator, &pod_run)?;
+
+    Ok(())
+}
+
+// Helper functions
+fn delete_pod_run(orchestrator: &LocalDockerOrchestrator, pod_run: &PodRun) -> Result<()> {
+    orchestrator.delete_blocking(pod_run)?;
+
+    assert!(
+        orchestrator
+            .list_blocking()?
+            .into_iter()
+            .find_map(
+                |pod_run_from_orca| (&pod_run_from_orca == pod_run).then_some(pod_run_from_orca)
+            )
+            .is_none(),
+        "Failed to clean up container"
     );
 
     Ok(())

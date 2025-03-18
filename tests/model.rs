@@ -50,7 +50,7 @@ fn hash_pod_job() -> Result<()> {
     let store_map = store_map_fixture()?;
     let pod_job = pod_job_style(&store_map)?;
     assert_eq!(
-        pod_job.hash, "14d1f9b107f0e9c01a4b7a57c8c7baee2eec7d1d09b5cd94f0af5dab8d189b64",
+        pod_job.hash, "ed239d9a9c5283b9073d3ac9d58edf7c9a4159c0d4baccfb6486b5d09d34ceb3",
         "Hash didn't match."
     );
     Ok(())
@@ -81,7 +81,6 @@ fn pod_job_to_yaml() -> Result<()> {
             cpu_limit: 0.5
             memory_limit: 2147483648
             env_vars: null
-            retry_policy: NoRetry
         "},
         "YAML serialization didn't match."
     );
@@ -93,7 +92,7 @@ fn hash_pod_result() -> Result<()> {
     let store_map = store_map_fixture()?;
     assert_eq!(
         pod_result_style(&store_map)?.hash,
-        "7f41a35170ccb420c5ec091f400d432dc368f1439427e5af550742c856c691b2",
+        "e69250dd90323cc1cea972b694e2809ba1aa739f8cab7e22aa679d896395bf8b",
         "Hash didn't match."
     );
     Ok(())
@@ -106,7 +105,7 @@ fn pod_result_to_yaml() -> Result<()> {
         to_yaml(&pod_result_style(&store_map)?)?,
         indoc! {"
             class: pod_result
-            pod_job: 14d1f9b107f0e9c01a4b7a57c8c7baee2eec7d1d09b5cd94f0af5dab8d189b64
+            pod_job: ed239d9a9c5283b9073d3ac9d58edf7c9a4159c0d4baccfb6486b5d09d34ceb3
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307
