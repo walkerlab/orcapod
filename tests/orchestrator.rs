@@ -163,9 +163,6 @@ fn expect_pod_start_fail() -> Result<()> {
 
     let target_pod_run = &pod_runs[0];
 
-    // Wait for it to fail by blocking on result
-    orchestrator.get_result_blocking(target_pod_run)?;
-
     // Check the status
     assert_eq!(
         orchestrator.get_info_blocking(target_pod_run)?.status,
@@ -229,6 +226,9 @@ fn expect_pod_run_fail() -> Result<()> {
 
     // Start job and sleep for a few second ensuring the job has time to fail
     let pod_run = orchestrator.start_blocking(&stored_pod_job.model, &store_map)?;
+
+    // Wait for it to fail by blocking on result
+    orchestrator.get_result_blocking(&pod_run)?;
 
     assert_eq!(
         orchestrator.get_info_blocking(&pod_run)?.status,
