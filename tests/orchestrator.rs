@@ -42,12 +42,12 @@ fn basic_test(
         "Unexpected state."
     );
 
-    let pod_result_1 = orchestrator.get_result_blocking(pod_run)?;
+    let pod_result = orchestrator.get_result_blocking(pod_run)?;
     assert_eq!(
         orchestrator.get_info_blocking(pod_run)?.status,
         Status::Completed,
         "Pod error out with {}",
-        pod_result_1.logs
+        pod_result.logs
     );
 
     assert_eq!(
@@ -62,12 +62,12 @@ fn basic_test(
     );
 
     assert_eq!(
-        pod_result_1.assigned_name, pod_run.assigned_name,
+        pod_result.assigned_name, pod_run.assigned_name,
         "Unexpected name."
     );
     // try generating result again
     let pod_result_2 = orchestrator.get_result_blocking(pod_run)?;
-    assert_eq!(pod_result_1, pod_result_2, "Pod results don't match.");
+    assert_eq!(pod_result, pod_result_2, "Pod results don't match.");
 
     // test delete
     delete_pod_run(orchestrator, pod_run)?;
