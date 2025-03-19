@@ -16,7 +16,7 @@ use fixture::{
 use orcapod::{
     error::Result,
     model::{PodJob, StoreMap},
-    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator, PodRun, Status},
+    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator as _, PodRun, Status},
 };
 use std::collections::{BTreeMap, HashMap};
 use tempfile::TempDir;
