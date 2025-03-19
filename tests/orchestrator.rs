@@ -155,7 +155,6 @@ fn expect_pod_start_fail() -> Result<()> {
         .filter_map(|pod_run| (pod_run.pod_job == stored_pod_job.model).then_some(pod_run))
         .collect::<Vec<PodRun>>();
 
-    println!("{pod_runs:?}");
     // Make sure there is only 1
     assert!(
         pod_runs.len() == 1,
