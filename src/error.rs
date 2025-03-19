@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
     io,
-    path::{self, PathBuf},
+    path::{PathBuf, StripPrefixError},
     result,
     string::FromUtf8Error,
 };
@@ -24,6 +24,8 @@ pub(crate) enum Kind {
     EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("Fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
     FailedToExtractFileName { path: PathBuf },
+    #[error("{}{}", "Fail to get state for container: ", container_name.bright_cyan())]
+    FailedToGetContainerState { container_name: String },
     #[error("{}{}{}", "Fail to parse command: ", command.bright_cyan(), " into array format".bright_red())]
     FailToParseCommandIntoArray { command: String },
     #[error("{}{}", "Fail to start pod with error: ".bright_red(), bollard_error.to_string().bright_cyan())]
@@ -88,7 +90,7 @@ pub(crate) enum Kind {
     #[error(transparent)]
     BollardError(#[from] BollardError),
     #[error(transparent)]
-    PathPrefixError(#[from] path::StripPrefixError),
+    PathPrefixError(#[from] StripPrefixError),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -159,8 +161,8 @@ impl From<BollardError> for OrcaError {
         }
     }
 }
-impl From<path::StripPrefixError> for OrcaError {
-    fn from(error: path::StripPrefixError) -> Self {
+impl From<StripPrefixError> for OrcaError {
+    fn from(error: StripPrefixError) -> Self {
         Self {
             kind: Kind::PathPrefixError(error),
         }

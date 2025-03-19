@@ -397,16 +397,6 @@ impl Output {
     }
 }
 
-/// Pod job retry policy
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
-pub enum RetryPolicy {
-    /// Will stop the job upon first failure
-    #[default]
-    NoRetry,
-    /// Will allow n number of failures within a time window of t seconds
-    RetryTimeWindow(u16, u64), // Where u16 is num of retries and u64 is time in seconds
-}
-
 /// Same as blob interface, but renamed due to possible additional of features for store pointer.
 pub struct StoreMap {
     /// Map `store_name` to a Store

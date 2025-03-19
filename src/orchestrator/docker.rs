@@ -422,8 +422,6 @@ impl LocalDockerOrchestrator {
             })
             .collect::<Vec<_>>();
 
-        println!("{command:?}");
-
         if command.is_empty() {
             return Err(OrcaError::from(Kind::FailToParseCommandIntoArray {
                 command: pod_job.pod.command.clone(),
@@ -504,8 +502,9 @@ impl LocalDockerOrchestrator {
                 DateTime::parse_from_rfc3339(container_spec.state.as_ref()?.finished_at.as_ref()?)
                     .ok()?
                     .timestamp() as u64;
+
             Some((
-                container_name,
+                container_name.clone(),
                 RunInfo {
                     image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
                     created: container_summary.created? as u64,
@@ -545,16 +544,21 @@ impl LocalDockerOrchestrator {
                             ContainerStateStatusEnum::CREATED
                             | ContainerStateStatusEnum::RESTARTING,
                             code,
-                        ) => match container_spec.state {
-                            Some(state) => {
-                                if state.error.is_some() {
-                                    Status::Failed(code)
-                                } else {
-                                    Status::Queued
-                                }
+                        ) => {
+                            if container_spec
+                                .state
+                                .ok_or(OrcaError::from(Kind::FailedToGetContainerState {
+                                    container_name,
+                                }))
+                                .ok()?
+                                .error
+                                .is_some()
+                            {
+                                Status::Failed(code)
+                            } else {
+                                Status::Queued
                             }
-                            None => todo!(),
-                        },
+                        }
                         _ => Status::Unknown,
                     },
                     mounts: container_spec
