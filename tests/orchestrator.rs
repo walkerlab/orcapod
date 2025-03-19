@@ -16,7 +16,7 @@ use fixture::{
 use orcapod::{
     error::Result,
     model::{PodJob, StoreMap},
-    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator as _, PodRun, Status},
+    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator, PodRun, Status},
 };
 use std::collections::{BTreeMap, HashMap};
 use tempfile::TempDir;
@@ -162,6 +162,9 @@ fn expect_pod_start_fail() -> Result<()> {
     );
 
     let target_pod_run = &pod_runs[0];
+
+    // Wait for it to fail by blocking on result
+    orchestrator.get_result_blocking(target_pod_run)?;
 
     // Check the status
     assert_eq!(
