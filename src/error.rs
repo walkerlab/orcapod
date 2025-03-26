@@ -13,7 +13,6 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::model::Annotation;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T> = result::Result<T, OrcaError>;
 /// Possible errors you may encounter.
@@ -23,29 +22,18 @@ pub(crate) enum Kind {
     EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("fail to extract file name for path; {}", path.to_string_lossy().bright_cyan())]
     FailedToExtractFileName { path: PathBuf },
-    #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
-    FileExists { path: PathBuf },
     #[error("Out of generated random names.")]
     GeneratedNamesOverflow,
-    #[error("IO Error: {} for path: {}", error, path.to_string_lossy())]
-    IoErrorWithPath { error: io::Error, path: PathBuf },
     #[error("Input file or folder at path {path} not found")]
     InputFileOrFolderNotFound { path: PathBuf },
     #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
     InvalidPodResultTerminatedDatetime { pod_job_hash: String },
-    #[error("Unable to find {} in pod_job's input_store_mapping", stream_name.bright_cyan())]
-    MissingStreamInPodJob { stream_name: String },
+    #[error("IO Error: {} for path: {}", error, path.to_string_lossy())]
+    IoErrorWithPath { error: io::Error, path: PathBuf },
+    #[error("{}{}{}", "Key ".bright_red(), key, "was not found in map".bright_red())]
+    KeyWasNotFoundError { key: String },
     #[error("Multiple hash found for {} and {}", name, version)]
     MultipleHashFound { name: String, version: String },
-    #[error(
-        "Multiple pod runs were found for pod job with annotation: {:?} and hash: {}: ",
-        annotation,
-        hash
-    )]
-    MultipleMatchingPodRunsFound {
-        annotation: Option<Annotation>,
-        hash: String,
-    },
     #[error("No annotation found for `{name}:{version}` {class}.")]
     NoAnnotationFound {
         class: String,
@@ -58,9 +46,11 @@ pub(crate) enum Kind {
     NoMatchingPodRun { pod_job_hash: String },
     #[error("No tags found in provided container alternate image: {path}.")]
     NoTagFoundInContainerAltImage { path: PathBuf },
-    #[error("Store name {} not found", store_name.bright_cyan())]
-    StoreNameNotFound { store_name: String },
+    #[error("Namespace {} not found", namespace.bright_cyan())]
+    NameSpaceNotFound { namespace: String },
 
+    #[error(transparent)]
+    BollardError(#[from] BollardError),
     #[error(transparent)]
     FromUtf8Error(#[from] FromUtf8Error),
     #[error(transparent)]
@@ -68,16 +58,13 @@ pub(crate) enum Kind {
     #[error(transparent)]
     IoError(#[from] io::Error),
     #[error(transparent)]
+    PathPrefixError(#[from] path::StripPrefixError),
+    #[error(transparent)]
     RegexError(#[from] regex::Error),
     #[error(transparent)]
-    SerdeYamlError(#[from] serde_yaml::Error),
-    #[error(transparent)]
     SerdeJsonError(#[from] serde_json::Error),
-
     #[error(transparent)]
-    BollardError(#[from] BollardError),
-    #[error(transparent)]
-    PathPrefixError(#[from] path::StripPrefixError),
+    SerdeYamlError(#[from] serde_yaml::Error),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -94,6 +81,8 @@ impl OrcaError {
         matches!(self.kind, Kind::NoMatchingPodRun { .. })
     }
 }
+
+/// Resrot the functions TODO
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)

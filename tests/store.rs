@@ -7,36 +7,15 @@
 
 pub mod fixture;
 use fixture::{
-    add_storage, pod_job_style, pod_result_style, pod_style, store_fixture, store_map_fixture,
-    TestSetup, TestStore,
+    add_storage, pod_job_style, pod_result_style, pod_style, store_temp, TestSetup, TestStore,
+    NAMESPACE_LOOKUP_READ_ONLY,
 };
 use orcapod::{
     error::Result,
     model::{Annotation, Pod},
-    store::{
-        filestore::{LocalFileStore, SPEC_RELPATH},
-        ModelID, ModelInfo, ModelStore as _,
-    },
+    store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore as _},
 };
-use std::{fmt::Debug, fs, path::Path};
-use tempfile::tempdir;
-
-#[test]
-fn store_map_test() -> Result<()> {
-    let temp_dir;
-    {
-        let store_map = store_map_fixture()?;
-        temp_dir = store_map.mapping["test_data"].clone();
-    };
-
-    // Check if temp_dir got removed
-    assert!(
-        !temp_dir.exists(),
-        "temp dir for store_map didn't get cleaned up after deallocation"
-    );
-
-    Ok(())
-}
+use std::{fmt::Debug, path::Path};
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     Some(
@@ -80,16 +59,17 @@ where
 
 #[test]
 fn pod_basic() -> Result<()> {
-    let (loaded_model, stored_model) = basic_test(pod_style()?, &store_fixture(None)?)?;
+    let store = store_temp(None, false)?;
+    let (loaded_model, stored_model) = basic_test(pod_style()?, &store)?;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
 }
 
 #[test]
 fn pod_job_basic() -> Result<()> {
-    let store_map = store_map_fixture()?;
+    let store = store_temp(None, false)?;
     let (loaded_model, mut stored_model) =
-        basic_test(pod_job_style(&store_map)?, &store_fixture(None)?)?;
+        basic_test(pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?, &store)?;
     stored_model.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
     Ok(())
@@ -97,9 +77,9 @@ fn pod_job_basic() -> Result<()> {
 
 #[test]
 fn pod_result_basic() -> Result<()> {
-    let store_map = store_map_fixture()?;
+    let store = store_temp(None, false)?;
     let (loaded_model, mut stored_model) =
-        basic_test(pod_result_style(&store_map)?, &store_fixture(None)?)?;
+        basic_test(pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?, &store)?;
     stored_model.pod_job.annotation = None;
     stored_model.pod_job.pod.annotation = None;
     assert_eq!(loaded_model, stored_model, "Loaded model doesn't match.");
@@ -108,52 +88,46 @@ fn pod_result_basic() -> Result<()> {
 
 #[test]
 fn pod_files() -> Result<()> {
-    let store_directory = String::from(tempdir()?.path().to_string_lossy());
-    {
-        let pod_style = pod_style()?;
-        let store = store_fixture(Some(&store_directory))?;
-        let annotation = pod_style
-            .annotation
-            .as_ref()
-            .expect("Annotation missing from `pod_style`");
-        let annotation_file = store.make_path::<Pod>(
-            &pod_style.hash,
-            &LocalFileStore::make_annotation_relpath(&annotation.name, &annotation.version),
-        );
-        let spec_file = store.make_path::<Pod>(&pod_style.hash, SPEC_RELPATH);
-        {
-            let _pod = add_storage(pod_style, &store)?;
-            assert!(spec_file.exists(), "Spec file missing.");
-            assert!(annotation_file.exists(), "Annotation file missing.");
-        };
-        assert!(!spec_file.exists(), "Spec file wasn't cleaned up.");
-        assert!(
-            !annotation_file.exists(),
-            "Annotation file wasn't cleaned up."
-        );
-        assert_eq!(
-            is_dir_empty(&spec_file, 2),
-            Some(true),
-            "Model directory wasn't cleaned up."
-        );
-    };
-    assert!(
-        !fs::exists(&store_directory)?,
-        "Store directory wasn't cleaned up."
+    let pod_style = pod_style()?;
+    let store = store_temp(None, false)?;
+    let annotation = pod_style
+        .annotation
+        .as_ref()
+        .expect("Annotation missing from `pod_style`");
+    let annotation_file = store.make_path::<Pod>(
+        &pod_style.hash,
+        &LocalFileStore::make_annotation_relpath(&annotation.name, &annotation.version),
     );
+    let spec_file = store.make_path::<Pod>(&pod_style.hash, LocalFileStore::SPEC_RELPATH);
+    {
+        let _pod = add_storage(pod_style, &store)?;
+        assert!(spec_file.exists(), "Spec file missing.");
+        assert!(annotation_file.exists(), "Annotation file missing.");
+    };
+    assert!(!spec_file.exists(), "Spec file wasn't cleaned up.");
+    assert!(
+        !annotation_file.exists(),
+        "Annotation file wasn't cleaned up."
+    );
+    assert_eq!(
+        is_dir_empty(&spec_file, 2),
+        Some(true),
+        "Model directory wasn't cleaned up."
+    );
+
     Ok(())
 }
 
 #[test]
 fn pod_list_empty() -> Result<()> {
-    let store = store_fixture(None)?;
+    let store = store_temp(None, false)?;
     assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
 
 #[test]
 fn pod_load_from_hash() -> Result<()> {
-    let store = store_fixture(None)?;
+    let store = store_temp(None, false)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     stored_model.model.annotation = None;
     let loaded_pod = stored_model
@@ -168,7 +142,7 @@ fn pod_load_from_hash() -> Result<()> {
 
 #[test]
 fn pod_annotation_delete() -> Result<()> {
-    let store = store_fixture(None)?;
+    let store = store_temp(None, false)?;
     let mut stored_model = add_storage(pod_style()?, &store)?;
     let model_version = &stored_model
         .model

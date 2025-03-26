@@ -7,23 +7,24 @@
 
 pub mod fixture;
 use fixture::{
-    add_storage, container_image_style, pod_job_style, store_fixture, store_map_fixture, TestStore,
-    TestStoredModel,
+    add_storage, container_image_style, pod_job_style, store_temp, TestStore, TestStoredModel,
 };
 use orcapod::{
     error::Result,
-    model::{PodJob, StoreMap},
+    model::{NameSpaceLookup, OrcaPath, PodJob},
     orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator as _, PodRun, Status},
 };
-use std::collections::{BTreeMap, HashMap};
-use tempfile::TempDir;
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+};
 
 fn setup<'store>(
     store: &'store TestStore,
-    store_map: &StoreMap,
+    namespace_lookup: &NameSpaceLookup,
 ) -> Result<(TestStoredModel<'store, PodJob>, LocalDockerOrchestrator)> {
     Ok((
-        add_storage(pod_job_style(store_map)?, store)?,
+        add_storage(pod_job_style(namespace_lookup)?, store)?,
         LocalDockerOrchestrator::new()?,
     ))
 }
@@ -61,6 +62,7 @@ fn basic_test(
         pod_result_1.assigned_name, pod_run.assigned_name,
         "Unexpected name."
     );
+
     // try generating result again
     let pod_result_2 = orchestrator.get_result_blocking(pod_run)?;
     assert_eq!(pod_result_1, pod_result_2, "Pod results don't match.");
@@ -83,25 +85,27 @@ fn basic_test(
 
 #[test]
 fn offline_container_image_basic() -> Result<()> {
-    let store = store_fixture(None)?;
-    let store_map = store_map_fixture()?;
-    let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
+    let store = store_temp(None, true)?;
 
-    // Create temp dir to store image
-    let temp_dir = TempDir::new()?;
+    let (mut stored_pod_job, orchestrator) = setup(&store, &store.namespace_lookup)?;
 
-    let container_image_path = temp_dir
-        .path()
-        .join("container_images/style-transfer/image.tar.gz");
+    let container_image_relative_location =
+        "container_images/style-transfer/image.tar.gz".to_owned();
 
-    let _container_image = container_image_style(&container_image_path)?;
+    let _container_image = container_image_style(
+        store.namespace_lookup.0["default"].join(container_image_relative_location.clone()),
+    )?;
+
+    let container_image_kind = ImageKind::Tarball(OrcaPath {
+        namespace: "default".to_owned(),
+        rel_path: PathBuf::from(container_image_relative_location),
+    });
 
     stored_pod_job.model.env_vars = Some(HashMap::from([("DELAY".to_owned(), "5".to_owned())]));
-    let container_image_kind = ImageKind::Tarball(container_image_path);
     let pod_run = orchestrator.start_with_altimage_blocking(
         &stored_pod_job.model,
         &container_image_kind,
-        &store_map,
+        &store.namespace_lookup,
     )?;
     basic_test(
         &orchestrator,
@@ -112,15 +116,14 @@ fn offline_container_image_basic() -> Result<()> {
 
 #[test]
 fn remote_container_image_basic() -> Result<()> {
-    let store = store_fixture(None)?;
-    let store_map = store_map_fixture()?;
-    let (mut stored_pod_job, orchestrator) = setup(&store, &store_map)?;
+    let store = store_temp(None, true)?;
+    let (mut stored_pod_job, orchestrator) = setup(&store, &store.namespace_lookup)?;
 
     stored_pod_job.model.pod.image = "alpine:3.14".to_owned();
     stored_pod_job.model.pod.command = "sleep 5".to_owned();
-    stored_pod_job.model.pod.input_stream_map = BTreeMap::new();
-    stored_pod_job.model.input_stream_map = BTreeMap::new();
-    let pod_run = orchestrator.start_blocking(&stored_pod_job.model, &store_map)?;
+    stored_pod_job.model.pod.input_stream = BTreeMap::new();
+    stored_pod_job.model.input_stream = BTreeMap::new();
+    let pod_run = orchestrator.start_blocking(&stored_pod_job.model, &store.namespace_lookup)?;
     basic_test(
         &orchestrator,
         &pod_run,

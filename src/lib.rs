@@ -11,5 +11,4 @@ pub mod model;
 pub mod orchestrator;
 /// Data persistence provided by a store backend.
 pub mod store;
-/// Open utils for test to use
 mod util;

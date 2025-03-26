@@ -1,7 +1,7 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_job_style, pod_result_style, pod_style, store_map_fixture};
+use fixture::{pod_job_style, pod_result_style, pod_style, NAMESPACE_LOOKUP_READ_ONLY};
 use indoc::indoc;
 use orcapod::{error::Result, model::to_yaml};
 
@@ -9,7 +9,7 @@ use orcapod::{error::Result, model::to_yaml};
 fn hash_pod() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094",
+        "7cc9db247fdbe214520140ef610fc6c23a1f1c5a56e0a6868c72ead03f0be968",
         "Hash didn't match."
     );
     Ok(())
@@ -23,15 +23,15 @@ fn pod_to_yaml() -> Result<()> {
             class: pod
             image: example.server.com/user/style-transfer:1.0.0
             command: python /run.py
-            input_stream_map:
-              image:
-                path: /input/image.jpeg
-                match_pattern: .*\.jpeg
-              style:
-                path: /input/style.t7
+            input_stream:
+              base-input:
+                path: /input
+                match_pattern: input/.*
+              extra-style:
+                path: /extra_styles/style2.t7
                 match_pattern: .*\.t7
             output_dir: /output
-            output_stream_map:
+            output_stream:
               result:
                 path: ./result.jpeg
                 match_pattern: .*\.jpeg
@@ -47,10 +47,9 @@ fn pod_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_job() -> Result<()> {
-    let store_map = store_map_fixture()?;
-    let pod_job = pod_job_style(&store_map)?;
+    let pod_job = pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
     assert_eq!(
-        pod_job.hash, "ed239d9a9c5283b9073d3ac9d58edf7c9a4159c0d4baccfb6486b5d09d34ceb3",
+        pod_job.hash, "c70e63a3a3299747adb9c0e59b9fe63599bd781b820c4f63577f16aae12ca9c0",
         "Hash didn't match."
     );
     Ok(())
@@ -58,26 +57,32 @@ fn hash_pod_job() -> Result<()> {
 
 #[test]
 fn pod_job_to_yaml() -> Result<()> {
-    let store_map = store_map_fixture()?;
     assert_eq!(
-        to_yaml(&pod_job_style(&store_map)?)?,
+        to_yaml(&pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_job
-            pod: 8e34979d6c526e5948bafbfa42e3df23c42b2a98082b97510f64f77b8a68e094
-            input_stream_map:
-              image:
-                kind: File
-                rel_path: images/dog.jpeg
-                store_name: test_data
+            pod: 7cc9db247fdbe214520140ef610fc6c23a1f1c5a56e0a6868c72ead03f0be968
+            input_stream:
+              base-input:
+              - kind: File
+                path:
+                  namespace: default
+                  rel_path: styles/style1.t7
+                checksum: 69e709c1697e290994d2da75ddfb2097bf801a9436a3727a282e0230e703da2b
+              - kind: File
+                path:
+                  namespace: default
+                  rel_path: images/subject.jpeg
                 checksum: 8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd
-              style:
+              extra-style:
                 kind: File
-                rel_path: styles/mosaic.t7
-                store_name: test_data
+                path:
+                  namespace: default
+                  rel_path: styles/mosaic.t7
                 checksum: fbd7d882e9e02aafb57366e726762025ff6b2e12cd41abd44b874542b7693771
-            output_stream_map:
+            output_dir:
+              namespace: default
               rel_path: output
-              store_name: test_data
             cpu_limit: 0.5
             memory_limit: 2147483648
             env_vars: null
@@ -89,10 +94,9 @@ fn pod_job_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_result() -> Result<()> {
-    let store_map = store_map_fixture()?;
     assert_eq!(
-        pod_result_style(&store_map)?.hash,
-        "df849c2e93ac1ff33171cfd4666f287bccfcde881a9bc45a79a2eeabe37ca636",
+        pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
+        "d6430ca92496d830a0cdee1c3350e35eb61f19dec2a651713fa9cd357a7e0a63",
         "Hash didn't match."
     );
     Ok(())
@@ -100,12 +104,11 @@ fn hash_pod_result() -> Result<()> {
 
 #[test]
 fn pod_result_to_yaml() -> Result<()> {
-    let store_map = store_map_fixture()?;
     assert_eq!(
-        to_yaml(&pod_result_style(&store_map)?)?,
+        to_yaml(&pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_result
-            pod_job: ed239d9a9c5283b9073d3ac9d58edf7c9a4159c0d4baccfb6486b5d09d34ceb3
+            pod_job: c70e63a3a3299747adb9c0e59b9fe63599bd781b820c4f63577f16aae12ca9c0
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307

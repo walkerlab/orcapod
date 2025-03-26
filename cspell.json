@@ -16,7 +16,6 @@
         "graphviz",
     ],
     "ignoreWords": [
-        "unref",
         "relpath",
         "tempfile",
         "tempdir",

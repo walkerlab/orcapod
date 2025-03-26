@@ -1,4 +1,7 @@
-use crate::error::{Kind, OrcaError, Result};
+use crate::{
+    error::{Kind, OrcaError, Result},
+    model::{Blob, BlobKind, NameSpaceLookup},
+};
 use serde_yaml;
 use sha2::{Digest as _, Sha256};
 use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
@@ -34,15 +37,12 @@ pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
 ///
 /// Will return error if unable to access file.
 pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
-    hash_stream(&mut match File::open(&filepath) {
-        Ok(file) => file,
-        Err(error) => {
-            return Err(OrcaError::from(Kind::IoErrorWithPath {
-                error,
-                path: filepath.as_ref().into(),
-            }))
-        }
-    })
+    if !filepath.as_ref().exists() {
+        return Err(OrcaError::from(Kind::InputFileOrFolderNotFound {
+            path: filepath.as_ref().to_path_buf(),
+        }));
+    }
+    hash_stream(&mut File::open(&filepath)?)
 }
 
 /// Evaluate checksum hash of a folder.
@@ -51,30 +51,38 @@ pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
 ///
 /// Will return error if unable to access any child file.
 pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
-    let summary: BTreeMap<String, String> = match dirpath.as_ref().read_dir() {
-        Ok(dir) => dir,
-        Err(error) => {
-            return Err(OrcaError::from(Kind::IoErrorWithPath {
-                error,
-                path: dirpath.as_ref().into(),
-            }))
-        }
-    }
-    .map(|path| {
-        let access_path = path?.path();
-        Ok((
-            access_path
-                .strip_prefix(&dirpath)?
-                .to_string_lossy()
-                .into_owned(),
-            if access_path.is_dir() {
-                hash_dir(access_path)?
-            } else {
-                hash_file(access_path)?
-            },
-        ))
-    })
-    .collect::<Result<_>>()?;
+    let summary: BTreeMap<String, String> = dirpath
+        .as_ref()
+        .read_dir()?
+        .map(|path| {
+            let access_path = path?.path();
+            Ok((
+                access_path
+                    .strip_prefix(&dirpath)?
+                    .to_string_lossy()
+                    .into_owned(),
+                if access_path.is_dir() {
+                    hash_dir(access_path)?
+                } else {
+                    hash_file(access_path)?
+                },
+            ))
+        })
+        .collect::<Result<_>>()?;
 
     Ok(hash_buffer(serde_yaml::to_string(&summary)?))
+}
+
+/// Evaluate checksum blob
+///
+/// # Errors
+/// Will return an io error if it fails to hash the file or folder
+pub fn compute_checksum_for_blob(blob: Blob, store_map: &NameSpaceLookup) -> Result<Blob> {
+    Ok(Blob {
+        checksum: match blob.kind {
+            BlobKind::File => hash_file(store_map.resolve_path(&blob.path)?)?,
+            BlobKind::Directory => hash_dir(store_map.resolve_path(&blob.path)?)?,
+        },
+        ..blob
+    })
 }

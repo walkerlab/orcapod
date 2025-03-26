@@ -11,22 +11,30 @@ use names::{Generator, Name};
 use orcapod::{
     error::Result,
     model::{
-        Annotation, Blob, Input, Output, PathType, Pod, PodJob, PodResult, StoreMap, StreamInfo,
+        Annotation, Blob, BlobKind, Input, NameSpaceLookup, OrcaPath, Pod, PodJob, PodResult,
+        StreamInfo,
     },
     orchestrator::Status,
     store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore as _},
 };
-use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::{self, File},
     ops::Deref,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::LazyLock,
 };
 use tempfile::{tempdir, TempDir};
 
 // --- fixtures ---
+
+pub static NAMESPACE_LOOKUP_READ_ONLY: LazyLock<NameSpaceLookup> = LazyLock::new(|| {
+    NameSpaceLookup(HashMap::from([(
+        "default".to_owned(),
+        PathBuf::from("./tests/data"),
+    )]))
+});
 
 pub fn pod_style() -> Result<Pod> {
     Pod::new(
@@ -39,17 +47,17 @@ pub fn pod_style() -> Result<Pod> {
         "python /run.py".to_owned(),
         BTreeMap::from([
             (
-                "style".to_owned(),
+                "extra-style".to_owned(),
                 StreamInfo {
-                    path: PathBuf::from("/input/style.t7"),
+                    path: PathBuf::from("/extra_styles/style2.t7"),
                     match_pattern: r".*\.t7".to_owned(),
                 },
             ),
             (
-                "image".to_owned(),
+                "base-input".to_owned(),
                 StreamInfo {
-                    path: PathBuf::from("/input/image.jpeg"),
-                    match_pattern: r".*\.jpeg".to_owned(),
+                    path: PathBuf::from("/input"),
+                    match_pattern: "input/.*".to_owned(),
                 },
             ),
         ]),
@@ -68,7 +76,7 @@ pub fn pod_style() -> Result<Pod> {
     )
 }
 
-pub fn pod_job_style(store_map: &StoreMap) -> Result<PodJob> {
+pub fn pod_job_style(namespace_lookup: &NameSpaceLookup) -> Result<PodJob> {
     PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
@@ -78,80 +86,62 @@ pub fn pod_job_style(store_map: &StoreMap) -> Result<PodJob> {
         pod_style()?,
         BTreeMap::from([
             (
-                "style".to_owned(),
-                Input::Unary(Blob::new(
-                    PathType::File,
-                    "styles/mosaic.t7",
-                    "test_data".to_owned(),
-                    store_map,
-                )?),
+                "extra-style".to_owned(),
+                Input::Unary(Blob {
+                    kind: BlobKind::File,
+                    path: OrcaPath {
+                        namespace: "default".to_owned(),
+                        rel_path: PathBuf::from("styles/mosaic.t7"),
+                    },
+                    checksum: String::new(),
+                }),
             ),
             (
-                "image".to_owned(),
-                Input::Unary(Blob::new(
-                    PathType::File,
-                    "images/dog.jpeg",
-                    "test_data".to_owned(),
-                    store_map,
-                )?),
+                "base-input".to_owned(),
+                Input::Collection(vec![
+                    Blob {
+                        kind: BlobKind::File,
+                        path: OrcaPath {
+                            namespace: "default".to_owned(),
+                            rel_path: PathBuf::from("styles/style1.t7"),
+                        },
+                        checksum: String::new(),
+                    },
+                    Blob {
+                        kind: BlobKind::File,
+                        path: OrcaPath {
+                            namespace: "default".to_owned(),
+                            rel_path: PathBuf::from("images/subject.jpeg"),
+                        },
+                        checksum: String::new(),
+                    },
+                ]),
             ),
         ]),
-        Output {
+        OrcaPath {
+            namespace: "default".into(),
             rel_path: "output".into(),
-            store_name: "test_data".into(),
         },
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes
         None,
+        namespace_lookup,
     )
 }
 
-pub fn pod_result_style(store_map: &StoreMap) -> Result<PodResult> {
+pub fn pod_result_style(namespace_lookup: &NameSpaceLookup) -> Result<PodResult> {
     PodResult::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod result.".to_owned(),
             version: "0.0.0".to_owned(),
         }),
-        pod_job_style(store_map)?,
+        pod_job_style(namespace_lookup)?,
         "simple-endeavour".to_owned(),
         Status::Completed,
         1_737_922_307,
         1_737_925_907,
     )
-}
-
-/// Create the temp dir and copy the data over to the default data-store location
-pub fn store_map_fixture() -> Result<StoreMapFixture> {
-    let temp_dir = tempdir()?;
-
-    fs::create_dir_all(&temp_dir)?;
-
-    Command::new("cp")
-        .arg("-r")
-        .arg("./tests/data/.")
-        .arg(temp_dir.path())
-        .output()?;
-
-    let mut mapping = BTreeMap::new();
-    mapping.insert("test_data".to_owned(), temp_dir.path().to_path_buf());
-
-    Ok(StoreMapFixture {
-        _temp_dir_handle: temp_dir,
-        store_map: StoreMap { mapping },
-    })
-}
-
-pub struct StoreMapFixture {
-    _temp_dir_handle: TempDir, // Handle that when the object get drop, the temp_dir is deleted
-    store_map: StoreMap,
-}
-
-impl Deref for StoreMapFixture {
-    type Target = StoreMap;
-    fn deref(&self) -> &Self::Target {
-        &self.store_map
-    }
 }
 
 pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
@@ -199,11 +189,32 @@ pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestCo
     })
 }
 
-pub fn store_fixture(store_directory: Option<&str>) -> Result<TestStore> {
-    let tmp_directory = String::from(tempdir()?.path().to_string_lossy());
+pub fn store_temp(store_directory: Option<&str>, with_data: bool) -> Result<TestStore> {
+    let temp_dir_handle = tempdir()?;
+    let temp_directory = String::from(temp_dir_handle.path().to_string_lossy());
+    let store =
+        store_directory.map_or_else(|| LocalFileStore::new(&temp_directory), LocalFileStore::new);
+    fs::create_dir_all(store.get_directory())?;
+    let namespace_lookup: NameSpaceLookup;
+    if with_data {
+        namespace_lookup = NameSpaceLookup(HashMap::from([(
+            "default".to_owned(),
+            store.get_directory().join("default"),
+        )]));
+        Command::new("cp")
+            .arg("-r")
+            .arg("./tests/data")
+            .arg(&namespace_lookup.0["default"])
+            .output()?;
+    } else {
+        namespace_lookup = NameSpaceLookup(HashMap::new());
+    }
+
     Ok(TestStore {
         store: store_directory
-            .map_or_else(|| LocalFileStore::new(tmp_directory), LocalFileStore::new)?,
+            .map_or_else(|| LocalFileStore::new(temp_directory), LocalFileStore::new),
+        namespace_lookup,
+        temp_dir_handle,
     })
 }
 // --- helper functions ---
@@ -216,9 +227,11 @@ pub fn add_storage<T: TestSetup>(model: T, store: &TestStore) -> Result<TestStor
 
 // --- util ---
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct TestStore {
     pub store: LocalFileStore,
+    pub namespace_lookup: NameSpaceLookup,
+    pub temp_dir_handle: TempDir,
 }
 
 #[derive(Debug)]
@@ -231,12 +244,6 @@ impl Deref for TestStore {
     type Target = LocalFileStore;
     fn deref(&self) -> &Self::Target {
         &self.store
-    }
-}
-
-impl Drop for TestStore {
-    fn drop(&mut self) {
-        fs::remove_dir_all(self.store.get_directory()).expect("Failed to teardown store.");
     }
 }
 

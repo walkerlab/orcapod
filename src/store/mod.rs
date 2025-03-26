@@ -25,6 +25,7 @@ pub struct ModelInfo {
 
 /// Standard behavior of any store backend supported.
 pub trait ModelStore {
+    /// ASK EDGAR for third opionion
     /// Namespace where models will be stored.
     const MODEL_NAMESPACE: &str = "orcapod_model";
 

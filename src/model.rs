@@ -1,15 +1,15 @@
 use crate::{
-    crypto::{hash_buffer, hash_dir, hash_file},
+    crypto::{compute_checksum_for_blob, hash_buffer},
     error::{Kind, OrcaError, Result},
     orchestrator::Status,
-    util::{get_type_name, hash},
+    util::get_type_name,
 };
 use heck::ToSnakeCase as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml;
 use std::{
     collections::{BTreeMap, HashMap},
-    path::{Path, PathBuf},
+    path::PathBuf,
     result,
 };
 
@@ -42,11 +42,11 @@ pub struct Pod {
     pub image: String,
     /// Space-delimited shell command to begin computation.
     pub command: String,
-    /// A dictionary of named input streams.
-    pub input_stream_map: BTreeMap<String, StreamInfo>,
-    /// Absolute output directory within the environment.
+    /// Exposed, internal input streams.
+    pub input_stream: BTreeMap<String, StreamInfo>,
+    /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    output_stream_map: BTreeMap<String, StreamInfo>,
+    output_stream: BTreeMap<String, StreamInfo>,
     source_commit_url: String,
     recommended_cpus: f32,
     recommended_memory: u64,
@@ -63,9 +63,9 @@ impl Pod {
         annotation: Option<Annotation>,
         image: String,
         command: String,
-        input_stream_map: BTreeMap<String, StreamInfo>,
+        input_stream: BTreeMap<String, StreamInfo>,
         output_dir: PathBuf,
-        output_stream_map: BTreeMap<String, StreamInfo>,
+        output_stream: BTreeMap<String, StreamInfo>,
         source_commit_url: String,
         recommended_cpus: f32,
         recommended_memory: u64,
@@ -76,9 +76,9 @@ impl Pod {
             hash: String::new(),
             image,
             command,
-            input_stream_map,
+            input_stream,
             output_dir,
-            output_stream_map,
+            output_stream,
             source_commit_url,
             recommended_cpus,
             recommended_memory,
@@ -121,9 +121,9 @@ pub struct PodJob {
     #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
     pub pod: Pod,
     /// Map stream ids to an input in user data target.
-    pub input_stream_map: BTreeMap<String, Input>,
+    pub input_stream: BTreeMap<String, Input>,
     /// Map output directory to a folder in user data target.
-    pub output_stream_map: Output,
+    pub output_dir: OrcaPath,
     /// Maximum allowable cores in fractional cores for the computation.
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
@@ -153,25 +153,45 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Pod,
-        input_stream_mapping: BTreeMap<String, Input>,
-        output_stream_map: Output,
+        mut input_stream: BTreeMap<String, Input>,
+        output_dir: OrcaPath,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
+        namespace_lookup: &NameSpaceLookup,
     ) -> Result<Self> {
+        input_stream = input_stream
+            .into_iter()
+            .map(|(stream_name, stream_input)| match stream_input {
+                Input::Unary(blob) => Ok((
+                    stream_name,
+                    Input::Unary(compute_checksum_for_blob(blob, namespace_lookup)?),
+                )),
+                Input::Collection(blobs) => Ok((
+                    stream_name,
+                    Input::Collection(
+                        blobs
+                            .into_iter()
+                            .map(|blob| compute_checksum_for_blob(blob, namespace_lookup))
+                            .collect::<Result<Vec<_>>>()?,
+                    ),
+                )),
+            })
+            .collect::<Result<BTreeMap<_, _>>>()?;
+
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
             pod,
-            input_stream_map: input_stream_mapping,
-            output_stream_map,
+            input_stream,
+            output_dir,
             cpu_limit,
             memory_limit,
             env_vars,
         };
 
         Ok(Self {
-            hash: hash(to_yaml(&pod_job_no_hash)?),
+            hash: hash_buffer(to_yaml(&pod_job_no_hash)?),
             ..pod_job_no_hash
         })
     }
@@ -243,7 +263,7 @@ impl PodResult {
             terminated,
         };
         Ok(Self {
-            hash: hash(to_yaml(&pod_result_no_hash)?),
+            hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
             ..pod_result_no_hash
         })
     }
@@ -305,60 +325,16 @@ pub enum Input {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob {
     /// BLOB available options.
-    pub kind: PathType,
+    pub kind: BlobKind,
     /// BLOB location.
-    pub rel_path: PathBuf,
-    /// Name of store
-    pub store_name: String,
+    pub path: OrcaPath,
     /// BLOB contents checksum.
     pub checksum: String,
 }
 
-impl Blob {
-    /// # Errors
-    /// Will error out if unable to compute checksum on blob contents
-    pub fn new(
-        kind: PathType,
-        rel_path: impl AsRef<Path>,
-        store_name: String,
-        store_map: &StoreMap,
-    ) -> Result<Self> {
-        let blob = Self {
-            kind,
-            rel_path: rel_path.as_ref().to_path_buf(),
-            store_name,
-            checksum: String::new(),
-        };
-
-        Ok(Self {
-            checksum: match blob.kind {
-                PathType::File => hash_file(&blob.resolve_absolute_path(store_map)?)?,
-                PathType::Directory => hash_dir(&blob.resolve_absolute_path(store_map)?)?,
-            },
-            ..blob
-        })
-    }
-
-    /// Utility function where given a `store_map`, it will return the absolute path to the blob
-    ///
-    /// # Errors
-    /// Will failed if a given `store_name` was not found in the mapping
-    pub fn resolve_absolute_path(&self, store_map: &StoreMap) -> Result<PathBuf> {
-        Ok(store_map
-            .mapping
-            .get(&self.store_name)
-            .ok_or_else(|| {
-                OrcaError::from(Kind::StoreNameNotFound {
-                    store_name: self.store_name.clone(),
-                })
-            })?
-            .join(&self.rel_path))
-    }
-}
-
 /// File or folder options for BLOBs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub enum PathType {
+pub enum BlobKind {
     /// A single file specified by its absolute path.
     File,
     /// A single folder specified by its absolute path.
@@ -368,33 +344,31 @@ pub enum PathType {
 
 /// Struct to handle `pod_job` output
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct Output {
+pub struct OrcaPath {
+    /// Name of store
+    pub namespace: String,
     /// DIR location.
     pub rel_path: PathBuf,
-    /// Name of store
-    pub store_name: String,
-}
-
-impl Output {
-    /// Utility function where given a `store_map`, it will return the absolute path to the blob
-    ///
-    /// # Errors
-    /// Will failed if a given `store_name` was not found in the mapping
-    pub fn resolve_absolute_path(&self, store_map: &StoreMap) -> Result<PathBuf> {
-        Ok(store_map
-            .mapping
-            .get(&self.store_name)
-            .ok_or_else(|| {
-                OrcaError::from(Kind::StoreNameNotFound {
-                    store_name: self.store_name.clone(),
-                })
-            })?
-            .join(&self.rel_path))
-    }
 }
 
 /// Same as blob interface, but renamed due to possible additional of features for store pointer.
-pub struct StoreMap {
-    /// Map `store_name` to a Store
-    pub mapping: BTreeMap<String, PathBuf>,
+#[derive(Debug)]
+pub struct NameSpaceLookup(pub HashMap<String, PathBuf>);
+
+impl NameSpaceLookup {
+    /// Resolve the path by joining the namespace lookup path with the rel path given an orca path
+    ///
+    /// # Errors
+    /// Error out if namespace wasn't found in the mapping
+    pub fn resolve_path(&self, orca_path: &OrcaPath) -> Result<PathBuf> {
+        Ok(self
+            .0
+            .get(&orca_path.namespace)
+            .ok_or_else(|| {
+                OrcaError::from(Kind::NameSpaceNotFound {
+                    namespace: orca_path.namespace.clone(),
+                })
+            })?
+            .join(&orca_path.rel_path))
+    }
 }

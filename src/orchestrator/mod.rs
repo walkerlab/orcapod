@@ -1,10 +1,10 @@
 use crate::{
     error::Result,
-    model::{PodJob, PodResult, StoreMap},
+    model::{NameSpaceLookup, OrcaPath, PodJob, PodResult},
     util::get_type_name,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, future::Future, path::PathBuf};
+use std::{collections::HashMap, future::Future};
 /// Options for sourcing compute environment images.
 pub enum ImageKind {
     /// A published compute environment image in a container registry. Argument formatted as
@@ -12,7 +12,7 @@ pub enum ImageKind {
     Published(String),
     /// A packaged compute environment of image+tag as a tarball. Argument is the relative path of
     /// tarball in orchestrator data directory e.g. (`path/to/image.tar.gz`).
-    Tarball(PathBuf),
+    Tarball(OrcaPath),
 }
 /// Status of a particular compute run.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -80,14 +80,18 @@ pub trait Orchestrator {
         &self,
         pod_job: &PodJob,
         image: &ImageKind,
-        store_map: &StoreMap,
+        namespace_lookup: &NameSpaceLookup,
     ) -> Result<PodRun>;
     /// How to synchronously start containers. Assumes `PodJob` image is published.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start_blocking(&self, pod_job: &PodJob, store_map: &StoreMap) -> Result<PodRun>;
+    fn start_blocking(
+        &self,
+        pod_job: &PodJob,
+        namespace_lookup: &NameSpaceLookup,
+    ) -> Result<PodRun>;
     /// How to synchronously query containers.
     ///
     /// # Errors
@@ -121,7 +125,7 @@ pub trait Orchestrator {
         &self,
         pod_job: &PodJob,
         image: &ImageKind,
-        store_map: &StoreMap,
+        namespace_lookup: &NameSpaceLookup,
     ) -> impl Future<Output = Result<PodRun>> + Send;
     /// How to asynchronously start containers. Assumes `PodJob` image is published.
     ///
@@ -131,7 +135,7 @@ pub trait Orchestrator {
     fn start(
         &self,
         pod_job: &PodJob,
-        store_map: &StoreMap,
+        namespace_lookup: &NameSpaceLookup,
     ) -> impl Future<Output = Result<PodRun>> + Send;
     /// How to asynchronously query containers.
     ///
