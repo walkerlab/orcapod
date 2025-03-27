@@ -32,9 +32,7 @@ glob = "0.3.1" # recursive walk of filesystem in filestore
 heck = "0.5.0" # strings to snake_case
 names = "0.14.0" # random name generator
 regex = "1.11.0" # complex pattern matching in strings
-serde = { version = "1.0.210", features = [
-    "derive",
-] } # serialization/deserialization to/from filestore
+serde = { version = "1.0.210", features = ["derive"] } # serialization/deserialization to/from filestore
 serde_json = "1.0.137" # JSON in sharing memory with local docker orchestrator
 serde_yaml = "0.9.34" # YAML in filestore
 sha2 = "0.10.8" # checksums based on SHA256 
