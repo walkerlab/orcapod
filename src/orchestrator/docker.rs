@@ -457,53 +457,58 @@ fn prepare_mount_binds(
         host_output_directory.to_string_lossy(),
         pod_job.pod.output_dir.to_string_lossy(),
     )];
+
     let input_binds = pod_job
         .pod
         .input_stream
         .iter()
-        .flat_map(
-            |(stream_name, stream_info)| match &pod_job.input_stream[stream_name] {
-                Input::Unary(single_blob) => vec![single_blob]
-                    .into_iter()
-                    .map(|blob| {
-                        let path = path::absolute(namespace_lookup.resolve_path(&blob.path)?)?;
-                        if !path.exists() {
-                            return Err(OrcaError::from(Kind::InputFileOrFolderNotFound { path }));
-                        }
-
-                        Ok(format!(
-                            "{}:{}:{}",
-                            path.to_string_lossy(),
-                            stream_info.path.to_string_lossy(),
-                            "ro"
-                        ))
-                    })
-                    .collect::<Vec<_>>(),
-                Input::Collection(blobs) => blobs
-                    .iter()
-                    .map(|blob| {
-                        let path = path::absolute(namespace_lookup.resolve_path(&blob.path)?)?;
-                        if !path.exists() {
-                            return Err(OrcaError::from(Kind::InputFileOrFolderNotFound { path }));
-                        }
-
-                        Ok(format!(
-                            "{}:{}:{}",
-                            path.to_string_lossy(),
-                            stream_info
-                                .path
-                                .join(blob.path.rel_path.file_name().ok_or(OrcaError::from(
-                                    Kind::FailedToExtractFileName {
-                                        path: blob.path.rel_path.clone()
-                                    }
-                                ))?)
+        .try_fold::<_, _, Result<_>>(
+            vec![],
+            |mut flattened_binds, (stream_name, stream_info)| {
+                flattened_binds.extend(
+                    match get_value_from_map(&pod_job.input_stream, stream_name)? {
+                        Input::Unary(blob) => {
+                            vec![format!(
+                                "{}:{}:{}",
+                                path::absolute(
+                                    get_value_from_map(&namespace_lookup.0, &blob.path.namespace)?
+                                        .join(&blob.path.rel_path)
+                                )?
                                 .to_string_lossy(),
-                            "ro"
-                        ))
-                    })
-                    .collect::<Vec<_>>(),
+                                stream_info.path.to_string_lossy(),
+                                "ro"
+                            )]
+                        }
+                        Input::Collection(blobs) => blobs
+                            .iter()
+                            .map(|blob| {
+                                Ok(format!(
+                                    "{}:{}:{}",
+                                    path::absolute(
+                                        get_value_from_map(
+                                            &namespace_lookup.0,
+                                            &blob.path.namespace
+                                        )?
+                                        .join(&blob.path.rel_path)
+                                    )?
+                                    .to_string_lossy(),
+                                    stream_info
+                                        .path
+                                        .join(blob.path.rel_path.file_name().ok_or_else(|| {
+                                            OrcaError::from(Kind::FailedToExtractFileName {
+                                                path: blob.path.rel_path.clone(),
+                                            })
+                                        })?)
+                                        .to_string_lossy(),
+                                    "ro"
+                                ))
+                            })
+                            .collect::<Result<_>>()?,
+                    },
+                );
+                Ok(flattened_binds)
             },
-        )
-        .collect::<Result<Vec<_>>>()?;
+        )?;
+
     Ok((input_binds, output_bind))
 }

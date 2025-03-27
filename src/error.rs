@@ -81,53 +81,9 @@ impl OrcaError {
         matches!(self.kind, Kind::NoMatchingPodRun { .. })
     }
 }
-
-/// Resrot the functions TODO
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
-    }
-}
-impl From<glob::PatternError> for OrcaError {
-    fn from(error: glob::PatternError) -> Self {
-        Self {
-            kind: Kind::GlobPatternError(error),
-        }
-    }
-}
-impl From<regex::Error> for OrcaError {
-    fn from(error: regex::Error) -> Self {
-        Self {
-            kind: Kind::RegexError(error),
-        }
-    }
-}
-impl From<serde_yaml::Error> for OrcaError {
-    fn from(error: serde_yaml::Error) -> Self {
-        Self {
-            kind: Kind::SerdeYamlError(error),
-        }
-    }
-}
-impl From<serde_json::Error> for OrcaError {
-    fn from(error: serde_json::Error) -> Self {
-        Self {
-            kind: Kind::SerdeJsonError(error),
-        }
-    }
-}
-impl From<io::Error> for OrcaError {
-    fn from(error: io::Error) -> Self {
-        Self {
-            kind: Kind::IoError(error),
-        }
-    }
-}
-impl From<FromUtf8Error> for OrcaError {
-    fn from(error: FromUtf8Error) -> Self {
-        Self {
-            kind: Kind::FromUtf8Error(error),
-        }
     }
 }
 impl From<BollardError> for OrcaError {
@@ -137,6 +93,37 @@ impl From<BollardError> for OrcaError {
         }
     }
 }
+
+impl From<FromUtf8Error> for OrcaError {
+    fn from(error: FromUtf8Error) -> Self {
+        Self {
+            kind: Kind::FromUtf8Error(error),
+        }
+    }
+}
+
+impl From<glob::PatternError> for OrcaError {
+    fn from(error: glob::PatternError) -> Self {
+        Self {
+            kind: Kind::GlobPatternError(error),
+        }
+    }
+}
+
+impl From<io::Error> for OrcaError {
+    fn from(error: io::Error) -> Self {
+        Self {
+            kind: Kind::IoError(error),
+        }
+    }
+}
+
+impl From<Kind> for OrcaError {
+    fn from(kind: Kind) -> Self {
+        Self { kind }
+    }
+}
+
 impl From<path::StripPrefixError> for OrcaError {
     fn from(error: path::StripPrefixError) -> Self {
         Self {
@@ -144,8 +131,27 @@ impl From<path::StripPrefixError> for OrcaError {
         }
     }
 }
-impl From<Kind> for OrcaError {
-    fn from(kind: Kind) -> Self {
-        Self { kind }
+
+impl From<regex::Error> for OrcaError {
+    fn from(error: regex::Error) -> Self {
+        Self {
+            kind: Kind::RegexError(error),
+        }
+    }
+}
+
+impl From<serde_json::Error> for OrcaError {
+    fn from(error: serde_json::Error) -> Self {
+        Self {
+            kind: Kind::SerdeJsonError(error),
+        }
+    }
+}
+
+impl From<serde_yaml::Error> for OrcaError {
+    fn from(error: serde_yaml::Error) -> Self {
+        Self {
+            kind: Kind::SerdeYamlError(error),
+        }
     }
 }

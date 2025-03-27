@@ -18,7 +18,7 @@ use orcapod::{
     store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore as _},
 };
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     fs::{self, File},
     ops::Deref,
     path::{Path, PathBuf},
@@ -45,7 +45,7 @@ pub fn pod_style() -> Result<Pod> {
         }),
         "example.server.com/user/style-transfer:1.0.0".to_owned(),
         "python /run.py".to_owned(),
-        BTreeMap::from([
+        HashMap::from([
             (
                 "extra-style".to_owned(),
                 StreamInfo {
@@ -62,7 +62,7 @@ pub fn pod_style() -> Result<Pod> {
             ),
         ]),
         PathBuf::from("/output"),
-        BTreeMap::from([(
+        HashMap::from([(
             "result".to_owned(),
             StreamInfo {
                 path: PathBuf::from("./result.jpeg"),
@@ -84,7 +84,7 @@ pub fn pod_job_style(namespace_lookup: &NameSpaceLookup) -> Result<PodJob> {
             version: "0.1.0".to_owned(),
         }),
         pod_style()?,
-        BTreeMap::from([
+        HashMap::from([
             (
                 "extra-style".to_owned(),
                 Input::Unary(Blob {

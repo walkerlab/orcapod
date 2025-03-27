@@ -4,7 +4,7 @@ use crate::{
 };
 use serde_yaml;
 use sha2::{Digest as _, Sha256};
-use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
+use std::{collections::HashMap, fs::File, io::Read, path::Path};
 
 /// Evaluate checksum hash of streamed data i.e. chunked buffers.
 ///
@@ -51,7 +51,7 @@ pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
 ///
 /// Will return error if unable to access any child file.
 pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
-    let summary: BTreeMap<String, String> = dirpath
+    let summary: HashMap<String, String> = dirpath
         .as_ref()
         .read_dir()?
         .map(|path| {

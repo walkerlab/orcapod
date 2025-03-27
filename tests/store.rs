@@ -2,6 +2,7 @@
     clippy::expect_used,
     missing_docs,
     clippy::panic_in_result_fn,
+    clippy::unwrap_used,
     reason = "OK in tests."
 )]
 
@@ -11,11 +12,15 @@ use fixture::{
     NAMESPACE_LOOKUP_READ_ONLY,
 };
 use orcapod::{
+    crypto::hash_buffer,
     error::Result,
-    model::{Annotation, Pod},
+    model::{to_yaml, Annotation, Pod},
     store::{filestore::LocalFileStore, ModelID, ModelInfo, ModelStore as _},
 };
-use std::{fmt::Debug, path::Path};
+use std::{
+    fmt::Debug,
+    path::{Path, PathBuf},
+};
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     Some(
@@ -217,4 +222,64 @@ fn pod_annotation_delete() -> Result<()> {
         "Returned a different OrcaError than one expected when deleting an invalid annotation."
     );
     Ok(())
+}
+
+#[test]
+fn annotation_test() -> Result<()> {
+    // TODO later, find a library to read the stdout and assert it.
+
+    // Annotation behavior test, for now there is no std_out asserts since haven't found a library that does it correctly.
+    // Case 1: Saving a new model that has no matching annotation for that given model type:
+    //      Save everything as normal
+    // Case 2: Saving a model but new annotation:
+    //      Skip saving spec, but save new annotation
+    // Case 3: Saving a model that has a matching annotation already on file, but hash matches for the model.spec
+    //      Skip the spec, and skip saving annotation and print a warning
+    // Case 4: Saving a model that has a matching annotation, but the hash is different
+    //      Save the new spec, and skip saving annotation and print a warning
+
+    let mut pod = pod_style()?;
+    let store = store_temp(None, false)?;
+
+    // Case 1
+    store.save_pod(&pod)?;
+
+    assert!(make_annotation_path(&store, &pod).exists());
+    assert!(make_path(&store, &pod).exists());
+
+    // Case 2
+    let old_annotation_version = pod.annotation.as_ref().unwrap().version.clone();
+    pod.annotation.as_mut().unwrap().version = "2.0.0".into();
+
+    store.save_pod(&pod)?;
+
+    assert!(make_annotation_path(&store, &pod).exists());
+    pod.annotation.as_mut().unwrap().version = old_annotation_version;
+
+    // Case 3
+    store.save_pod(&pod)?;
+
+    // Case 4
+    pod.output_dir = "output_2".into();
+    pod.hash = hash_buffer(to_yaml(&pod)?);
+
+    store.save_pod(&pod)?;
+
+    assert!(make_path(&store, &pod).exists());
+
+    Ok(())
+}
+
+fn make_annotation_path(store: &LocalFileStore, pod: &Pod) -> PathBuf {
+    store.make_path::<Pod>(
+        &pod.hash,
+        LocalFileStore::make_annotation_relpath(
+            &pod.annotation.as_ref().unwrap().name,
+            &pod.annotation.as_ref().unwrap().version,
+        ),
+    )
+}
+
+fn make_path(store: &LocalFileStore, pod: &Pod) -> PathBuf {
+    store.make_path::<Pod>(&pod.hash, LocalFileStore::SPEC_RELPATH)
 }

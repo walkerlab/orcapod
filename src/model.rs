@@ -5,13 +5,9 @@ use crate::{
     util::get_type_name,
 };
 use heck::ToSnakeCase as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{ser::SerializeMap as _, Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml;
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-    result,
-};
+use std::{collections::HashMap, path::PathBuf, result};
 
 /// Converts a model instance into a consistent yaml.
 ///
@@ -43,10 +39,12 @@ pub struct Pod {
     /// Space-delimited shell command to begin computation.
     pub command: String,
     /// Exposed, internal input streams.
-    pub input_stream: BTreeMap<String, StreamInfo>,
+    #[serde(serialize_with = "serialize_hash_map")]
+    pub input_stream: HashMap<String, StreamInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    output_stream: BTreeMap<String, StreamInfo>,
+    #[serde(serialize_with = "serialize_hash_map")]
+    output_stream: HashMap<String, StreamInfo>,
     source_commit_url: String,
     recommended_cpus: f32,
     recommended_memory: u64,
@@ -63,9 +61,9 @@ impl Pod {
         annotation: Option<Annotation>,
         image: String,
         command: String,
-        input_stream: BTreeMap<String, StreamInfo>,
+        input_stream: HashMap<String, StreamInfo>,
         output_dir: PathBuf,
-        output_stream: BTreeMap<String, StreamInfo>,
+        output_stream: HashMap<String, StreamInfo>,
         source_commit_url: String,
         recommended_cpus: f32,
         recommended_memory: u64,
@@ -121,7 +119,8 @@ pub struct PodJob {
     #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
     pub pod: Pod,
     /// Map stream ids to an input in user data target.
-    pub input_stream: BTreeMap<String, Input>,
+    #[serde(serialize_with = "serialize_hash_map")]
+    pub input_stream: HashMap<String, Input>,
     /// Map output directory to a folder in user data target.
     pub output_dir: OrcaPath,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -129,7 +128,7 @@ pub struct PodJob {
     /// Maximum allowable memory in bytes for the computation.
     pub memory_limit: u64,
     /// Environment variables to be set in environment.
-    pub env_vars: Option<HashMap<String, String>>,
+    pub env_vars: Option<HashMap<String, String>>, // TODO write custom serializer for this to order hashmap,
 }
 
 /// An interface to access BLOB functions.
@@ -153,7 +152,7 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Pod,
-        mut input_stream: BTreeMap<String, Input>,
+        mut input_stream: HashMap<String, Input>,
         output_dir: OrcaPath,
         cpu_limit: f32,
         memory_limit: u64,
@@ -177,7 +176,7 @@ impl PodJob {
                     ),
                 )),
             })
-            .collect::<Result<BTreeMap<_, _>>>()?;
+            .collect::<Result<HashMap<_, _>>>()?;
 
         let pod_job_no_hash = Self {
             annotation,
@@ -371,4 +370,24 @@ impl NameSpaceLookup {
             })?
             .join(&orca_path.rel_path))
     }
+}
+
+fn serialize_hash_map<S, K: Ord + Serialize, V: Serialize>(
+    map: &HashMap<K, V>,
+    serializer: S,
+) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    // Sort values first
+    let mut sorted_vec = map.iter().collect::<Vec<_>>();
+    sorted_vec.sort_by(|value_a, value_b| value_a.0.cmp(value_b.0));
+
+    let mut serialize_map = serializer.serialize_map(Some(sorted_vec.len()))?;
+
+    sorted_vec
+        .iter()
+        .try_for_each(|value| serialize_map.serialize_entry(value.0, value.1))?;
+
+    serialize_map.end()
 }

@@ -156,7 +156,7 @@ impl LocalFileStore {
         }
     }
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
-        let model_infos = Self::find_model_metadata(
+        let model_infos: Vec<ModelInfo> = Self::find_model_metadata(
             &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
         )?
         .collect::<Vec<_>>();
@@ -187,8 +187,10 @@ impl LocalFileStore {
         let file_exists = file.as_ref().exists();
         if file_exists {
             println!(
-                "Skip saving `{}` since it is already stored.",
+                "{}{}{}",
+                "Skip saving ".bright_yellow(),
                 file.as_ref().to_string_lossy().bright_cyan(),
+                " since it is already stored.".bright_yellow()
             );
         } else {
             fs::write(file, content)?;
@@ -222,7 +224,7 @@ impl LocalFileStore {
             ))?;
 
             if let Some(model_match) = annotations.next() {
-                println!("Annotation already exists, skipping annotation saving. The annnotation is currently pointing to {} {}", get_type_name::<T>(), model_match.hash);
+                println!("Annotation already exists, skipping annotation saving. The annotation is currently pointing to {} {}", get_type_name::<T>(), model_match.hash);
             } else {
                 // Save the annotation file and throw an error if exist
                 Self::save_file(
@@ -238,7 +240,6 @@ impl LocalFileStore {
             }
         }
 
-        // TODO WRITE A TEST
         // Save the model specification and skip if it already exist e.g. on new annotations
         Self::save_file(
             self.make_path::<T>(hash, Self::SPEC_RELPATH),

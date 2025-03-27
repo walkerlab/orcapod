@@ -14,10 +14,7 @@ use orcapod::{
     model::{NameSpaceLookup, OrcaPath, PodJob},
     orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator as _, PodRun, Status},
 };
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-};
+use std::{collections::HashMap, path::PathBuf};
 
 fn setup<'store>(
     store: &'store TestStore,
@@ -121,8 +118,8 @@ fn remote_container_image_basic() -> Result<()> {
 
     stored_pod_job.model.pod.image = "alpine:3.14".to_owned();
     stored_pod_job.model.pod.command = "sleep 5".to_owned();
-    stored_pod_job.model.pod.input_stream = BTreeMap::new();
-    stored_pod_job.model.input_stream = BTreeMap::new();
+    stored_pod_job.model.pod.input_stream = HashMap::new();
+    stored_pod_job.model.input_stream = HashMap::new();
     let pod_run = orchestrator.start_blocking(&stored_pod_job.model, &store.namespace_lookup)?;
     basic_test(
         &orchestrator,
