@@ -12,7 +12,6 @@
 		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
 		"RUST_BACKTRACE": "1"
 	},
-	"postStartCommand": "docker system prune -fa && docker volume prune -f && apt update && apt install fish -y && chsh -s /usr/bin/fish",
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
@@ -37,5 +36,8 @@
 				"streetsidesoftware.code-spell-checker" // Catch spelling errors in docs
 			]
 		}
+	},
+	"features": {
+		"ghcr.io/meaningful-ooo/devcontainer-features/fish:2": {}
 	}
 }
