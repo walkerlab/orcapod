@@ -1,6 +1,5 @@
+use crate::error::{Kind, Result};
 use std::{any::type_name, collections::HashMap};
-
-use crate::error::{Kind, OrcaError, Result};
 
 #[expect(
     clippy::unwrap_used,
@@ -14,9 +13,8 @@ pub fn get_type_name<T>() -> String {
         .unwrap()
 }
 
-pub fn get_value_from_map<'map, T>(map: &'map HashMap<String, T>, key: &str) -> Result<&'map T> {
-    map.get(key)
-        .ok_or(OrcaError::from(Kind::KeyWasNotFoundError {
-            key: key.to_owned(),
-        }))
+pub fn get<'map, T>(map: &'map HashMap<String, T>, key: &str) -> Result<&'map T> {
+    Ok(map.get(key).ok_or(Kind::KeyMissing {
+        key: key.to_owned(),
+    })?)
 }

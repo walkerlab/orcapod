@@ -1,4 +1,4 @@
-excessive-nesting-threshold = 6
+excessive-nesting-threshold = 4
 too-many-arguments-threshold = 10
 allowed-prefixes = ["..", "GPU", "Orca", "Local"]
 min-ident-chars-threshold = 2

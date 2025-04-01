@@ -12,6 +12,7 @@
 		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
 		"RUST_BACKTRACE": "1"
 	},
+	"postStartCommand": "mkdir -p tests/.tmp && docker system prune -fa && docker volume prune -f",
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
@@ -38,6 +39,6 @@
 		}
 	},
 	"features": {
-		"ghcr.io/meaningful-ooo/devcontainer-features/fish:2": {}
+		"ghcr.io/meaningful-ooo/devcontainer-features/fish:2": {} // Fish shell
 	}
 }

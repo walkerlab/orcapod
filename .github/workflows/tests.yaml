@@ -22,4 +22,6 @@ jobs:
       - name: Run integration tests w/ coverage report
         env:
           RUST_BACKTRACE: full
-        run: cargo llvm-cov -- --nocapture
+        run: |
+          mkdir -p tests/.tmp
+          cargo llvm-cov -- --nocapture

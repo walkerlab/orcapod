@@ -15,7 +15,7 @@ RUN \
 RUN \
     # dev setup
     apt update && \
-    apt-get install sudo jq git bash-completion graphviz -y && \
+    apt-get install sudo jq git bash-completion graphviz rsync -y && \
     usermod -aG sudo vscode && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \

@@ -47,9 +47,9 @@ fn pod_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_job() -> Result<()> {
-    let pod_job = pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
     assert_eq!(
-        pod_job.hash, "c70e63a3a3299747adb9c0e59b9fe63599bd781b820c4f63577f16aae12ca9c0",
+        pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
+        "b1b332a66917a7f561206ff8359a65066874727c16c57fe9a3b98d95eac7975b",
         "Hash didn't match."
     );
     Ok(())
@@ -65,27 +65,29 @@ fn pod_job_to_yaml() -> Result<()> {
             input_stream:
               base-input:
               - kind: File
-                path:
+                location:
                   namespace: default
-                  rel_path: styles/style1.t7
+                  path: styles/style1.t7
                 checksum: 69e709c1697e290994d2da75ddfb2097bf801a9436a3727a282e0230e703da2b
               - kind: File
-                path:
+                location:
                   namespace: default
-                  rel_path: images/subject.jpeg
+                  path: images/subject.jpeg
                 checksum: 8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd
               extra-style:
                 kind: File
-                path:
+                location:
                   namespace: default
-                  rel_path: styles/mosaic.t7
+                  path: styles/mosaic.t7
                 checksum: fbd7d882e9e02aafb57366e726762025ff6b2e12cd41abd44b874542b7693771
             output_dir:
               namespace: default
-              rel_path: output
+              path: output
             cpu_limit: 0.5
             memory_limit: 2147483648
-            env_vars: null
+            env_vars:
+              AAA: SORT
+              ZZZ: PLEASE
         "},
         "YAML serialization didn't match."
     );
@@ -96,7 +98,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "d6430ca92496d830a0cdee1c3350e35eb61f19dec2a651713fa9cd357a7e0a63",
+        "6c79ca22bd6f32e1612357b2a0dd46ca6a8abe07d7d462787ef99897c176a293",
         "Hash didn't match."
     );
     Ok(())
@@ -108,7 +110,7 @@ fn pod_result_to_yaml() -> Result<()> {
         to_yaml(&pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_result
-            pod_job: c70e63a3a3299747adb9c0e59b9fe63599bd781b820c4f63577f16aae12ca9c0
+            pod_job: b1b332a66917a7f561206ff8359a65066874727c16c57fe9a3b98d95eac7975b
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307
