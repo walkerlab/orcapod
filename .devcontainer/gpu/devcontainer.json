@@ -20,8 +20,8 @@
 	},
 	"runArgs": [
 		"--name=${localWorkspaceFolderBasename}_devcontainer",
-		"--cpus=2",
-		"--memory=8gb",
+		// "--cpus=2",
+		// "--memory=8gb",
 		"--gpus=all",
 		"--privileged",
 		"--cgroupns=host"

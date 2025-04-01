@@ -16,7 +16,7 @@ RUN \
 RUN \
     # dev setup
     apt update && \
-    apt-get install build-essential sudo jq git bash-completion rsync -y && \
+    apt-get install build-essential sudo jq git bash-completion graphviz rsync -y && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /root/.bashrc && \
     echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /root/.bashrc && \
@@ -31,6 +31,8 @@ RUN apt-get update && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs 
     # rust code coverage
     cargo install cargo-llvm-cov && \
     rustup component add llvm-tools-preview && \
+    # rust crate structure diagram
+    cargo install cargo-modules && \
     apt-get clean
 
 ENV PATH=${PATH}:/root/.local/bin

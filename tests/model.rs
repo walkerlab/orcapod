@@ -1,7 +1,7 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 pub mod fixture;
-use fixture::{pod_job_style, pod_result_style, pod_style, NAMESPACE_LOOKUP_READ_ONLY};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style, pod_result_style, pod_style};
 use indoc::indoc;
 use orcapod::{error::Result, model::to_yaml};
 

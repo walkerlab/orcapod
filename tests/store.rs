@@ -8,13 +8,13 @@
 
 pub mod fixture;
 use fixture::{
-    pod_job_style, pod_result_style, pod_style, TestDirs, TestSetup, NAMESPACE_LOOKUP_READ_ONLY,
+    NAMESPACE_LOOKUP_READ_ONLY, TestDirs, TestSetup, pod_job_style, pod_result_style, pod_style,
 };
 use orcapod::{
     crypto::hash_buffer,
     error::Result,
-    model::{to_yaml, Annotation, Pod},
-    store::{filestore::LocalFileStore, ModelID, ModelInfo, Store as _},
+    model::{Annotation, Pod, to_yaml},
+    store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
 };
 use std::{collections::HashMap, fmt::Debug, path::Path};
 
