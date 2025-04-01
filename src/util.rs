@@ -1,5 +1,5 @@
-use sha2::{Digest as _, Sha256};
-use std::any::type_name;
+use crate::error::{Kind, Result};
+use std::{any::type_name, collections::HashMap};
 
 #[expect(
     clippy::unwrap_used,
@@ -13,6 +13,8 @@ pub fn get_type_name<T>() -> String {
         .unwrap()
 }
 
-pub fn hash(buffer: impl AsRef<[u8]>) -> String {
-    format!("{:x}", Sha256::digest(buffer.as_ref()))
+pub fn get<'map, T>(map: &'map HashMap<String, T>, key: &str) -> Result<&'map T> {
+    Ok(map.get(key).ok_or(Kind::KeyMissing {
+        key: key.to_owned(),
+    })?)
 }

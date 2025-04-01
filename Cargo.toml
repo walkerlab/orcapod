@@ -32,9 +32,7 @@ glob = "0.3.1" # recursive walk of filesystem in filestore
 heck = "0.5.0" # strings to snake_case
 names = "0.14.0" # random name generator
 regex = "1.11.0" # complex pattern matching in strings
-serde = { version = "1.0.210", features = [
-    "derive",
-] } # serialization/deserialization to/from filestore
+serde = { version = "1.0.210", features = ["derive"] } # serialization/deserialization to/from filestore
 serde_json = "1.0.137" # JSON in sharing memory with local docker orchestrator
 serde_yaml = "0.9.34" # YAML in filestore
 sha2 = "0.10.8" # checksums based on SHA256 
@@ -76,7 +74,6 @@ float_arithmetic = { level = "allow", priority = 127 }                 # allow f
 host_endian_bytes = { level = "allow", priority = 127 }                # allow to_ne_bytes / from_ne_bytes
 impl_trait_in_params = { level = "allow", priority = 127 }             # impl in params ok
 implicit_return = { level = "allow", priority = 127 }                  # missing return ok
-indexing_slicing = { level = "allow", priority = 127 }                 # allow since guaranteed and error handling is overkill
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes

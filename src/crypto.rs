@@ -1,13 +1,26 @@
-use crate::error::Result;
+use crate::{
+    error::Result,
+    model::{Blob, BlobKind},
+    util::get,
+};
 use serde_yaml;
 use sha2::{Digest as _, Sha256};
-use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
-
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs::File,
+    hash::RandomState,
+    io::Read,
+    path::{Path, PathBuf},
+};
 /// Evaluate checksum hash of streamed data i.e. chunked buffers.
 ///
 /// # Errors
 ///
 /// Will return error if unable to read from stream.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "Reading less than 0 is impossible."
+)]
 pub fn hash_stream(stream: &mut impl Read) -> Result<String> {
     const BUFFER_SIZE: usize = 8 << 10; // 8KB chunks to match with page size typically found
     let mut hash = Sha256::new();
@@ -22,12 +35,10 @@ pub fn hash_stream(stream: &mut impl Read) -> Result<String> {
 
     Ok(format!("{:x}", hash.finalize()))
 }
-
 /// Evaluate checksum hash of raw data in memory.
 pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(buffer.as_ref()))
 }
-
 /// Evaluate checksum hash of a file.
 ///
 /// # Errors
@@ -36,8 +47,7 @@ pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
 pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
     hash_stream(&mut File::open(filepath)?)
 }
-
-/// Evaluate checksum hash of a folder.
+/// Evaluate checksum hash of a directory.
 ///
 /// # Errors
 ///
@@ -63,4 +73,22 @@ pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
         .collect::<Result<_>>()?;
 
     Ok(hash_buffer(serde_yaml::to_string(&summary)?))
+}
+/// Evaluate checksum hash of a blob.
+///
+/// # Errors
+///
+/// Will return error if hashing fails on file or directory.
+pub fn hash_blob(
+    namespace_lookup: &HashMap<String, PathBuf, RandomState>,
+    blob: Blob,
+) -> Result<Blob> {
+    let blob_path = get(namespace_lookup, &blob.location.namespace)?.join(&blob.location.path);
+    Ok(Blob {
+        checksum: match blob.kind {
+            BlobKind::File => hash_file(blob_path)?,
+            BlobKind::Directory => hash_dir(blob_path)?,
+        },
+        ..blob
+    })
 }

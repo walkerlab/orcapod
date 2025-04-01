@@ -1,8 +1,8 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Blob, BlobInterface, FileOrFolder, Pod, PodJob, PodResult},
+    model::{to_yaml, Annotation, Pod, PodJob, PodResult},
     store::{ModelID, ModelInfo, Store},
-    util::{get_type_name, hash},
+    util::get_type_name,
 };
 use colored::Colorize as _;
 use glob::glob;
@@ -79,25 +79,6 @@ impl Store for LocalFileStore {
         fs::remove_file(&annotation_file)?;
 
         Ok(())
-    }
-}
-
-impl BlobInterface for LocalFileStore {
-    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
-        Ok(match &blob.kind {
-            FileOrFolder::File => Blob {
-                checksum: Some(hash(&fs::read(
-                    PathBuf::from(format!(
-                        "{}/{}",
-                        self.directory.to_string_lossy(),
-                        Self::DEFAULT_DATA_NAMESPACE,
-                    ))
-                    .join(&blob.location),
-                )?)),
-                ..blob
-            },
-            FileOrFolder::Folder => todo!(),
-        })
     }
 }
 
@@ -184,27 +165,11 @@ impl LocalFileStore {
         Ok(model_info.hash)
     }
 
-    fn save_file(
-        file: impl AsRef<Path>,
-        content: impl AsRef<[u8]>,
-        fail_if_exists: bool,
-    ) -> Result<()> {
+    fn save_file(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<()> {
         if let Some(parent) = file.as_ref().parent() {
             fs::create_dir_all(parent)?;
         }
-        let file_exists = file.as_ref().exists();
-        if file_exists && fail_if_exists {
-            return Err(OrcaError::from(Kind::FileExists {
-                path: file.as_ref().to_path_buf(),
-            }));
-        } else if file_exists {
-            println!(
-                "Skip saving `{}` since it is already stored.",
-                file.as_ref().to_string_lossy().bright_cyan(),
-            );
-        } else {
-            fs::write(file, content)?;
-        }
+        fs::write(file, content)?;
         Ok(())
     }
 
@@ -214,27 +179,45 @@ impl LocalFileStore {
         hash: &str,
         annotation: Option<&Annotation>,
     ) -> Result<()> {
+        let model_type = get_type_name::<T>();
+        // Save annotation if defined and doesn't collide globally i.e. model, name, version
         if let Some(provided_annotation) = annotation {
-            // Save the annotation file and throw an error if exist
-            Self::save_file(
-                self.make_path::<T>(
-                    hash,
-                    Self::make_annotation_relpath(
-                        &provided_annotation.name,
-                        &provided_annotation.version,
-                    ),
-                ),
-                serde_yaml::to_string(provided_annotation)?,
-                true,
-            )?;
+            let relpath = &Self::make_annotation_relpath(
+                &provided_annotation.name,
+                &provided_annotation.version,
+            );
+            if let Some((found_hash, found_name, found_version)) =
+                Self::find_model_metadata(&self.make_path::<T>("*", relpath))?
+                    .next()
+                    .and_then(|model_info| {
+                        Some((model_info.hash, model_info.name?, model_info.version?))
+                    })
+            {
+                println!(
+                    "Skip saving {} annotation since `{}`, `{}`, `{}` exists.",
+                    model_type.bright_cyan(),
+                    found_hash.bright_cyan(),
+                    found_name.bright_cyan(),
+                    found_version.bright_cyan(),
+                );
+            } else {
+                Self::save_file(
+                    self.make_path::<T>(hash, relpath),
+                    serde_yaml::to_string(provided_annotation)?,
+                )?;
+            }
         }
-        // Save the model specification and skip if it already exist e.g. on new annotations
-        Self::save_file(
-            self.make_path::<T>(hash, Self::SPEC_RELPATH),
-            to_yaml(model)?,
-            false,
-        )?;
-
+        // Save model specification and skip if it already exist e.g. on new annotations
+        let spec_file = &self.make_path::<T>(hash, Self::SPEC_RELPATH);
+        if spec_file.exists() {
+            println!(
+                "Skip saving {} model since `{}` exists.",
+                model_type.bright_cyan(),
+                hash.bright_cyan(),
+            );
+        } else {
+            Self::save_file(spec_file, to_yaml(model)?)?;
+        }
         Ok(())
     }
 

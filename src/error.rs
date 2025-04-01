@@ -1,7 +1,5 @@
 use bollard::errors::Error as BollardError;
-use colored::Colorize as _;
 use glob;
-use regex;
 use serde_json;
 use serde_yaml;
 use std::{
@@ -16,8 +14,16 @@ pub type Result<T> = result::Result<T, OrcaError>;
 /// Possible errors you may encounter.
 #[derive(Error, Debug)]
 pub(crate) enum Kind {
-    #[error("File `{}` already exists.", path.to_string_lossy().bright_cyan())]
-    FileExists { path: PathBuf },
+    #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
+    EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
+    #[error("Out of generated random names.")]
+    GeneratedNamesOverflow,
+    #[error("Path missing a file or directory name: {path}.")]
+    InvalidPath { path: PathBuf },
+    #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
+    InvalidPodResultTerminatedDatetime { pod_job_hash: String },
+    #[error("Key '{key}' was not found in map.")]
+    KeyMissing { key: String },
     #[error("No annotation found for `{name}:{version}` {class}.")]
     NoAnnotationFound {
         class: String,
@@ -26,30 +32,22 @@ pub(crate) enum Kind {
     },
     #[error("No known container names.")]
     NoContainerNames,
-    #[error("Out of generated random names.")]
-    GeneratedNamesOverflow,
     #[error("No corresponding pod run found for pod job (hash: {pod_job_hash}).")]
     NoMatchingPodRun { pod_job_hash: String },
-    #[error("An invalid datetime was set for pod result for pod job (hash: {pod_job_hash}).")]
-    InvalidPodResultTerminatedDatetime { pod_job_hash: String },
-    #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
-    EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("No tags found in provided container alternate image: {path}.")]
     NoTagFoundInContainerAltImage { path: PathBuf },
     #[error(transparent)]
+    BollardError(#[from] BollardError),
+    #[error(transparent)]
     GlobPatternError(#[from] glob::PatternError),
-    #[error(transparent)]
-    RegexError(#[from] regex::Error),
-    #[error(transparent)]
-    SerdeYamlError(#[from] serde_yaml::Error),
-    #[error(transparent)]
-    SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
     IoError(#[from] io::Error),
     #[error(transparent)]
-    BollardError(#[from] BollardError),
-    #[error(transparent)]
     PathPrefixError(#[from] path::StripPrefixError),
+    #[error(transparent)]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error(transparent)]
+    SerdeYamlError(#[from] serde_yaml::Error),
 }
 /// A stable error API interface.
 #[derive(Error, Debug)]
@@ -71,31 +69,17 @@ impl Display for OrcaError {
         write!(f, "{}", self.kind)
     }
 }
+impl From<BollardError> for OrcaError {
+    fn from(error: BollardError) -> Self {
+        Self {
+            kind: Kind::BollardError(error),
+        }
+    }
+}
 impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
         Self {
             kind: Kind::GlobPatternError(error),
-        }
-    }
-}
-impl From<regex::Error> for OrcaError {
-    fn from(error: regex::Error) -> Self {
-        Self {
-            kind: Kind::RegexError(error),
-        }
-    }
-}
-impl From<serde_yaml::Error> for OrcaError {
-    fn from(error: serde_yaml::Error) -> Self {
-        Self {
-            kind: Kind::SerdeYamlError(error),
-        }
-    }
-}
-impl From<serde_json::Error> for OrcaError {
-    fn from(error: serde_json::Error) -> Self {
-        Self {
-            kind: Kind::SerdeJsonError(error),
         }
     }
 }
@@ -106,17 +90,24 @@ impl From<io::Error> for OrcaError {
         }
     }
 }
-impl From<BollardError> for OrcaError {
-    fn from(error: BollardError) -> Self {
-        Self {
-            kind: Kind::BollardError(error),
-        }
-    }
-}
 impl From<path::StripPrefixError> for OrcaError {
     fn from(error: path::StripPrefixError) -> Self {
         Self {
             kind: Kind::PathPrefixError(error),
+        }
+    }
+}
+impl From<serde_json::Error> for OrcaError {
+    fn from(error: serde_json::Error) -> Self {
+        Self {
+            kind: Kind::SerdeJsonError(error),
+        }
+    }
+}
+impl From<serde_yaml::Error> for OrcaError {
+    fn from(error: serde_yaml::Error) -> Self {
+        Self {
+            kind: Kind::SerdeYamlError(error),
         }
     }
 }

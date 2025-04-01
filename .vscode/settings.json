@@ -1,6 +1,7 @@
 {
     "editor.formatOnPaste": false,
     "editor.formatOnSave": true,
+    "files.insertFinalNewline": true,
     "notebook.formatOnSave.enabled": true,
     "editor.rulers": [
         100

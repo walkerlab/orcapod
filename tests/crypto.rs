@@ -8,7 +8,7 @@ use std::fs::read;
 
 #[test]
 fn consistent_hash() -> Result<()> {
-    let filepath = "./tests/data/images/dog.jpeg";
+    let filepath = "./tests/data/images/subject.jpeg";
     assert_eq!(
         hash_file(filepath)?,
         hash_buffer(&read(filepath)?),
@@ -22,7 +22,7 @@ fn complex_hash() -> Result<()> {
     let dirpath = "./tests/data/images";
     assert_eq!(
         hash_dir(dirpath)?,
-        "e53ed7c8d7ddd4337ccc65f2691eeb1a7a21d52f66de293751dd78c33c31d4f6".to_owned(),
+        "6c96a478ea25e34fab045bc82858a2980b2cfb22db32e83c01349a8e7ed3b42c".to_owned(),
         "Directory checksum didn't match."
     );
     Ok(())

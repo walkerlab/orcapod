@@ -2,6 +2,7 @@ use crate::{
     error::{Kind, OrcaError, Result},
     model::{Input, Pod, PodJob, PodResult},
     orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
+    util::get,
 };
 use bollard::{
     container::{
@@ -22,7 +23,7 @@ use regex::Regex;
 use std::{
     collections::HashMap,
     fs,
-    path::{self, Path, PathBuf},
+    path::{self, PathBuf},
     sync::LazyLock,
 };
 use tokio::{fs::File, runtime::Runtime};
@@ -34,18 +35,27 @@ use tokio_util::{
 /// Support for an orchestration engine using a local docker installation.
 #[derive(Debug)]
 pub struct LocalDockerOrchestrator {
-    data_directory: PathBuf,
     api: Docker,
     async_driver: Runtime,
 }
 
 impl Orchestrator for LocalDockerOrchestrator {
-    fn start_with_altimage_blocking(&self, pod_job: &PodJob, image: &ImageKind) -> Result<PodRun> {
+    fn start_with_altimage_blocking(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_job: &PodJob,
+        image: &ImageKind,
+    ) -> Result<PodRun> {
         self.async_driver
-            .block_on(self.start_with_altimage(pod_job, image))
+            .block_on(self.start_with_altimage(namespace_lookup, pod_job, image))
     }
-    fn start_blocking(&self, pod_job: &PodJob) -> Result<PodRun> {
-        self.async_driver.block_on(self.start(pod_job))
+    fn start_blocking(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_job: &PodJob,
+    ) -> Result<PodRun> {
+        self.async_driver
+            .block_on(self.start(namespace_lookup, pod_job))
     }
     fn list_blocking(&self) -> Result<Vec<PodRun>> {
         self.async_driver.block_on(self.list())
@@ -67,13 +77,20 @@ impl Orchestrator for LocalDockerOrchestrator {
         - Should not get as far as `Ok(_)`
         "#
     )]
-    async fn start_with_altimage(&self, pod_job: &PodJob, image: &ImageKind) -> Result<PodRun> {
+    async fn start_with_altimage(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_job: &PodJob,
+        image: &ImageKind,
+    ) -> Result<PodRun> {
         let (assigned_name, container_options, container_config) = match image {
-            ImageKind::Published(remote_image) => {
-                self.prepare_container_start_inputs(pod_job, remote_image.clone())?
-            }
-            ImageKind::Tarball(relative_location) => {
-                let location = self.data_directory.join(relative_location);
+            ImageKind::Published(remote_image) => Self::prepare_container_start_inputs(
+                namespace_lookup,
+                pod_job,
+                remote_image.clone(),
+            )?,
+            ImageKind::Tarball(image_info) => {
+                let location = namespace_lookup[&image_info.namespace].join(&image_info.path);
                 let byte_stream = FramedRead::new(File::open(&location).await?, BytesCodec::new())
                     .map_err(|err| -> Result<BytesMut> {
                         let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
@@ -96,7 +113,11 @@ impl Orchestrator for LocalDockerOrchestrator {
                             path: location.clone(),
                         }))?;
                 }
-                self.prepare_container_start_inputs(pod_job, local_image.clone())?
+                Self::prepare_container_start_inputs(
+                    namespace_lookup,
+                    pod_job,
+                    local_image.clone(),
+                )?
             }
         };
         self.api
@@ -107,7 +128,11 @@ impl Orchestrator for LocalDockerOrchestrator {
             .await?;
         Ok(PodRun::new::<Self>(pod_job, assigned_name))
     }
-    async fn start(&self, pod_job: &PodJob) -> Result<PodRun> {
+    async fn start(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_job: &PodJob,
+    ) -> Result<PodRun> {
         let image_options = Some(CreateImageOptions {
             from_image: pod_job.pod.image.clone(),
             ..Default::default()
@@ -116,8 +141,12 @@ impl Orchestrator for LocalDockerOrchestrator {
             .create_image(image_options, None, None)
             .try_collect::<Vec<_>>()
             .await?;
-        self.start_with_altimage(pod_job, &ImageKind::Published(pod_job.pod.image.clone()))
-            .await
+        self.start_with_altimage(
+            namespace_lookup,
+            pod_job,
+            &ImageKind::Published(pod_job.pod.image.clone()),
+        )
+        .await
     }
     async fn list(&self) -> Result<Vec<PodRun>> {
         self.list_containers(HashMap::from([(
@@ -126,17 +155,18 @@ impl Orchestrator for LocalDockerOrchestrator {
         )]))
         .await?
         .map(|(assigned_name, run_info)| {
-            let mut pod: Pod = serde_json::from_str(&run_info.labels["org.orcapod.pod"])?;
-            pod.annotation = serde_json::from_str(&run_info.labels["org.orcapod.pod.annotation"])?;
+            let mut pod: Pod = serde_json::from_str(get(&run_info.labels, "org.orcapod.pod")?)?;
+            pod.annotation =
+                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod.annotation")?)?;
             pod.hash
-                .clone_from(&run_info.labels["org.orcapod.pod.hash"]);
+                .clone_from(get(&run_info.labels, "org.orcapod.pod.hash")?);
             let mut pod_job: PodJob =
-                serde_json::from_str(&run_info.labels["org.orcapod.pod_job"])?;
+                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job")?)?;
             pod_job.annotation =
-                serde_json::from_str(&run_info.labels["org.orcapod.pod_job.annotation"])?;
+                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job.annotation")?)?;
             pod_job
                 .hash
-                .clone_from(&run_info.labels["org.orcapod.pod_job.hash"]);
+                .clone_from(get(&run_info.labels, "org.orcapod.pod_job.hash")?);
             pod_job.pod = pod;
             Ok(PodRun::new::<Self>(&pod_job, assigned_name))
         })
@@ -212,23 +242,87 @@ impl LocalDockerOrchestrator {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a local docker orchestrator.
-    pub fn new(data_directory: impl AsRef<Path>) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
-            data_directory: path::absolute(data_directory)?,
             api: Docker::connect_with_local_defaults()?,
             async_driver: Runtime::new()?,
         })
     }
+    fn prepare_mount_binds(
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_job: &PodJob,
+    ) -> Result<(Vec<String>, [String; 1])> {
+        // all host mounted paths need to be absolute
+        let host_output_directory = path::absolute(
+            namespace_lookup[&pod_job.output_dir.namespace].join(&pod_job.output_dir.path),
+        )?;
+        // Ensure output directory exists to prevent permissions issues if daemon's owner is root
+        fs::create_dir_all(&host_output_directory)?;
+        let output_bind = [format!(
+            "{}:{}",
+            host_output_directory.to_string_lossy(),
+            pod_job.pod.output_dir.to_string_lossy(),
+        )];
+        let input_binds = pod_job
+            .pod
+            .input_stream
+            .iter()
+            .try_fold::<_, _, Result<_>>(
+                vec![],
+                |mut flattened_binds, (stream_name, stream_info)| {
+                    flattened_binds.extend(match get(&pod_job.input_stream, stream_name)? {
+                        Input::Unary(blob) => {
+                            vec![format!(
+                                "{}:{}:{}",
+                                path::absolute(
+                                    get(namespace_lookup, &blob.location.namespace)?
+                                        .join(&blob.location.path)
+                                )?
+                                .to_string_lossy(),
+                                stream_info.path.to_string_lossy(),
+                                "ro"
+                            )]
+                        }
+                        Input::Collection(blobs) => blobs
+                            .iter()
+                            .map(|blob| {
+                                Ok(format!(
+                                    "{}:{}:{}",
+                                    path::absolute(
+                                        get(namespace_lookup, &blob.location.namespace)?
+                                            .join(&blob.location.path)
+                                    )?
+                                    .to_string_lossy(),
+                                    stream_info
+                                        .path
+                                        .join(blob.location.path.file_name().ok_or(
+                                            Kind::InvalidPath {
+                                                path: blob.location.path.clone(),
+                                            }
+                                        )?)
+                                        .to_string_lossy(),
+                                    "ro"
+                                ))
+                            })
+                            .collect::<Result<_>>()?,
+                    });
+                    Ok(flattened_binds)
+                },
+            )?;
+        Ok((input_binds, output_bind))
+    }
     #[expect(
         clippy::cast_possible_wrap,
         clippy::cast_possible_truncation,
+        clippy::indexing_slicing,
         reason = r#"
         - No issue in memory casting if between 0 - 2^63(i64:MAX, 8EB)
         - No issue in cores casting if in increments of 1e-9(nanocore)
+        - Pod commands will always have at least 1 element
         "#
     )]
     fn prepare_container_start_inputs(
-        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: String,
     ) -> Result<(
@@ -236,12 +330,8 @@ impl LocalDockerOrchestrator {
         Option<CreateContainerOptions<String>>,
         Config<String>,
     )> {
-        // Ensure output directory exists to prevent permissions issues if daemon's owner is root
-        let host_output_directory = self
-            .data_directory
-            .join(pod_job.output_stream_path.location.clone());
-        fs::create_dir_all(&host_output_directory)?;
         // Prepare configuration
+        let (input_binds, output_bind) = Self::prepare_mount_binds(namespace_lookup, pod_job)?;
         let container_name = Generator::with_naming(Name::Plain)
             .next()
             .ok_or(OrcaError::from(Kind::GeneratedNamesOverflow))?;
@@ -266,29 +356,6 @@ impl LocalDockerOrchestrator {
                 serde_json::to_string(&pod_job)?,
             ),
         ]);
-        let unary_input_binds = pod_job
-            .pod
-            .input_stream_map
-            .iter()
-            .filter_map(|(stream_name, stream_info)| {
-                match &pod_job.input_stream_path[stream_name] {
-                    Input::Unary(blob) => Some(format!(
-                        "{}:{}:{}",
-                        self.data_directory
-                            .join(blob.location.clone())
-                            .to_string_lossy(),
-                        stream_info.path.to_string_lossy(),
-                        "ro"
-                    )),
-                    Input::Collection(_) => None,
-                }
-            })
-            .collect::<Vec<_>>();
-        let output_bind = [format!(
-            "{}:{}",
-            host_output_directory.to_string_lossy(),
-            pod_job.pod.output_dir.to_string_lossy(),
-        )];
         let command = pod_job
             .pod
             .command
@@ -315,7 +382,7 @@ impl LocalDockerOrchestrator {
                 host_config: Some(HostConfig {
                     nano_cpus: Some((pod_job.cpu_limit * 10_f32.powi(9)) as i64), // ncpu, ucores=3, mcores=6, cores=9
                     memory: Some(pod_job.memory_limit as i64),
-                    binds: Some([&*unary_input_binds, &output_bind].concat()),
+                    binds: Some([&*input_binds, &output_bind].concat()),
                     ..Default::default()
                 }),
                 labels: Some(labels),
@@ -328,11 +395,13 @@ impl LocalDockerOrchestrator {
         clippy::string_slice,
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
+        clippy::indexing_slicing,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
         - No issue in core casting if between 0 - 3.40e38(f32:MAX)
         - No issue in exit code casting if between -3.27e4(i16:MIN) - 3.27e4(i16:MAX)
+        - Containers will always have at least 1 name with at least 2 characters
         "#
     )]
     async fn list_containers(

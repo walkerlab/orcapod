@@ -1,7 +1,8 @@
 use crate::{
+    crypto::{hash_blob, hash_buffer},
     error::Result,
     orchestrator::Status,
-    util::{get_type_name, hash},
+    util::get_type_name,
 };
 use heck::ToSnakeCase as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -26,6 +27,31 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     Ok(yaml)
 }
 
+fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize>(
+    map: &HashMap<K, V>,
+    serializer: S,
+) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let sorted = map.iter().collect::<BTreeMap<_, _>>();
+    sorted.serialize(serializer)
+}
+
+#[expect(clippy::ref_option, reason = "Serde requires this signature.")]
+fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize>(
+    map_option: &Option<HashMap<K, V>>,
+    serializer: S,
+) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let sorted = map_option
+        .as_ref()
+        .map(|map| map.iter().collect::<BTreeMap<_, _>>());
+    sorted.serialize(serializer)
+}
+
 // --- core model structs ---
 
 /// A reusable, containerized computational unit.
@@ -41,11 +67,13 @@ pub struct Pod {
     pub image: String,
     /// Space-delimited shell command to begin computation.
     pub command: String,
-    /// A dictionary of named input streams.
-    pub input_stream_map: BTreeMap<String, StreamInfo>,
-    /// Absolute output directory within the environment.
+    /// Exposed, internal input streams.
+    #[serde(serialize_with = "serialize_hashmap")]
+    pub input_stream: HashMap<String, StreamInfo>,
+    /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    output_stream_map: BTreeMap<String, StreamInfo>,
+    #[serde(serialize_with = "serialize_hashmap")]
+    output_stream: HashMap<String, StreamInfo>,
     source_commit_url: String,
     recommended_cpus: f32,
     recommended_memory: u64,
@@ -62,9 +90,9 @@ impl Pod {
         annotation: Option<Annotation>,
         image: String,
         command: String,
-        input_stream_map: BTreeMap<String, StreamInfo>,
+        input_stream: HashMap<String, StreamInfo>,
         output_dir: PathBuf,
-        output_stream_map: BTreeMap<String, StreamInfo>,
+        output_stream: HashMap<String, StreamInfo>,
         source_commit_url: String,
         recommended_cpus: f32,
         recommended_memory: u64,
@@ -75,16 +103,16 @@ impl Pod {
             hash: String::new(),
             image,
             command,
-            input_stream_map,
+            input_stream,
             output_dir,
-            output_stream_map,
+            output_stream,
             source_commit_url,
             recommended_cpus,
             recommended_memory,
             required_gpu,
         };
         Ok(Self {
-            hash: hash(to_yaml(&pod_no_hash)?),
+            hash: hash_buffer(to_yaml(&pod_no_hash)?),
             ..pod_no_hash
         })
     }
@@ -119,28 +147,18 @@ pub struct PodJob {
     /// A pod to base the pod job on.
     #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
     pub pod: Pod,
-    /// Map stream ids to an input in user data target.
-    pub input_stream_path: BTreeMap<String, Input>,
-    /// Map output directory to a folder in user data target.
-    pub output_stream_path: Blob<FolderOnly>,
+    /// Attached, external input streams.
+    #[serde(serialize_with = "serialize_hashmap")]
+    pub input_stream: HashMap<String, Input>,
+    /// Attached, external output directory.
+    pub output_dir: OrcaPath,
     /// Maximum allowable cores in fractional cores for the computation.
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
     pub memory_limit: u64,
     /// Environment variables to be set in environment.
+    #[serde(serialize_with = "serialize_hashmap_option")]
     pub env_vars: Option<HashMap<String, String>>,
-}
-
-/// An interface to access BLOB functions.
-pub trait BlobInterface {
-    /// How to evaluate a checksum of a BLOB.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue computing the checksum of a BLOB.
-    fn compute_checksum(&self, blob: Blob<FileOrFolder>) -> Result<Blob<FileOrFolder>> {
-        Ok(blob)
-    }
 }
 
 impl PodJob {
@@ -152,37 +170,43 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Pod,
-        input_stream_path: BTreeMap<String, Input>,
-        output_stream_path: Blob<FolderOnly>,
+        mut input_stream: HashMap<String, Input>,
+        output_dir: OrcaPath,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
-        blob_interface: &impl BlobInterface,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
-        let input_stream_path_with_checksums = input_stream_path
+        input_stream = input_stream
             .into_iter()
             .map(|(stream_name, stream_input)| match stream_input {
                 Input::Unary(blob) => Ok((
                     stream_name,
-                    Input::Unary(blob_interface.compute_checksum(blob)?),
+                    Input::Unary(hash_blob(namespace_lookup, blob)?),
                 )),
-                Input::Collection(_) => todo!(),
+                Input::Collection(blobs) => Ok((
+                    stream_name,
+                    Input::Collection(
+                        blobs
+                            .into_iter()
+                            .map(|blob| hash_blob(namespace_lookup, blob))
+                            .collect::<Result<Vec<_>>>()?,
+                    ),
+                )),
             })
-            .collect::<Result<BTreeMap<_, _>>>()?;
-        let mut output_stream_path_without_checksum = output_stream_path;
-        output_stream_path_without_checksum.checksum = None;
+            .collect::<Result<_>>()?;
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
             pod,
-            input_stream_path: input_stream_path_with_checksums,
-            output_stream_path: output_stream_path_without_checksum,
+            input_stream,
+            output_dir,
             cpu_limit,
             memory_limit,
             env_vars,
         };
         Ok(Self {
-            hash: hash(to_yaml(&pod_job_no_hash)?),
+            hash: hash_buffer(to_yaml(&pod_job_no_hash)?),
             ..pod_job_no_hash
         })
     }
@@ -254,7 +278,7 @@ impl PodResult {
             terminated,
         };
         Ok(Self {
-            hash: hash(to_yaml(&pod_result_no_hash)?),
+            hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
             ..pod_result_no_hash
         })
     }
@@ -294,43 +318,45 @@ pub enum GPUModel {
 /// data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
-    /// Path to stream file.
+    /// Path to stream file or directory.
     pub path: PathBuf,
     /// Naming pattern for the stream.
     pub match_pattern: String,
 }
-/// Input options sourced from user data target.
+/// Input options.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum Input {
     /// A single BLOB.
-    Unary(Blob<FileOrFolder>),
+    Unary(Blob),
     /// A series of BLOBs.
-    Collection(Vec<Blob<FileOrFolder>>),
+    Collection(Vec<Blob>),
+}
+/// Location of BLOB data.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct OrcaPath {
+    /// Namespace alias.
+    pub namespace: String,
+    /// Path within namespace.
+    pub path: PathBuf,
 }
 
-/// BLOB in user data target with metadata.
+/// BLOB with metadata.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct Blob<T> {
+pub struct Blob {
     /// BLOB available options.
-    pub kind: T,
+    pub kind: BlobKind,
     /// BLOB location.
-    pub location: PathBuf,
+    pub location: OrcaPath,
     /// BLOB contents checksum.
-    pub checksum: Option<String>,
+    pub checksum: String,
 }
-/// File or folder options for BLOBs.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum FileOrFolder {
-    /// A single file specified by its absolute path.
-    File,
-    /// A single folder specified by its absolute path.
-    Folder,
-}
-/// Folder-only option for BLOBs.
+/// File or directory options for BLOBs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub enum FolderOnly {
-    /// A single folder specified by its absolute path.
+pub enum BlobKind {
+    /// A single file.
     #[default]
-    Folder,
+    File,
+    /// A single directory.
+    Directory,
 }
