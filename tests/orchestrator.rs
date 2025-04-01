@@ -7,7 +7,7 @@
 
 pub mod fixture;
 use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style};
-use orcapod::{
+use orcapod::uniffi::{
     error::Result,
     model::OrcaPath,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},

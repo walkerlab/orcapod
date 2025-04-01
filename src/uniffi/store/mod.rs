@@ -1,8 +1,7 @@
-use crate::{
+use crate::uniffi::{
     error::Result,
     model::{Pod, PodJob, PodResult},
 };
-
 /// Options for identifying a model.
 #[derive(Debug, Clone)]
 pub enum ModelID {

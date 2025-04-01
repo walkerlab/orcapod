@@ -1,3 +1,4 @@
+use crate::uniffi::error::OrcaError;
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -6,14 +7,11 @@ use std::{
     fmt::{self, Display, Formatter},
     io, path,
     path::PathBuf,
-    result,
 };
 use thiserror::Error;
-/// Shorthand for a Result that returns an `OrcaError`.
-pub type Result<T> = result::Result<T, OrcaError>;
 /// Possible errors you may encounter.
 #[derive(Error, Debug)]
-pub(crate) enum Kind {
+pub enum Kind {
     #[error(
         "Received an empty response when attempting to load the alternate container image file: {path}."
     )]
@@ -50,21 +48,6 @@ pub(crate) enum Kind {
     SerdeJsonError(#[from] serde_json::Error),
     #[error(transparent)]
     SerdeYamlError(#[from] serde_yaml::Error),
-}
-/// A stable error API interface.
-#[derive(Error, Debug)]
-pub struct OrcaError {
-    kind: Kind,
-}
-impl OrcaError {
-    /// Returns `true` if the error was caused by an invalid model annotation.
-    pub const fn is_invalid_annotation(&self) -> bool {
-        matches!(self.kind, Kind::NoAnnotationFound { .. })
-    }
-    /// Returns `true` if the error was caused by querying a purged pod run.
-    pub const fn is_purged_pod_run(&self) -> bool {
-        matches!(self.kind, Kind::NoMatchingPodRun { .. })
-    }
 }
 impl Display for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {

@@ -8,7 +8,7 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::{
+use orcapod::uniffi::{
     error::Result,
     model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, PodResult, StreamInfo},
     orchestrator::Status,

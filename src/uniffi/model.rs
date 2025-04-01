@@ -1,56 +1,15 @@
 use crate::{
-    crypto::{hash_blob, hash_buffer},
-    error::Result,
-    orchestrator::Status,
-    util::get_type_name,
+    core::{
+        crypto::{hash_blob, hash_buffer},
+        model::{
+            deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
+            serialize_pod, serialize_pod_job, to_yaml,
+        },
+    },
+    uniffi::{error::Result, orchestrator::Status},
 };
-use heck::ToSnakeCase as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_yaml;
-use std::{
-    collections::{BTreeMap, HashMap},
-    path::PathBuf,
-    result,
-};
-/// Converts a model instance into a consistent yaml.
-///
-/// # Errors
-///
-/// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
-pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
-    let mut yaml = serde_yaml::to_string(instance)?;
-    yaml.insert_str(
-        0,
-        &format!("class: {}\n", get_type_name::<T>().to_snake_case()),
-    ); // replace class at top
-
-    Ok(yaml)
-}
-
-fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize>(
-    map: &HashMap<K, V>,
-    serializer: S,
-) -> result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let sorted = map.iter().collect::<BTreeMap<_, _>>();
-    sorted.serialize(serializer)
-}
-
-#[expect(clippy::ref_option, reason = "Serde requires this signature.")]
-fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize>(
-    map_option: &Option<HashMap<K, V>>,
-    serializer: S,
-) -> result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let sorted = map_option
-        .as_ref()
-        .map(|map| map.iter().collect::<BTreeMap<_, _>>());
-    sorted.serialize(serializer)
-}
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, path::PathBuf};
 
 // --- core model structs ---
 
@@ -72,12 +31,17 @@ pub struct Pod {
     pub input_stream: HashMap<String, StreamInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
+    /// Exposed, internal output streams.
     #[serde(serialize_with = "serialize_hashmap")]
-    output_stream: HashMap<String, StreamInfo>,
-    source_commit_url: String,
-    recommended_cpus: f32,
-    recommended_memory: u64,
-    required_gpu: Option<GPURequirement>,
+    pub output_stream: HashMap<String, StreamInfo>,
+    /// Link to source associated with image binary.
+    pub source_commit_url: String,
+    /// Recommendation for CPU in fractional cores.
+    pub recommended_cpus: f32,
+    /// Recommendation for memory in bytes.
+    pub recommended_memory: u64,
+    /// If applicable, recommendation for GPU configuration.
+    pub required_gpu: Option<GPURequirement>,
 }
 
 impl Pod {
@@ -116,23 +80,6 @@ impl Pod {
             ..pod_no_hash
         })
     }
-}
-
-fn serialize_pod<S>(pod: &Pod, serializer: S) -> result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&pod.hash)
-}
-
-fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Pod, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(Pod {
-        hash: String::deserialize(deserializer)?,
-        ..Pod::default()
-    })
 }
 
 /// A compute job that specifies resource requests and input/output targets.
@@ -210,23 +157,6 @@ impl PodJob {
             ..pod_job_no_hash
         })
     }
-}
-
-fn serialize_pod_job<S>(pod_job: &PodJob, serializer: S) -> result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&pod_job.hash)
-}
-
-fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<PodJob, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(PodJob {
-        hash: String::deserialize(deserializer)?,
-        ..PodJob::default()
-    })
 }
 
 /// Result from a compute job run.
