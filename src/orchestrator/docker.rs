@@ -275,7 +275,7 @@ impl LocalDockerOrchestrator {
                             vec![format!(
                                 "{}:{}:{}",
                                 path::absolute(
-                                    namespace_lookup[&blob.location.namespace]
+                                    get(namespace_lookup, &blob.location.namespace)?
                                         .join(&blob.location.path)
                                 )?
                                 .to_string_lossy(),
@@ -289,7 +289,7 @@ impl LocalDockerOrchestrator {
                                 Ok(format!(
                                     "{}:{}:{}",
                                     path::absolute(
-                                        namespace_lookup[&blob.location.namespace]
+                                        get(namespace_lookup, &blob.location.namespace)?
                                             .join(&blob.location.path)
                                     )?
                                     .to_string_lossy(),
@@ -331,6 +331,7 @@ impl LocalDockerOrchestrator {
         Config<String>,
     )> {
         // Prepare configuration
+        let (input_binds, output_bind) = Self::prepare_mount_binds(namespace_lookup, pod_job)?;
         let container_name = Generator::with_naming(Name::Plain)
             .next()
             .ok_or(OrcaError::from(Kind::GeneratedNamesOverflow))?;
@@ -355,7 +356,6 @@ impl LocalDockerOrchestrator {
                 serde_json::to_string(&pod_job)?,
             ),
         ]);
-        let (input_binds, output_bind) = Self::prepare_mount_binds(namespace_lookup, pod_job)?;
         let command = pod_job
             .pod
             .command
