@@ -318,7 +318,7 @@ pub enum GPUModel {
 /// data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
-    /// Path to stream file or folder.
+    /// Path to stream file or directory.
     pub path: PathBuf,
     /// Naming pattern for the stream.
     pub match_pattern: String,
@@ -351,12 +351,12 @@ pub struct Blob {
     /// BLOB contents checksum.
     pub checksum: String,
 }
-/// File or folder options for BLOBs.
+/// File or directory options for BLOBs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {
     /// A single file.
     #[default]
     File,
-    /// A single folder.
-    Folder,
+    /// A single directory.
+    Directory,
 }

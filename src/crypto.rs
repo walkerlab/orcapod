@@ -1,6 +1,7 @@
 use crate::{
     error::Result,
     model::{Blob, BlobKind},
+    util::get,
 };
 use serde_yaml;
 use sha2::{Digest as _, Sha256};
@@ -46,7 +47,7 @@ pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
 pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
     hash_stream(&mut File::open(filepath)?)
 }
-/// Evaluate checksum hash of a folder.
+/// Evaluate checksum hash of a directory.
 ///
 /// # Errors
 ///
@@ -77,16 +78,16 @@ pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
 ///
 /// # Errors
 ///
-/// Will return error if hashing fails on file or folder.
+/// Will return error if hashing fails on file or directory.
 pub fn hash_blob(
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
     blob: Blob,
 ) -> Result<Blob> {
-    let blob_path = namespace_lookup[&blob.location.namespace].join(&blob.location.path);
+    let blob_path = get(namespace_lookup, &blob.location.namespace)?.join(&blob.location.path);
     Ok(Blob {
         checksum: match blob.kind {
             BlobKind::File => hash_file(blob_path)?,
-            BlobKind::Folder => hash_dir(blob_path)?,
+            BlobKind::Directory => hash_dir(blob_path)?,
         },
         ..blob
     })
