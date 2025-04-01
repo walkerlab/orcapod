@@ -24,11 +24,9 @@ pub struct ModelInfo {
 }
 
 /// Standard behavior of any store backend supported.
-pub trait ModelStore {
-    /// ASK EDGAR for third opionion
+pub trait Store {
     /// Namespace where models will be stored.
     const MODEL_NAMESPACE: &str = "orcapod_model";
-
     /// How a pod is stored.
     ///
     /// # Errors
@@ -119,6 +117,5 @@ pub trait ModelStore {
     /// and `version`.
     fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
 }
-
 /// Store implementation on a local filesystem.
 pub mod filestore;

@@ -1,31 +1,28 @@
 use crate::{
     error::{Kind, OrcaError, Result},
     model::{to_yaml, Annotation, Pod, PodJob, PodResult},
-    store::{ModelID, ModelInfo},
+    store::{ModelID, ModelInfo, Store},
     util::get_type_name,
 };
 use colored::Colorize as _;
 use glob::glob;
 use heck::ToSnakeCase as _;
 use regex::Regex;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_yaml;
-use std::fs;
 use std::{
+    fs,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
-
-use super::ModelStore;
-
 /// Support for a storage backend on a local filesystem directory.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct LocalFileStore {
     /// A local path to a directory where store will be located.
     directory: PathBuf,
 }
 
-impl ModelStore for LocalFileStore {
+impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<()> {
         self.save_model(pod, &pod.hash, pod.annotation.as_ref())
     }
@@ -41,7 +38,6 @@ impl ModelStore for LocalFileStore {
     fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<Pod>(model_id)
     }
-
     fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
         self.save_pod(&pod_job.pod)?;
         self.save_model(pod_job, &pod_job.hash, pod_job.annotation.as_ref())
@@ -86,7 +82,6 @@ impl ModelStore for LocalFileStore {
     }
 }
 
-/// Relative path where model specification is stored within the model directory.
 #[expect(clippy::expect_used, reason = "Valid static regex")]
 static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -98,7 +93,7 @@ static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
                             (?<hash>[0-9a-f]+)\/
                                 (
                                     annotation\/
-                                        (?<name>[0-9a-zA-Z\s\-]+)
+                                        (?<name>[0-9a-zA-Z\-]+)
                                         -
                                         (?<version>[0-9]+\.[0-9]+\.[0-9]+)
                                         \.yaml
@@ -129,6 +124,7 @@ impl LocalFileStore {
         ))
         .join(relpath)
     }
+
     fn find_model_metadata(glob_pattern: &Path) -> Result<impl Iterator<Item = ModelInfo>> {
         let paths = glob(&glob_pattern.to_string_lossy())?.filter_map(move |filepath| {
             let filepath_string = String::from(filepath.ok()?.to_string_lossy());
@@ -148,106 +144,83 @@ impl LocalFileStore {
         &self.directory
     }
     /// Construct a local file store instance in a specific directory.
-    /// # Errors
-    /// Wil return an error if the directory cannot be created.
     pub fn new(directory: impl AsRef<Path>) -> Self {
         Self {
             directory: directory.as_ref().into(),
         }
     }
+
     fn lookup_hash<T>(&self, name: &str, version: &str) -> Result<String> {
-        let model_infos: Vec<ModelInfo> = Self::find_model_metadata(
+        let model_info = Self::find_model_metadata(
             &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
         )?
-        .collect::<Vec<_>>();
-
-        if model_infos.len() > 1 {
-            return Err(OrcaError::from(Kind::MultipleHashFound {
+        .next()
+        .ok_or_else(|| {
+            OrcaError::from(Kind::NoAnnotationFound {
+                class: get_type_name::<T>().to_snake_case(),
                 name: name.to_owned(),
                 version: version.to_owned(),
-            }));
-        }
-
-        Ok(model_infos
-            .first()
-            .ok_or_else(|| {
-                OrcaError::from(Kind::NoAnnotationFound {
-                    class: get_type_name::<T>(),
-                    name: name.to_owned(),
-                    version: version.to_owned(),
-                })
-            })?
-            .hash
-            .clone())
+            })
+        })?;
+        Ok(model_info.hash)
     }
+
     fn save_file(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<()> {
         if let Some(parent) = file.as_ref().parent() {
             fs::create_dir_all(parent)?;
         }
-        let file_exists = file.as_ref().exists();
-        if file_exists {
-            println!(
-                "{}{}{}",
-                "Skip saving ".bright_yellow(),
-                file.as_ref().to_string_lossy().bright_cyan(),
-                " since it is already stored.".bright_yellow()
-            );
-        } else {
-            fs::write(file, content)?;
-        }
+        fs::write(file, content)?;
         Ok(())
     }
+
     fn save_model<T: Serialize>(
         &self,
         model: &T,
         hash: &str,
         annotation: Option<&Annotation>,
     ) -> Result<()> {
-        // Annotation behavior
-        // Case 1: Saving a new model that has no matching annotation for that given model type:
-        //      Save everything as normal
-        // Case 2: Saving a model but new annotation:
-        //      Skip saving spec, but save new annotation
-        // Case 3: Saving a model that has a matching annotation already on file, but hash matches for the model.spec
-        //      Skip the spec, and skip saving annotation and print a warning
-        // Case 4: Saving a model that has a matching annotation, but the hash is different
-        //      Save the new spec, and skip saving annotation and print a warning
-
+        let model_type = get_type_name::<T>();
+        // Save annotation if defined and doesn't collide globally i.e. model, name, version
         if let Some(provided_annotation) = annotation {
-            // Check if the annotation is unique for a given object before saving
-            let mut annotations = Self::find_model_metadata(&self.make_path::<T>(
-                "*",
-                Self::make_annotation_relpath(
-                    &provided_annotation.name,
-                    &provided_annotation.version,
-                ),
-            ))?;
-
-            if let Some(model_match) = annotations.next() {
-                println!("Annotation already exists, skipping annotation saving. The annotation is currently pointing to {} {}", get_type_name::<T>(), model_match.hash);
+            let relpath = &Self::make_annotation_relpath(
+                &provided_annotation.name,
+                &provided_annotation.version,
+            );
+            if let Some((found_hash, found_name, found_version)) =
+                Self::find_model_metadata(&self.make_path::<T>("*", relpath))?
+                    .next()
+                    .and_then(|model_info| {
+                        Some((model_info.hash, model_info.name?, model_info.version?))
+                    })
+            {
+                println!(
+                    "Skip saving {} annotation since `{}`, `{}`, `{}` exists.",
+                    model_type.bright_cyan(),
+                    found_hash.bright_cyan(),
+                    found_name.bright_cyan(),
+                    found_version.bright_cyan(),
+                );
             } else {
-                // Save the annotation file and throw an error if exist
                 Self::save_file(
-                    self.make_path::<T>(
-                        hash,
-                        Self::make_annotation_relpath(
-                            &provided_annotation.name,
-                            &provided_annotation.version,
-                        ),
-                    ),
+                    self.make_path::<T>(hash, relpath),
                     serde_yaml::to_string(provided_annotation)?,
                 )?;
             }
         }
-
-        // Save the model specification and skip if it already exist e.g. on new annotations
-        Self::save_file(
-            self.make_path::<T>(hash, Self::SPEC_RELPATH),
-            to_yaml(model)?,
-        )?;
-
+        // Save model specification and skip if it already exist e.g. on new annotations
+        let spec_file = &self.make_path::<T>(hash, Self::SPEC_RELPATH);
+        if spec_file.exists() {
+            println!(
+                "Skip saving {} model since `{}` exists.",
+                model_type.bright_cyan(),
+                hash.bright_cyan(),
+            );
+        } else {
+            Self::save_file(spec_file, to_yaml(model)?)?;
+        }
         Ok(())
     }
+
     fn load_model<T: DeserializeOwned>(
         &self,
         model_id: &ModelID,
@@ -274,9 +247,11 @@ impl LocalFileStore {
             }
         }
     }
+
     fn list_model<T>(&self) -> Result<Vec<ModelInfo>> {
         Ok(Self::find_model_metadata(&self.make_path::<T>("**", "*"))?.collect())
     }
+
     fn delete_model<T>(&self, model_id: &ModelID) -> Result<()> {
         // assumes propagate = false
         let hash = match model_id {

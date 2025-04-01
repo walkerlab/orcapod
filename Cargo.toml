@@ -59,7 +59,7 @@ restriction = "deny"
 style = "deny"
 suspicious = "deny"
 
-arbitrary_source_item_ordering = { level = "allow", priority = 127 } # allow arbitrary ordering to keep relevant code nearby
+arbitrary_source_item_ordering = { level = "allow", priority = 127 }   # allow arbitrary ordering to keep relevant code nearby
 arithmetic_side_effects = { level = "allow", priority = 127 }          # allow arithmetic for convenience though it could overflow
 as_conversions = { level = "allow", priority = 127 }                   # allow casting
 assertions_on_result_states = { level = "allow", priority = 127 }      # allow checking is_ok/is_err
@@ -74,7 +74,6 @@ float_arithmetic = { level = "allow", priority = 127 }                 # allow f
 host_endian_bytes = { level = "allow", priority = 127 }                # allow to_ne_bytes / from_ne_bytes
 impl_trait_in_params = { level = "allow", priority = 127 }             # impl in params ok
 implicit_return = { level = "allow", priority = 127 }                  # missing return ok
-indexing_slicing = { level = "allow", priority = 127 }                 # allow since guaranteed and error handling is overkill
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
@@ -84,7 +83,6 @@ missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rus
 missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
 must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
 mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok
-module_name_repetitions = { level = "allow", priority = 127 }          # name should be explicit to avoid confusion
 non_ascii_literal = { level = "allow", priority = 127 }                # non-ascii char in string literal ok
 partial_pub_fields = { level = "allow", priority = 127 }               # partial struct pub fields ok
 pattern_type_mismatch = { level = "allow", priority = 127 }            # allow in favor of clippy::ref_patterns

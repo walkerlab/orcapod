@@ -1,14 +1,17 @@
 use crate::{
-    crypto::{compute_checksum_for_blob, hash_buffer},
-    error::{Kind, OrcaError, Result},
+    crypto::{hash_blob, hash_buffer},
+    error::Result,
     orchestrator::Status,
     util::get_type_name,
 };
 use heck::ToSnakeCase as _;
-use serde::{ser::SerializeMap as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml;
-use std::{collections::HashMap, path::PathBuf, result};
-
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+    result,
+};
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -24,7 +27,33 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     Ok(yaml)
 }
 
+fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize>(
+    map: &HashMap<K, V>,
+    serializer: S,
+) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let sorted = map.iter().collect::<BTreeMap<_, _>>();
+    sorted.serialize(serializer)
+}
+
+#[expect(clippy::ref_option, reason = "Serde requires this signature.")]
+fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize>(
+    map_option: &Option<HashMap<K, V>>,
+    serializer: S,
+) -> result::Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let sorted = map_option
+        .as_ref()
+        .map(|map| map.iter().collect::<BTreeMap<_, _>>());
+    sorted.serialize(serializer)
+}
+
 // --- core model structs ---
+
 /// A reusable, containerized computational unit.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
 pub struct Pod {
@@ -39,11 +68,11 @@ pub struct Pod {
     /// Space-delimited shell command to begin computation.
     pub command: String,
     /// Exposed, internal input streams.
-    #[serde(serialize_with = "serialize_hash_map")]
+    #[serde(serialize_with = "serialize_hashmap")]
     pub input_stream: HashMap<String, StreamInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    #[serde(serialize_with = "serialize_hash_map")]
+    #[serde(serialize_with = "serialize_hashmap")]
     output_stream: HashMap<String, StreamInfo>,
     source_commit_url: String,
     recommended_cpus: f32,
@@ -118,29 +147,18 @@ pub struct PodJob {
     /// A pod to base the pod job on.
     #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
     pub pod: Pod,
-    /// Map stream ids to an input in user data target.
-    #[serde(serialize_with = "serialize_hash_map")]
+    /// Attached, external input streams.
+    #[serde(serialize_with = "serialize_hashmap")]
     pub input_stream: HashMap<String, Input>,
-    /// Map output directory to a folder in user data target.
+    /// Attached, external output directory.
     pub output_dir: OrcaPath,
     /// Maximum allowable cores in fractional cores for the computation.
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
     pub memory_limit: u64,
     /// Environment variables to be set in environment.
-    pub env_vars: Option<HashMap<String, String>>, // TODO write custom serializer for this to order hashmap,
-}
-
-/// An interface to access BLOB functions.
-pub trait BlobInterface {
-    /// How to evaluate a checksum of a BLOB.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue computing the checksum of a BLOB.
-    fn compute_checksum(&self, blob: Blob) -> Result<Blob> {
-        Ok(blob)
-    }
+    #[serde(serialize_with = "serialize_hashmap_option")]
+    pub env_vars: Option<HashMap<String, String>>,
 }
 
 impl PodJob {
@@ -157,27 +175,26 @@ impl PodJob {
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
-        namespace_lookup: &NameSpaceLookup,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
         input_stream = input_stream
             .into_iter()
             .map(|(stream_name, stream_input)| match stream_input {
                 Input::Unary(blob) => Ok((
                     stream_name,
-                    Input::Unary(compute_checksum_for_blob(blob, namespace_lookup)?),
+                    Input::Unary(hash_blob(namespace_lookup, blob)?),
                 )),
                 Input::Collection(blobs) => Ok((
                     stream_name,
                     Input::Collection(
                         blobs
                             .into_iter()
-                            .map(|blob| compute_checksum_for_blob(blob, namespace_lookup))
+                            .map(|blob| hash_blob(namespace_lookup, blob))
                             .collect::<Result<Vec<_>>>()?,
                     ),
                 )),
             })
-            .collect::<Result<HashMap<_, _>>>()?;
-
+            .collect::<Result<_>>()?;
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
@@ -188,7 +205,6 @@ impl PodJob {
             memory_limit,
             env_vars,
         };
-
         Ok(Self {
             hash: hash_buffer(to_yaml(&pod_job_no_hash)?),
             ..pod_job_no_hash
@@ -269,8 +285,9 @@ impl PodResult {
 }
 
 // --- util types ---
+
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -279,7 +296,6 @@ pub struct Annotation {
     /// A long form description.
     pub description: String,
 }
-
 /// Specification for GPU requirements in computation.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
@@ -290,7 +306,6 @@ pub struct GPURequirement {
     /// Number of GPU cards required.
     pub count: u16,
 }
-
 /// GPU model specification.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
@@ -299,18 +314,16 @@ pub enum GPUModel {
     /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
-
 /// Streams are named and represent an abstraction for the file(s) that represent some particular
 /// data.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
-    /// Path to stream file.
+    /// Path to stream file or folder.
     pub path: PathBuf,
     /// Naming pattern for the stream.
     pub match_pattern: String,
 }
-
-/// Input options sourced from user data target.
+/// Input options.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum Input {
@@ -319,75 +332,31 @@ pub enum Input {
     /// A series of BLOBs.
     Collection(Vec<Blob>),
 }
+/// Location of BLOB data.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+pub struct OrcaPath {
+    /// Namespace alias.
+    pub namespace: String,
+    /// Path within namespace.
+    pub path: PathBuf,
+}
 
-/// BLOB in user data target with metadata.
+/// BLOB with metadata.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob {
     /// BLOB available options.
     pub kind: BlobKind,
     /// BLOB location.
-    pub path: OrcaPath,
+    pub location: OrcaPath,
     /// BLOB contents checksum.
     pub checksum: String,
 }
-
 /// File or folder options for BLOBs.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {
-    /// A single file specified by its absolute path.
-    File,
-    /// A single folder specified by its absolute path.
+    /// A single file.
     #[default]
-    Directory,
-}
-
-/// Struct to handle `pod_job` output
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct OrcaPath {
-    /// Name of store
-    pub namespace: String,
-    /// DIR location.
-    pub rel_path: PathBuf,
-}
-
-/// Same as blob interface, but renamed due to possible additional of features for store pointer.
-#[derive(Debug)]
-pub struct NameSpaceLookup(pub HashMap<String, PathBuf>);
-
-impl NameSpaceLookup {
-    /// Resolve the path by joining the namespace lookup path with the rel path given an orca path
-    ///
-    /// # Errors
-    /// Error out if namespace wasn't found in the mapping
-    pub fn resolve_path(&self, orca_path: &OrcaPath) -> Result<PathBuf> {
-        Ok(self
-            .0
-            .get(&orca_path.namespace)
-            .ok_or_else(|| {
-                OrcaError::from(Kind::NameSpaceNotFound {
-                    namespace: orca_path.namespace.clone(),
-                })
-            })?
-            .join(&orca_path.rel_path))
-    }
-}
-
-fn serialize_hash_map<S, K: Ord + Serialize, V: Serialize>(
-    map: &HashMap<K, V>,
-    serializer: S,
-) -> result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    // Sort values first
-    let mut sorted_vec = map.iter().collect::<Vec<_>>();
-    sorted_vec.sort_by(|value_a, value_b| value_a.0.cmp(value_b.0));
-
-    let mut serialize_map = serializer.serialize_map(Some(sorted_vec.len()))?;
-
-    sorted_vec
-        .iter()
-        .try_for_each(|value| serialize_map.serialize_entry(value.0, value.1))?;
-
-    serialize_map.end()
+    File,
+    /// A single folder.
+    Folder,
 }
