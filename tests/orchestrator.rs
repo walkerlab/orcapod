@@ -6,11 +6,11 @@
 )]
 
 pub mod fixture;
-use fixture::{container_image_style, pod_job_style, TestContainerImage, TestDirs};
+use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style};
 use orcapod::{
     error::Result,
     model::OrcaPath,
-    orchestrator::{docker::LocalDockerOrchestrator, ImageKind, Orchestrator as _, PodRun, Status},
+    orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
 use std::{collections::HashMap, path::PathBuf};
 

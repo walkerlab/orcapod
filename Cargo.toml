@@ -21,7 +21,7 @@ categories = [
 
 ]
 license = "MIT license"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 bollard = "0.17.1" # docker API in orchestrator

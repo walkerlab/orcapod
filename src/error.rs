@@ -14,7 +14,9 @@ pub type Result<T> = result::Result<T, OrcaError>;
 /// Possible errors you may encounter.
 #[derive(Error, Debug)]
 pub(crate) enum Kind {
-    #[error("Received an empty response when attempting to load the alternate container image file: {path}.")]
+    #[error(
+        "Received an empty response when attempting to load the alternate container image file: {path}."
+    )]
     EmptyResponseWhenLoadingContainerAltImage { path: PathBuf },
     #[error("Out of generated random names.")]
     GeneratedNamesOverflow,

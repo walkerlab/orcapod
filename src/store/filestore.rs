@@ -1,6 +1,6 @@
 use crate::{
     error::{Kind, OrcaError, Result},
-    model::{to_yaml, Annotation, Pod, PodJob, PodResult},
+    model::{Annotation, Pod, PodJob, PodResult, to_yaml},
     store::{ModelID, ModelInfo, Store},
     util::get_type_name,
 };
@@ -8,7 +8,7 @@ use colored::Colorize as _;
 use glob::glob;
 use heck::ToSnakeCase as _;
 use regex::Regex;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_yaml;
 use std::{
     fs,

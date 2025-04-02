@@ -25,7 +25,9 @@ jobs:
           cargo modules dependencies \
             --no-uses --no-fns \
             --focus-on "orcapod::model::{Pod}" \
-            --layout dot | dot -T svg > docs/crate_diagram.svg
+            --layout dot | \
+            awk '/ERROR/ { print  > "/dev/stderr"; next; }; 1' | \
+            dot -T svg > docs/crate_diagram.svg
       - name: Sync GitHub
         run: |
           git config user.name github-actions
