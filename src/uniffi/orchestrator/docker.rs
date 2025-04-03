@@ -1,7 +1,7 @@
 use crate::{
-    core::{error::selector, orchestrator::docker::RE_IMAGE_TAG, util::get},
+    core::{orchestrator::docker::RE_IMAGE_TAG, util::get},
     uniffi::{
-        error::{OrcaError, Result},
+        error::{OrcaError, Result, selector},
         model::{Pod, PodJob, PodResult},
         orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
     },

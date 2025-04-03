@@ -1,7 +1,7 @@
 use crate::{
-    core::{error::selector, util::get},
+    core::util::get,
     uniffi::{
-        error::Result,
+        error::{Result, selector},
         model::{Input, PodJob},
         orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
     },

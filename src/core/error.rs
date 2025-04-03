@@ -1,101 +1,15 @@
-use crate::uniffi::error::OrcaError;
+use crate::uniffi::error::{Kind, OrcaError};
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
 use serde_yaml;
-use snafu::prelude::Snafu;
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
     fmt::{self, Formatter},
     io,
-    path::{self, PathBuf},
+    path::{self},
 };
-/// Possible errors you may encounter.
-#[derive(Snafu, Debug)]
-#[snafu(module(selector), visibility(pub), context(suffix(false)))]
-pub enum Kind {
-    #[snafu(display(
-        "Received an empty response when attempting to load the alternate container image file: {path:?}."
-    ))]
-    EmptyResponseWhenLoadingContainerAltImage {
-        path: PathBuf,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("Out of generated random names."))]
-    GeneratedNamesOverflow { backtrace: Option<Backtrace> },
-    #[snafu(display("{source} ({path:?})."))]
-    InvalidFilepath {
-        path: PathBuf,
-        source: io::Error,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display(
-        "An invalid datetime was set for pod result for pod job (hash: {pod_job_hash})."
-    ))]
-    InvalidPodResultTerminatedDatetime {
-        pod_job_hash: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("Key '{key}' was not found in map."))]
-    KeyMissing {
-        key: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No annotation found for `{name}:{version}` {class}."))]
-    NoAnnotationFound {
-        class: String,
-        name: String,
-        version: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No known container names."))]
-    NoContainerNames { backtrace: Option<Backtrace> },
-    #[snafu(display("Missing file or directory name ({path:?})."))]
-    NoFileName {
-        path: PathBuf,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No corresponding pod run found for pod job (hash: {pod_job_hash})."))]
-    NoMatchingPodRun {
-        pod_job_hash: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
-    NoTagFoundInContainerAltImage {
-        path: PathBuf,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
-    BollardError {
-        source: BollardError,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
-    GlobPatternError {
-        source: glob::PatternError,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
-    IoError {
-        source: io::Error,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
-    PathPrefixError {
-        source: path::StripPrefixError,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
-    SerdeJsonError {
-        source: serde_json::Error,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
-    SerdeYamlError {
-        source: serde_yaml::Error,
-        backtrace: Option<Backtrace>,
-    },
-}
+
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self(Kind::BollardError {

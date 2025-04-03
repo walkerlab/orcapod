@@ -1,7 +1,7 @@
 use crate::{
-    core::{error::selector, model::to_yaml, util::get_type_name},
+    core::{model::to_yaml, util::get_type_name},
     uniffi::{
-        error::Result,
+        error::{Result, selector},
         model::Annotation,
         store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
     },
