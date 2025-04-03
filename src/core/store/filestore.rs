@@ -1,7 +1,7 @@
 use crate::{
-    core::{error::Kind, model::to_yaml, util::get_type_name},
+    core::{error::selector, model::to_yaml, util::get_type_name},
     uniffi::{
-        error::{OrcaError, Result},
+        error::Result,
         model::Annotation,
         store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
     },
@@ -12,6 +12,7 @@ use heck::ToSnakeCase as _;
 use regex::Regex;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_yaml;
+use snafu::OptionExt as _;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -85,12 +86,10 @@ impl LocalFileStore {
             &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
         )?
         .next()
-        .ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<T>().to_snake_case(),
-                name: name.to_owned(),
-                version: version.to_owned(),
-            })
+        .context(selector::NoAnnotationFound {
+            class: get_type_name::<T>().to_snake_case(),
+            name: name.to_owned(),
+            version: version.to_owned(),
         })?;
         Ok(model_info.hash)
     }
