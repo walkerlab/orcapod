@@ -127,11 +127,15 @@ impl LocalFileStore {
                     })
             {
                 println!(
-                    "Skip saving {} annotation since `{}`, `{}`, `{}` exists.",
-                    model_type.bright_cyan(),
-                    found_hash.bright_cyan(),
-                    found_name.bright_cyan(),
-                    found_version.bright_cyan(),
+                    "{}",
+                    format!(
+                        "Skip saving {} annotation since `{}`, `{}`, `{}` exists.",
+                        model_type.bright_cyan(),
+                        found_hash.bright_cyan(),
+                        found_name.bright_cyan(),
+                        found_version.bright_cyan(),
+                    )
+                    .yellow(),
                 );
             } else {
                 Self::save_file(
@@ -144,9 +148,13 @@ impl LocalFileStore {
         let spec_file = &self.make_path::<T>(hash, Self::SPEC_RELPATH);
         if spec_file.exists() {
             println!(
-                "Skip saving {} model since `{}` exists.",
-                model_type.bright_cyan(),
-                hash.bright_cyan(),
+                "{}",
+                format!(
+                    "Skip saving {} model since `{}` exists.",
+                    model_type.bright_cyan(),
+                    hash.bright_cyan(),
+                )
+                .yellow(),
             );
         } else {
             Self::save_file(spec_file, to_yaml(model)?)?;
