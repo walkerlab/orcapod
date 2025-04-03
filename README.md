@@ -70,3 +70,20 @@ We track only issues in the project so don't add PRs.
 chmod u=rwx,g=rx,o=rx $(find . -not -path "./.git*" -type d | sort)  # directories
 chmod u=rw,g=r,o=r $(find . -not -path "./.git/*" -type f | sort)  # files
 ```
+
+## Limit DevContainer Resource Access
+
+You can easily enforce resource limits by adding the following to `devcontainer.json`.
+
+```json
+{
+  // ..
+  "runArgs": [
+    // ..
+    "--cpus=2",,
+    "--memory=8gb",
+    // ..
+  ],
+  // ..
+}
+```
