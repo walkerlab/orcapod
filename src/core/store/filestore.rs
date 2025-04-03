@@ -1,7 +1,7 @@
 use crate::{
-    core::{error::Kind, model::to_yaml, util::get_type_name},
+    core::{model::to_yaml, util::get_type_name},
     uniffi::{
-        error::{OrcaError, Result},
+        error::{Kind, OrcaError, Result},
         model::Annotation,
         store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
     },
