@@ -3,12 +3,14 @@ too-many-arguments-threshold = 10
 allowed-prefixes = ["..", "GPU", "Orca", "Local"]
 allowed-idents-below-min-chars = ["..", "k", "f", "re", "id", "Ok", "'_"]
 allowed-duplicate-crates = [
-    "hashbrown",
-    "indexmap",
-    "windows-sys",
-    "thiserror",
-    "thiserror-impl",
     "bitflags",
+    "clap",
+    "clap_derive",
+    "clap_lex",
+    "hashbrown",
     "heck",
+    "indexmap",
+    "strsim",
     "syn",
+    "windows-sys",
 ]

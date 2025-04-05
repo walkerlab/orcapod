@@ -1,0 +1,10 @@
+[project]
+name = "orcapod"
+dynamic = ["version"]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+features = ["uniffi/cli"]

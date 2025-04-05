@@ -1,11 +1,5 @@
 # DevContainer image
 
-# uniffi-bindgen CLI
-FROM rust:1.85-slim as uniffi-bindgen
-WORKDIR /package
-COPY ./uniffi-bindgen .
-RUN cargo build --release --features=uniffi/cli --bin uniffi-bindgen
-
 FROM rust:1.85-slim
 RUN \
     adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
@@ -52,6 +46,5 @@ RUN \
     # pip package based on C lib/client
     uv pip install cffi maturin ipykernel -p ~/.local/share/base && \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
-COPY --from=uniffi-bindgen /package/target/release/uniffi-bindgen /home/vscode/.cargo/bin/
 ENV VIRTUAL_ENV=/home/vscode/.local/share/base
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]
