@@ -3,8 +3,10 @@ use crate::uniffi::{
     model::{OrcaPath, PodJob, PodResult},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, future::Future, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use uniffi;
 /// Options for sourcing compute environment images.
+#[derive(uniffi::Enum)]
 pub enum ImageKind {
     /// A published compute environment image in a container registry. Argument formatted as
     /// `{server.com/}{name}:{tag}`. Server is optional e.g. (`alpine:latest`).
@@ -13,7 +15,7 @@ pub enum ImageKind {
     Tarball(OrcaPath),
 }
 /// Status of a particular compute run.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
 pub enum Status {
     /// Run is ongoing.
     Running,
@@ -21,9 +23,12 @@ pub enum Status {
     Completed,
     /// Run failed with the provided error code.
     Failed(i16),
+    /// No status set.
+    #[default]
+    Unset,
 }
 /// Run metadata
-#[derive(Debug)]
+#[derive(uniffi::Record, Debug)]
 pub struct RunInfo {
     /// Environment utilized.
     pub image: String,
@@ -47,10 +52,10 @@ pub struct RunInfo {
     pub memory_limit: u64,
 }
 /// Current computation managed by orchestrator.
-#[derive(Debug)]
+#[derive(uniffi::Record, Debug)]
 pub struct PodRun {
     /// Original compute request.
-    pub pod_job: PodJob,
+    pub pod_job: Arc<PodJob>,
     /// Name of orchestrator that created the run.
     pub orchestrator_source: String,
     /// Name given by orchestrator.
@@ -58,7 +63,9 @@ pub struct PodRun {
 }
 
 /// API for standard behavior of any container orchestration engine supported.
-pub trait Orchestrator {
+#[uniffi::export]
+#[async_trait::async_trait]
+pub trait Orchestrator: Send + Sync {
     /// How to synchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -109,46 +116,46 @@ pub trait Orchestrator {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start_with_altimage(
+    async fn start_with_altimage(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: &ImageKind,
-    ) -> impl Future<Output = Result<PodRun>> + Send;
+    ) -> Result<PodRun>;
     /// How to asynchronously start containers. Assumes `PodJob` image is published.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue starting the container.
-    fn start(
+    async fn start(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
-    ) -> impl Future<Output = Result<PodRun>> + Send;
+    ) -> Result<PodRun>;
     /// How to asynchronously query containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue querying metadata from containers.
-    fn list(&self) -> impl Future<Output = Result<Vec<PodRun>>> + Send;
+    async fn list(&self) -> Result<Vec<PodRun>>;
     /// How to asynchronously delete containers.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue deleting a container.
-    fn delete(&self, pod_run: &PodRun) -> impl Future<Output = Result<()>> + Send;
+    async fn delete(&self, pod_run: &PodRun) -> Result<()>;
     /// How to asynchronously get container info if still in orchestrator memory.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    fn get_info(&self, pod_run: &PodRun) -> impl Future<Output = Result<RunInfo>> + Send;
+    async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo>;
     /// How to asynchronously wait for pod result to be ready.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod result.
-    fn get_result(&self, pod_run: &PodRun) -> impl Future<Output = Result<PodResult>> + Send;
+    async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
 }
 
 /// Orchestration implementation for Docker backend.

@@ -9,7 +9,7 @@ use orcapod::uniffi::{
 };
 use serde_json;
 use serde_yaml;
-use std::{collections::HashMap, fmt, fs, path::PathBuf, result};
+use std::{collections::HashMap, fmt, fs, ops::Deref as _, path::PathBuf, result, sync::Arc};
 
 fn check<A: fmt::Debug, B: Into<OrcaError>>(value: result::Result<A, B>) -> String {
     let error: OrcaError = value.expect_err("Did not return an expected error.").into();
@@ -20,7 +20,9 @@ fn check<A: fmt::Debug, B: Into<OrcaError>>(value: result::Result<A, B>) -> Stri
 fn external_bollard() -> Result<()> {
     let orch = LocalDockerOrchestrator::new()?;
     let mut pod_job = pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
-    pod_job.pod.image = "nonexistent_image".to_owned();
+    let mut pod = pod_job.pod.deref().clone();
+    pod.image = "nonexistent_image".to_owned();
+    pod_job.pod = Arc::new(pod);
     check(orch.start_blocking(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job));
     Ok(())
 }

@@ -1,9 +1,10 @@
 use crate::uniffi::{
     error::Result,
-    model::{Pod, PodJob, PodResult},
+    model::{Model, Pod, PodJob, PodResult},
 };
+use uniffi;
 /// Options for identifying a model.
-#[derive(Debug, Clone)]
+#[derive(uniffi::Enum, Debug, Clone)]
 pub enum ModelID {
     /// Identifying by the hash value of a model as a string.
     Hash(String),
@@ -12,7 +13,7 @@ pub enum ModelID {
 }
 
 /// Metadata for a model.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(uniffi::Record, Debug, PartialEq, Eq)]
 pub struct ModelInfo {
     /// A model's name.
     pub name: Option<String>,
@@ -23,9 +24,8 @@ pub struct ModelInfo {
 }
 
 /// Standard behavior of any store backend supported.
-pub trait Store {
-    /// Namespace where models will be stored.
-    const MODEL_NAMESPACE: &str = "orcapod_model";
+#[uniffi::export]
+pub trait Store: Send + Sync {
     /// How a pod is stored.
     ///
     /// # Errors
@@ -114,7 +114,7 @@ pub trait Store {
     ///
     /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
     /// and `version`.
-    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()>;
+    fn delete_annotation(&self, model_kind: &Model, name: &str, version: &str) -> Result<()>;
 }
 /// Store implementation on a local filesystem.
 pub mod filestore;

@@ -61,6 +61,14 @@
         "tobytes",
         "bitflags",
         "peaceiris",
-        "tintinweb"
+        "tintinweb",
+        "rlib",
+        "cdylib",
+        "toolsai",
+        "bindgen",
+        "nogroup",
+        "venv",
+        "maturin",
+        "ipykernel"
     ]
 }

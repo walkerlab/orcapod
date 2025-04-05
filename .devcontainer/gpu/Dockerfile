@@ -1,4 +1,11 @@
 # DevContainer image
+
+# uniffi-bindgen CLI
+FROM rust:1.85-slim as uniffi-bindgen
+WORKDIR /package
+COPY ./uniffi-bindgen .
+RUN cargo build --release --features=uniffi/cli --bin uniffi-bindgen
+
 FROM nvidia/cuda:12.6.1-cudnn-runtime-ubuntu24.04
 
 RUN \
@@ -38,4 +45,13 @@ RUN apt-get update && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs 
     apt-get clean
 
 ENV PATH=${PATH}:/root/.local/bin
+RUN \
+    # install python manager
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    uv venv -p 3.9 ~/.local/share/base && \
+    # pip package based on C lib/client
+    uv pip install cffi maturin ipykernel -p ~/.local/share/base && \
+    echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
+COPY --from=uniffi-bindgen /package/target/release/uniffi-bindgen /root/.cargo/bin/
+ENV VIRTUAL_ENV=/root/.local/share/base
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

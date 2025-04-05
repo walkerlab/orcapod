@@ -11,6 +11,7 @@ use serde_yaml;
 use std::{
     collections::{BTreeMap, HashMap},
     result,
+    sync::Arc,
 };
 /// Converts a model instance into a consistent yaml.
 ///
@@ -59,14 +60,15 @@ where
     serializer.serialize_str(&pod.hash)
 }
 
-pub(crate) fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Pod, D::Error>
+pub(crate) fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
 where
     D: Deserializer<'de>,
 {
     Ok(Pod {
         hash: String::deserialize(deserializer)?,
         ..Pod::default()
-    })
+    }
+    .into())
 }
 
 pub(crate) fn serialize_pod_job<S>(
@@ -79,12 +81,13 @@ where
     serializer.serialize_str(&pod_job.hash)
 }
 
-pub(crate) fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<PodJob, D::Error>
+pub(crate) fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<Arc<PodJob>, D::Error>
 where
     D: Deserializer<'de>,
 {
     Ok(PodJob {
         hash: String::deserialize(deserializer)?,
         ..PodJob::default()
-    })
+    }
+    .into())
 }

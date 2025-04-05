@@ -131,7 +131,7 @@ impl LocalDockerOrchestrator {
             ("org.orcapod.pod.hash".to_owned(), pod_job.pod.hash.clone()),
             (
                 "org.orcapod.pod".to_owned(),
-                serde_json::to_string(&pod_job.pod)?,
+                serde_json::to_string(&*pod_job.pod)?,
             ),
             (
                 "org.orcapod.pod_job.annotation".to_owned(),

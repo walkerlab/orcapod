@@ -14,11 +14,11 @@ use orcapod::{
     core::{crypto::hash_buffer, model::to_yaml},
     uniffi::{
         error::Result,
-        model::{Annotation, Pod},
+        model::{Annotation, Model},
         store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
     },
 };
-use std::{collections::HashMap, fmt::Debug, path::Path};
+use std::{collections::HashMap, fmt::Debug, ops::Deref as _, path::Path, sync::Arc};
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     Some(
@@ -33,7 +33,7 @@ fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
 
 fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(&test_dirs.0["default"]);
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     model.save(&store)?;
     let annotation = model.get_annotation().expect("Annotation missing.");
     assert_eq!(
@@ -72,7 +72,9 @@ fn pod_basic() -> Result<()> {
 #[test]
 fn pod_job_basic() -> Result<()> {
     let mut expected_model = pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
-    expected_model.pod.annotation = None;
+    let mut pod = expected_model.pod.deref().clone();
+    pod.annotation = None;
+    expected_model.pod = Arc::new(pod);
     basic_test(
         &pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?,
         &expected_model,
@@ -83,8 +85,12 @@ fn pod_job_basic() -> Result<()> {
 #[test]
 fn pod_result_basic() -> Result<()> {
     let mut expected_model = pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
-    expected_model.pod_job.annotation = None;
-    expected_model.pod_job.pod.annotation = None;
+    let mut pod_job = expected_model.pod_job.deref().clone();
+    let mut pod = expected_model.pod_job.pod.deref().clone();
+    pod_job.annotation = None;
+    pod.annotation = None;
+    pod_job.pod = Arc::new(pod);
+    expected_model.pod_job = Arc::new(pod_job);
     basic_test(
         &pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?,
         &expected_model,
@@ -95,17 +101,18 @@ fn pod_result_basic() -> Result<()> {
 #[test]
 fn pod_files() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(&test_dirs.0["default"]);
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     let pod_style = pod_style()?;
     let annotation = pod_style
         .annotation
         .as_ref()
         .expect("Annotation missing from `pod_style`");
-    let annotation_file = store.make_path::<Pod>(
+    let annotation_file = store.make_path(
+        &pod_style,
         &pod_style.hash,
-        &LocalFileStore::make_annotation_relpath(&annotation.name, &annotation.version),
+        LocalFileStore::make_annotation_relpath(&annotation.name, &annotation.version),
     );
-    let spec_file = store.make_path::<Pod>(&pod_style.hash, LocalFileStore::SPEC_RELPATH);
+    let spec_file = store.make_path(&pod_style, &pod_style.hash, LocalFileStore::SPEC_RELPATH);
 
     store.save_pod(&pod_style)?;
     assert!(spec_file.exists(), "Spec file missing.");
@@ -129,7 +136,7 @@ fn pod_files() -> Result<()> {
 #[test]
 fn pod_list_empty() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(&test_dirs.0["default"]);
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
@@ -137,7 +144,7 @@ fn pod_list_empty() -> Result<()> {
 #[test]
 fn pod_load_from_hash() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(&test_dirs.0["default"]);
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     pod.annotation = None;
@@ -152,7 +159,7 @@ fn pod_load_from_hash() -> Result<()> {
 #[test]
 fn pod_annotation_delete() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(&test_dirs.0["default"]);
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     let model_version = &pod.annotation.as_ref().map(|x| x.version.clone());
@@ -186,7 +193,7 @@ fn pod_annotation_delete() -> Result<()> {
         "Pod list didn't return 3 expected entries."
     );
     // case 2: delete new annotation, assert list gives 2 entries: hash, annotation (original).
-    store.delete_annotation::<Pod>("new-name", "0.5.0")?;
+    store.delete_annotation(&Model::Pod, "new-name", "0.5.0")?;
     assert_eq!(
         store.list_pod()?,
         vec![
@@ -204,7 +211,8 @@ fn pod_annotation_delete() -> Result<()> {
         "Pod list didn't return 2 expected entry."
     );
     // case 3: delete original annotation, assert list gives 1 entry: hash.
-    store.delete_annotation::<Pod>(
+    store.delete_annotation(
+        &Model::Pod,
         "style-transfer",
         &model_version
             .to_owned()
@@ -222,7 +230,7 @@ fn pod_annotation_delete() -> Result<()> {
     // case 4: delete invalid annotation, error should be returned.
     assert!(
         store
-            .delete_annotation::<Pod>("style-transfer", "9.9.9")
+            .delete_annotation(&Model::Pod, "style-transfer", "9.9.9")
             .expect_err("Unexpectedly succeeded.")
             .is_invalid_annotation(),
         "Returned a different OrcaError than one expected when deleting an invalid annotation."
@@ -233,7 +241,7 @@ fn pod_annotation_delete() -> Result<()> {
 #[test]
 fn pod_annotation_unique() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(&test_dirs.0["default"]);
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     let original_annotation = Annotation {
         name: "example".to_owned(),
         version: "1.0.0".to_owned(),
