@@ -1,12 +1,12 @@
 # docker compose down && docker compose up --build
 services:
-  orcapod-python:
+  orcapod_python:
     build:
       context: ../../..
-      dockerfile: ./docs/examples/install/Dockerfile
+      dockerfile: ./docs/examples/install_from_source/Dockerfile
     command: 
       - bash
-      - -c
+      - -lc
       - |
         set -e
         echo "Install successful"
@@ -22,5 +22,5 @@ services:
         
         EOF
 
-        # Keep alive to try yourself i.e. docker exec -it install-orcapod-python-1 python
+        # Keep alive to try yourself i.e. docker exec -it install_from_source-orcapod_python-1 bash
         tail -f /dev/null
