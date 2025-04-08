@@ -1,8 +1,11 @@
+#!/usr/bin/env python3
+
 # build: maturin develop --uv
 # debugger: select "Python: Debug File" + F5
-# script: python /path/to/this/file.py
+# script: /path/to/this/test/file.py /path/to/directory (must exist, will create subdirectory)
 import shutil
 from pathlib import Path
+import argparse
 from orcapod import (
     Pod,
     PodJob,
@@ -135,8 +138,14 @@ def test(test_dir, steps):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Basic tests for orcapod's Python API."
+    )
+    parser.add_argument("test_dir", help="Root directory for tests.")
+    args = parser.parse_args()
+
     test(
-        test_dir=f"./tests/.tmp/{Path(__file__).stem}",
+        test_dir=f"{args.test_dir}/{Path(__file__).stem}",
         steps=[
             # Orchestrator DEMO
             create_pod,

@@ -17,3 +17,5 @@ RUN \
 # RUN \
 #     pip install /tmp/orcapod && \
 #     rm -R /tmp/orcapod
+
+WORKDIR /root

@@ -104,7 +104,10 @@
             "env": {
                 "RUST_BACKTRACE": "1"
             },
-            "program": "tests/extra/python/smoke_test.py"
+            "program": "tests/extra/python/smoke_test.py",
+            "args": [
+                "./tests/.tmp"
+            ]
         }
     ]
 }
