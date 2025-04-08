@@ -1,7 +1,8 @@
 # build: maturin develop --uv
-# debugger: F5 on this file
-# script: python tests/extra/python/smoke_test.py
+# debugger: select "Python: Debug File" + F5
+# script: python /path/to/this/file.py
 import shutil
+from pathlib import Path
 from orcapod import (
     Pod,
     PodJob,
@@ -93,24 +94,24 @@ def save_pod(data, _):
 
 def load_pod(data, _):
     data["loaded_pod"] = data["store"].load_pod(
-        model_id=ModelId.ANNOTATION("simple", "1.0.0")
+        model_id=ModelId.ANNOTATION(
+            data["pod"].annotation().name, data["pod"].annotation().version
+        )
     )
     return data["loaded_pod"], data
 
 
 def delete_annotation(data, _):
     data["store"].delete_annotation(
-        model_kind=Model.POD, name="simple", version="1.0.0"
+        model_kind=Model.POD,
+        name=data["pod"].annotation().name,
+        version=data["pod"].annotation().version,
     )
     return [str(p) for p in data["store"].list_pod()], data
 
 
 def delete_pod(data, _):
-    data["store"].delete_pod(
-        model_id=ModelId.HASH(
-            "e3bae432ae5b9f0d391a778234b2e14afae8e8b3abd2a09063455506f621014d"
-        )
-    )
+    data["store"].delete_pod(model_id=ModelId.HASH(data["pod"].hash()))
     return [str(p) for p in data["store"].list_pod()], data
 
 
@@ -135,7 +136,7 @@ def test(test_dir, steps):
 
 if __name__ == "__main__":
     test(
-        test_dir="./tests/.tmp/smoke_test",
+        test_dir=f"./tests/.tmp/{Path(__file__).stem}",
         steps=[
             # Orchestrator DEMO
             create_pod,

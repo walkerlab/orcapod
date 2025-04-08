@@ -33,6 +33,7 @@ chrono = "0.4.39" # datetime utilities
 colored = "2.1.0" # font colors in printed strings
 derive_more = { version = "2.0.1", features = ["display"] } # derive utilities for new types
 futures-util = "0.3.31" # chaining async calls and processing stream data in local docker orchestrator
+getset = { version = "0.1.5", git = "https://github.com/guzman-raphael/getset.git", branch = "impl_attrs" }
 glob = "0.3.1" # recursive walk of filesystem in filestore
 heck = "0.5.0" # strings to snake_case
 names = "0.14.0" # random name generator

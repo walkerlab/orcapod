@@ -63,7 +63,7 @@ impl LocalFileStore {
     ) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
-            self.get_directory().to_string_lossy(),
+            self.directory.to_string_lossy(),
             MODEL_NAMESPACE,
             parse_debug_name(model).to_snake_case(),
             hash

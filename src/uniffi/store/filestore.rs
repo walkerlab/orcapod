@@ -4,15 +4,17 @@ use crate::uniffi::{
     store::{ModelID, ModelInfo, Store},
 };
 use derive_more::Display;
+use getset::CloneGetters;
 use std::{fs, path::PathBuf};
 use uniffi;
 /// Support for a storage backend on a local filesystem directory.
-#[derive(uniffi::Object, Debug, Display)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct LocalFileStore {
     /// A local path to a directory where store will be located.
-    directory: PathBuf,
+    pub directory: PathBuf,
 }
 
 #[uniffi::export]
@@ -88,9 +90,5 @@ impl LocalFileStore {
     #[uniffi::constructor]
     pub const fn new(directory: PathBuf) -> Self {
         Self { directory }
-    }
-    // /// Get the directory where store is located.
-    pub(crate) fn get_directory(&self) -> PathBuf {
-        self.directory.clone()
     }
 }

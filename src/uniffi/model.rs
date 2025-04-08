@@ -9,8 +9,9 @@ use crate::{
     uniffi::{error::Result, orchestrator::Status},
 };
 use derive_more::Display;
+use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
 
 /// Available models.
@@ -27,8 +28,11 @@ pub enum Model {
 // --- core model structs ---
 
 /// A reusable, containerized computational unit.
-#[derive(uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Default, Clone, Display)]
-#[display("{}", to_yaml(self).map_err(|_err| fmt::Error)?)]
+#[derive(
+    uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Default, Clone, Display, CloneGetters,
+)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
@@ -100,8 +104,11 @@ impl Pod {
 }
 
 /// A compute job that specifies resource requests and input/output targets.
-#[derive(uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Clone, Default, Display)]
-#[display("{}", to_yaml(self).map_err(|_err| fmt::Error)?)]
+#[derive(
+    uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Clone, Default, Display, CloneGetters,
+)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct PodJob {
     /// Metadata that doesn't affect reproducibility.
