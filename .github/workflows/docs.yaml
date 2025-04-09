@@ -22,11 +22,11 @@ jobs:
       - name: Generate crate diagram
         run: |
           mkdir -p docs
+          set -o pipefail
           cargo modules dependencies \
             --no-uses --no-fns \
-            --focus-on "orcapod::model::{Pod}" \
+            --focus-on "orcapod::uniffi::model::{Pod}" \
             --layout dot | \
-            awk '/ERROR/ { print  > "/dev/stderr"; next; }; 1' | \
             dot -T svg > docs/crate_diagram.svg
       - name: Sync GitHub
         run: |
