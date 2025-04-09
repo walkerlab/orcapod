@@ -1,11 +1,7 @@
 use bollard::errors::Error as BollardError;
-use glob;
-use serde_json;
-use serde_yaml;
 use std::{
-    fmt::{self, Display, Formatter},
-    io, path,
-    path::PathBuf,
+    io,
+    path::{self, PathBuf},
     result,
 };
 use thiserror::Error;
@@ -52,9 +48,14 @@ pub(crate) enum Kind {
     SerdeYamlError(#[from] serde_yaml::Error),
 }
 /// A stable error API interface.
+#[expect(
+    clippy::field_scoped_visibility_modifiers,
+    reason = "Allow access from `core::error`."
+)]
 #[derive(Error, Debug)]
 pub struct OrcaError {
-    kind: Kind,
+    /// Type of error returned.
+    pub(crate) kind: Kind,
 }
 impl OrcaError {
     /// Returns `true` if the error was caused by an invalid model annotation.
@@ -64,57 +65,5 @@ impl OrcaError {
     /// Returns `true` if the error was caused by querying a purged pod run.
     pub const fn is_purged_pod_run(&self) -> bool {
         matches!(self.kind, Kind::NoMatchingPodRun { .. })
-    }
-}
-impl Display for OrcaError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-impl From<BollardError> for OrcaError {
-    fn from(error: BollardError) -> Self {
-        Self {
-            kind: Kind::BollardError(error),
-        }
-    }
-}
-impl From<glob::PatternError> for OrcaError {
-    fn from(error: glob::PatternError) -> Self {
-        Self {
-            kind: Kind::GlobPatternError(error),
-        }
-    }
-}
-impl From<io::Error> for OrcaError {
-    fn from(error: io::Error) -> Self {
-        Self {
-            kind: Kind::IoError(error),
-        }
-    }
-}
-impl From<path::StripPrefixError> for OrcaError {
-    fn from(error: path::StripPrefixError) -> Self {
-        Self {
-            kind: Kind::PathPrefixError(error),
-        }
-    }
-}
-impl From<serde_json::Error> for OrcaError {
-    fn from(error: serde_json::Error) -> Self {
-        Self {
-            kind: Kind::SerdeJsonError(error),
-        }
-    }
-}
-impl From<serde_yaml::Error> for OrcaError {
-    fn from(error: serde_yaml::Error) -> Self {
-        Self {
-            kind: Kind::SerdeYamlError(error),
-        }
-    }
-}
-impl From<Kind> for OrcaError {
-    fn from(kind: Kind) -> Self {
-        Self { kind }
     }
 }

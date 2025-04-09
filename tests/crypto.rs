@@ -1,8 +1,8 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 use orcapod::{
-    crypto::{hash_buffer, hash_dir, hash_file},
-    error::Result,
+    core::crypto::{hash_buffer, hash_dir, hash_file},
+    uniffi::error::Result,
 };
 use std::fs::read;
 

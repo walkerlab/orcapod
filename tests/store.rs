@@ -11,10 +11,12 @@ use fixture::{
     NAMESPACE_LOOKUP_READ_ONLY, TestDirs, TestSetup, pod_job_style, pod_result_style, pod_style,
 };
 use orcapod::{
-    crypto::hash_buffer,
-    error::Result,
-    model::{Annotation, Pod, to_yaml},
-    store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
+    core::{crypto::hash_buffer, model::to_yaml},
+    uniffi::{
+        error::Result,
+        model::{Annotation, Pod},
+        store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
+    },
 };
 use std::{collections::HashMap, fmt::Debug, path::Path};
 

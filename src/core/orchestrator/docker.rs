@@ -1,23 +1,17 @@
 use crate::{
-    error::{Kind, OrcaError, Result},
-    model::{Input, Pod, PodJob, PodResult},
-    orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
-    util::get,
+    core::util::get,
+    uniffi::{
+        error::{Kind, OrcaError, Result},
+        model::{Input, PodJob},
+        orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
+    },
 };
 use bollard::{
-    Docker,
-    container::{
-        Config, CreateContainerOptions, ListContainersOptions, RemoveContainerOptions,
-        StartContainerOptions, WaitContainerOptions,
-    },
-    image::{CreateImageOptions, ImportImageOptions},
+    container::{Config, CreateContainerOptions, ListContainersOptions},
     models::{ContainerStateStatusEnum, HostConfig},
 };
 use chrono::DateTime;
-use futures_util::{
-    future::join_all,
-    stream::{StreamExt as _, TryStreamExt as _},
-};
+use futures_util::future::join_all;
 use names::{Generator, Name};
 use regex::Regex;
 use std::{
@@ -26,205 +20,9 @@ use std::{
     path::{self, PathBuf},
     sync::LazyLock,
 };
-use tokio::{fs::File, runtime::Runtime};
-use tokio_util::{
-    bytes::{Bytes, BytesMut},
-    codec::{BytesCodec, FramedRead},
-};
-
-/// Support for an orchestration engine using a local docker installation.
-#[derive(Debug)]
-pub struct LocalDockerOrchestrator {
-    api: Docker,
-    async_driver: Runtime,
-}
-
-impl Orchestrator for LocalDockerOrchestrator {
-    fn start_with_altimage_blocking(
-        &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
-        pod_job: &PodJob,
-        image: &ImageKind,
-    ) -> Result<PodRun> {
-        self.async_driver
-            .block_on(self.start_with_altimage(namespace_lookup, pod_job, image))
-    }
-    fn start_blocking(
-        &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
-        pod_job: &PodJob,
-    ) -> Result<PodRun> {
-        self.async_driver
-            .block_on(self.start(namespace_lookup, pod_job))
-    }
-    fn list_blocking(&self) -> Result<Vec<PodRun>> {
-        self.async_driver.block_on(self.list())
-    }
-    fn delete_blocking(&self, pod_run: &PodRun) -> Result<()> {
-        self.async_driver.block_on(self.delete(pod_run))
-    }
-    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo> {
-        self.async_driver.block_on(self.get_info(pod_run))
-    }
-    fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.async_driver.block_on(self.get_result(pod_run))
-    }
-    #[expect(
-        clippy::try_err,
-        reason = r#"
-        - `map_err` workaround needed since `import_image_stream` requires resolved bytes
-        - Raising an error manually on occurrence to halt so we don't just ignore
-        - Should not get as far as `Ok(_)`
-        "#
-    )]
-    async fn start_with_altimage(
-        &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
-        pod_job: &PodJob,
-        image: &ImageKind,
-    ) -> Result<PodRun> {
-        let (assigned_name, container_options, container_config) = match image {
-            ImageKind::Published(remote_image) => Self::prepare_container_start_inputs(
-                namespace_lookup,
-                pod_job,
-                remote_image.clone(),
-            )?,
-            ImageKind::Tarball(image_info) => {
-                let location = namespace_lookup[&image_info.namespace].join(&image_info.path);
-                let byte_stream = FramedRead::new(File::open(&location).await?, BytesCodec::new())
-                    .map_err(|err| -> Result<BytesMut> {
-                        let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
-                        Ok(resolved_error)
-                    })
-                    .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
-                let mut stream =
-                    self.api
-                        .import_image_stream(ImportImageOptions::default(), byte_stream, None);
-                let mut local_image = String::new();
-                while let Some(response) = stream.next().await {
-                    local_image = RE_IMAGE_TAG
-                        .captures_iter(&response?.stream.ok_or(OrcaError::from(
-                            Kind::EmptyResponseWhenLoadingContainerAltImage {
-                                path: location.clone(),
-                            },
-                        ))?)
-                        .find_map(|x| x.name("image").map(|name| name.as_str().to_owned()))
-                        .ok_or(OrcaError::from(Kind::NoTagFoundInContainerAltImage {
-                            path: location.clone(),
-                        }))?;
-                }
-                Self::prepare_container_start_inputs(
-                    namespace_lookup,
-                    pod_job,
-                    local_image.clone(),
-                )?
-            }
-        };
-        self.api
-            .create_container(container_options, container_config)
-            .await?;
-        self.api
-            .start_container(&assigned_name, None::<StartContainerOptions<String>>)
-            .await?;
-        Ok(PodRun::new::<Self>(pod_job, assigned_name))
-    }
-    async fn start(
-        &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
-        pod_job: &PodJob,
-    ) -> Result<PodRun> {
-        let image_options = Some(CreateImageOptions {
-            from_image: pod_job.pod.image.clone(),
-            ..Default::default()
-        });
-        self.api
-            .create_image(image_options, None, None)
-            .try_collect::<Vec<_>>()
-            .await?;
-        self.start_with_altimage(
-            namespace_lookup,
-            pod_job,
-            &ImageKind::Published(pod_job.pod.image.clone()),
-        )
-        .await
-    }
-    async fn list(&self) -> Result<Vec<PodRun>> {
-        self.list_containers(HashMap::from([(
-            "label".to_owned(),
-            vec!["org.orcapod=true".to_owned()],
-        )]))
-        .await?
-        .map(|(assigned_name, run_info)| {
-            let mut pod: Pod = serde_json::from_str(get(&run_info.labels, "org.orcapod.pod")?)?;
-            pod.annotation =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod.annotation")?)?;
-            pod.hash
-                .clone_from(get(&run_info.labels, "org.orcapod.pod.hash")?);
-            let mut pod_job: PodJob =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job")?)?;
-            pod_job.annotation =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job.annotation")?)?;
-            pod_job
-                .hash
-                .clone_from(get(&run_info.labels, "org.orcapod.pod_job.hash")?);
-            pod_job.pod = pod;
-            Ok(PodRun::new::<Self>(&pod_job, assigned_name))
-        })
-        .collect()
-    }
-    async fn delete(&self, pod_run: &PodRun) -> Result<()> {
-        self.api
-            .remove_container(
-                &pod_run.assigned_name,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await?;
-        Ok(())
-    }
-    async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo> {
-        let labels = vec![
-            "org.orcapod=true".to_owned(),
-            format!(
-                "org.orcapod.pod_job.annotation={}",
-                serde_json::to_string(&pod_run.pod_job.annotation)?
-            ),
-            format!("org.orcapod.pod_job.hash={}", pod_run.pod_job.hash),
-        ];
-        let (_, run_info) = self
-            .list_containers(HashMap::from([("label".to_owned(), labels)]))
-            .await?
-            .next()
-            .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
-                pod_job_hash: pod_run.pod_job.hash.clone(),
-            }))?;
-        Ok(run_info)
-    }
-    async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api
-            .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
-            .try_collect::<Vec<_>>()
-            .await?;
-        let result_info = self.get_info(pod_run).await?;
-        PodResult::new(
-            None,
-            pod_run.pod_job.clone(),
-            pod_run.assigned_name.clone(),
-            result_info.status,
-            result_info.created,
-            result_info.terminated.ok_or(OrcaError::from(
-                Kind::InvalidPodResultTerminatedDatetime {
-                    pod_job_hash: pod_run.pod_job.hash.clone(),
-                },
-            ))?,
-        )
-    }
-}
 
 #[expect(clippy::expect_used, reason = "Valid static regex")]
-static RE_IMAGE_TAG: LazyLock<Regex> = LazyLock::new(|| {
+pub static RE_IMAGE_TAG: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
                 \s
@@ -236,18 +34,6 @@ static RE_IMAGE_TAG: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 impl LocalDockerOrchestrator {
-    /// How to create a local docker orchestrator with an absolute path on docker host where binds
-    /// will be mounted from.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue creating a local docker orchestrator.
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            api: Docker::connect_with_local_defaults()?,
-            async_driver: Runtime::new()?,
-        })
-    }
     fn prepare_mount_binds(
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
@@ -321,7 +107,7 @@ impl LocalDockerOrchestrator {
         - Pod commands will always have at least 1 element
         "#
     )]
-    fn prepare_container_start_inputs(
+    pub(crate) fn prepare_container_start_inputs(
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: String,
@@ -404,7 +190,7 @@ impl LocalDockerOrchestrator {
         - Containers will always have at least 1 name with at least 2 characters
         "#
     )]
-    async fn list_containers(
+    pub(crate) async fn list_containers(
         &self,
         filters: HashMap<String, Vec<String>>, // https://docs.rs/bollard/latest/bollard/container/struct.ListContainersOptions.html#structfield.filters
     ) -> Result<impl Iterator<Item = (String, RunInfo)>> {

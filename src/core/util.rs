@@ -1,4 +1,4 @@
-use crate::error::{Kind, Result};
+use crate::uniffi::error::{Kind, Result};
 use std::{any::type_name, collections::HashMap};
 
 #[expect(
