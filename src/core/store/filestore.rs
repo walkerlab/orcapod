@@ -54,7 +54,7 @@ impl LocalFileStore {
     pub fn make_path<T>(&self, hash: &str, relpath: impl AsRef<Path>) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
-            self.get_directory().to_string_lossy(),
+            self.directory.to_string_lossy(),
             Self::MODEL_NAMESPACE,
             get_type_name::<T>().to_snake_case(),
             hash

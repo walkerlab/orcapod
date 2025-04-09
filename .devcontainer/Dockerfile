@@ -1,5 +1,5 @@
 # DevContainer image
-FROM rust:1.85-slim
+FROM rust:1.86-slim
 RUN \
     adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
     # install docker

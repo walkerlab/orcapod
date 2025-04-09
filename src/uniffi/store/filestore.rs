@@ -11,7 +11,7 @@ use std::{
 #[derive(Debug)]
 pub struct LocalFileStore {
     /// A local path to a directory where store will be located.
-    directory: PathBuf,
+    pub directory: PathBuf,
 }
 
 impl Store for LocalFileStore {
@@ -75,10 +75,6 @@ impl Store for LocalFileStore {
 }
 
 impl LocalFileStore {
-    /// Get the directory where store is located.
-    pub fn get_directory(&self) -> &Path {
-        &self.directory
-    }
     /// Construct a local file store instance in a specific directory.
     pub fn new(directory: impl AsRef<Path>) -> Self {
         Self {
