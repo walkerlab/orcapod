@@ -20,9 +20,9 @@ cargo llvm-cov --html -- --nocapture      # integration tests w/ coverage report
 
 ```bash
 cargo doc --no-deps                       # gen api docs (target/doc/orcapod/index.html)
-cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::model::{Pod}" --layout dot > docs/images/crate_diagram.dot # orcapod diagram as DOT
-cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::model::{Pod}" --layout dot | dot -T png > docs/images/crate_diagram.png # orcapod diagram as PNG
-cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::model::{Pod}" --layout dot | dot -T svg > docs/images/crate_diagram.svg # orcapod diagram as SVG
+cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::uniffi::model::{Pod}" --layout dot > docs/images/crate_diagram.dot # orcapod diagram as DOT
+cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::uniffi::model::{Pod}" --layout dot | dot -T png > docs/images/crate_diagram.png # orcapod diagram as PNG
+cargo modules dependencies --no-uses --no-fns --focus-on "orcapod::uniffi::model::{Pod}" --layout dot | dot -T svg > docs/images/crate_diagram.svg # orcapod diagram as SVG
 ```
 
 ## Project Management
