@@ -1,6 +1,5 @@
 #![expect(
     clippy::field_scoped_visibility_modifiers,
-    clippy::redundant_pub_crate,
     reason = "Needed since SNAFU dynamically generating selectors."
 )]
 
