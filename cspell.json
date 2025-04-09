@@ -69,6 +69,8 @@
         "nogroup",
         "venv",
         "maturin",
-        "ipykernel"
+        "ipykernel",
+        "getset",
+        "strsim"
     ]
 }

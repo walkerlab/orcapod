@@ -27,32 +27,53 @@ edition = "2024"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-async-trait = "0.1.88"  # make async fn in traits work with dyn traits
-bollard = "0.17.1" # docker API in orchestrator
-chrono = "0.4.39" # datetime utilities
-colored = "2.1.0" # font colors in printed strings
-derive_more = { version = "2.0.1", features = ["display"] } # derive utilities for new types
-futures-util = "0.3.31" # chaining async calls and processing stream data in local docker orchestrator
+# make async fn in traits work with dyn traits
+async-trait = "0.1.88"
+# docker API in orchestrator
+bollard = "0.17.1"
+# datetime utilities
+chrono = "0.4.39"
+# font colors in printed strings
+colored = "2.1.0"
+# derive utilities for new types
+derive_more = { version = "2.0.1", features = ["display"] }
+# chaining async calls and processing stream data in local docker orchestrator
+futures-util = "0.3.31"
+# auto derive getter access methods on structs
 getset = { version = "0.1.5", git = "https://github.com/guzman-raphael/getset.git", branch = "impl_attrs" }
-glob = "0.3.1" # recursive walk of filesystem in filestore
-heck = "0.5.0" # strings to snake_case
-names = "0.14.0" # random name generator
-regex = "1.11.0" # complex pattern matching in strings
-serde = { version = "1.0.210", features = ["derive"] } # serialization/deserialization to/from filestore
-serde_json = "1.0.137" # JSON in sharing memory with local docker orchestrator
-serde_yaml = "0.9.34" # YAML in filestore
-sha2 = "0.10.8" # checksums based on SHA256 
-snafu = { version = "0.8.5", features = ["futures"] } # library error handling API
-tokio = { version = "1.41.0", features = ["full"] } # a runtime for async applications
-tokio-util = "0.7.13" # utilities for async calls
-uniffi = { version = "0.29.1", git = "https://github.com/mozilla/uniffi-rs.git", features = ["cli"] }  # automated CFFI + bindings in other languages
+# recursive walk of filesystem in filestore
+glob = "0.3.1"
+# strings to snake_case
+heck = "0.5.0"
+# random name generator
+names = "0.14.0"
+# complex pattern matching in strings
+regex = "1.11.0"
+# serialization/deserialization to/from filestore
+serde = { version = "1.0.210", features = ["derive"] }
+# JSON in sharing memory with local docker orchestrator
+serde_json = "1.0.137"
+# YAML in filestore
+serde_yaml = "0.9.34"
+# checksums based on SHA256 
+sha2 = "0.10.8"
+# library error handling API
+snafu = { version = "0.8.5", features = ["futures"] }
+# a runtime for async applications
+tokio = { version = "1.41.0", features = ["full"] }
+# utilities for async calls
+tokio-util = "0.7.13"
+# automated CFFI + bindings in other languages
+uniffi = { version = "0.29.1", features = ["cli"] }
 
 [[bin]]
 name = "uniffi-bindgen"
 
 [dev-dependencies]
-indoc = "2.0.5" # pretty multiline strings
-tempfile = "3.13.0" # creating temp directories
+# pretty multiline strings
+indoc = "2.0.5"
+# creating temp directories
+tempfile = "3.13.0"
 
 [lints.rust]
 non_ascii_idents = "deny"
