@@ -8,11 +8,11 @@ use crate::{
 };
 use bollard::{
     Docker,
-    container::{RemoveContainerOptions, StartContainerOptions, WaitContainerOptions},
+    container::{LogOutput, LogsOptions, StartContainerOptions, WaitContainerOptions},
     image::{CreateImageOptions, ImportImageOptions},
 };
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
-use snafu::{OptionExt as _, futures::TryFutureExt as _};
+use snafu::{OptionExt as _, ResultExt as _, futures::TryFutureExt as _};
 use std::{collections::HashMap, path::PathBuf};
 use tokio::{fs::File, runtime::Runtime};
 use tokio_util::{
@@ -117,9 +117,14 @@ impl Orchestrator for LocalDockerOrchestrator {
         self.api
             .create_container(container_options, container_config)
             .await?;
+        // Try to start container, if fails, delete it
         self.api
             .start_container(&assigned_name, None::<StartContainerOptions<String>>)
-            .await?;
+            .await
+            .context(selector::FailedToStartPod {
+                container_name: assigned_name.clone(),
+            })?;
+
         Ok(PodRun::new::<Self>(pod_job, assigned_name))
     }
     async fn start(
@@ -148,7 +153,8 @@ impl Orchestrator for LocalDockerOrchestrator {
             vec!["org.orcapod=true".to_owned()],
         )]))
         .await?
-        .map(|(assigned_name, run_info)| {
+        .map(|result| {
+            let (assigned_name, run_info) = result?;
             let mut pod: Pod = serde_json::from_str(get(&run_info.labels, "org.orcapod.pod")?)?;
             pod.annotation =
                 serde_json::from_str(get(&run_info.labels, "org.orcapod.pod.annotation")?)?;
@@ -167,16 +173,7 @@ impl Orchestrator for LocalDockerOrchestrator {
         .collect()
     }
     async fn delete(&self, pod_run: &PodRun) -> Result<()> {
-        self.api
-            .remove_container(
-                &pod_run.assigned_name,
-                Some(RemoveContainerOptions {
-                    force: true,
-                    ..Default::default()
-                }),
-            )
-            .await?;
-        Ok(())
+        self.delete_container(&pod_run.assigned_name).await
     }
     async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo> {
         let labels = vec![
@@ -187,21 +184,82 @@ impl Orchestrator for LocalDockerOrchestrator {
             ),
             format!("org.orcapod.pod_job.hash={}", pod_run.pod_job.hash),
         ];
+
+        // Add names to the filters
+        let container_filters = HashMap::from([
+            ("label".to_owned(), labels),
+            (
+                "name".to_owned(),
+                Vec::from([pod_run.assigned_name.clone()]),
+            ),
+        ]);
+
         let (_, run_info) = self
-            .list_containers(HashMap::from([("label".to_owned(), labels)]))
+            .list_containers(container_filters)
             .await?
             .next()
             .context(selector::NoMatchingPodRun {
                 pod_job_hash: pod_run.pod_job.hash.clone(),
-            })?;
+            })??;
         Ok(run_info)
     }
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api
+        match self
+            .api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+        {
+            Ok(_) => {}
+            Err(error) => println!("{error}"),
+        }
         let result_info = self.get_info(pod_run).await?;
+
+        // Get logs (For now it is only doing stdout and doesn't deal with stderr)
+        // NOTE: this probably can be improved. Just not sure what is the correct syntax to avoid the two collects
+        let mut logs = String::from_utf8(
+            self.api
+                .logs::<String>(
+                    &pod_run.assigned_name,
+                    Some(LogsOptions {
+                        stdout: true,
+                        stderr: true,
+                        ..Default::default()
+                    }),
+                )
+                .try_collect::<Vec<_>>()
+                .await?
+                .iter()
+                .flat_map(|log_output| -> Vec<u8> {
+                    match log_output {
+                        LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
+                            message.to_vec()
+                        }
+                        LogOutput::StdIn { .. } => todo!(),
+                        LogOutput::Console { .. } => todo!(),
+                    }
+                })
+                .collect::<Vec<u8>>(),
+        )?;
+
+        // Check for errors, if exist, attach it to logs
+        let error = self
+            .api
+            .inspect_container(&pod_run.assigned_name, None)
+            .await?
+            .state
+            .context(selector::FailedToExtractRunInfo {
+                container_name: &pod_run.assigned_name,
+            })?
+            .error
+            .context(selector::FailedToExtractRunInfo {
+                container_name: &pod_run.assigned_name,
+            })?;
+
+        if !error.is_empty() {
+            logs.push_str(&error);
+        }
+
         PodResult::new(
             None,
             pod_run.pod_job.clone(),
@@ -213,6 +271,7 @@ impl Orchestrator for LocalDockerOrchestrator {
                 .context(selector::InvalidPodResultTerminatedDatetime {
                     pod_job_hash: pod_run.pod_job.hash.clone(),
                 })?,
+            logs,
         )
     }
 }

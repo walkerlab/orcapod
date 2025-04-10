@@ -2,6 +2,7 @@
     clippy::field_scoped_visibility_modifiers,
     reason = "Needed since SNAFU dynamically generating selectors."
 )]
+#![expect(missing_docs, reason = "Errors are self-explanatory.")]
 
 use bollard::errors::Error as BollardError;
 use glob;
@@ -13,18 +14,34 @@ use std::{
     io,
     path::{self, PathBuf},
     result,
+    string::FromUtf8Error,
 };
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
 #[derive(Snafu, Debug)]
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
-pub(crate) enum Kind {
+pub enum Kind {
     #[snafu(display(
         "Received an empty response when attempting to load the alternate container image file: {path:?}."
     ))]
     EmptyResponseWhenLoadingContainerAltImage {
         path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Failed to extract run info from the container image file: {container_name}."
+    ))]
+    FailedToExtractRunInfo {
+        container_name: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Fail to start pod with container_name: {container_name} with error: {source}"
+    ))]
+    FailedToStartPod {
+        container_name: String,
+        source: BollardError,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("Out of generated random names."))]
@@ -71,6 +88,11 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("Received UTF conversion error while trying to get logs"))]
+    FromUtf8Error {
+        source: FromUtf8Error,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(transparent)]
     BollardError {
         source: BollardError,
@@ -104,7 +126,7 @@ pub(crate) enum Kind {
 }
 /// A stable error API interface.
 #[derive(Snafu)]
-pub struct OrcaError(pub(crate) Kind);
+pub struct OrcaError(pub Kind);
 
 impl OrcaError {
     /// Returns `true` if the error was caused by an invalid model annotation.

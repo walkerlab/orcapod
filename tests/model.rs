@@ -98,7 +98,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "6c79ca22bd6f32e1612357b2a0dd46ca6a8abe07d7d462787ef99897c176a293",
+        "3689472bb271c10e9d4a3e15af3a04d63021a28d1349c2e77d1324ffde192a94",
         "Hash didn't match."
     );
     Ok(())
@@ -115,6 +115,7 @@ fn pod_result_to_yaml() -> Result<()> {
             status: Completed
             created: 1737922307
             terminated: 1737925907
+            logs: Example logs
         "},
         "YAML serialization didn't match."
     );

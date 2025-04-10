@@ -8,6 +8,7 @@ use std::{
     fmt::{self, Formatter},
     io,
     path::{self},
+    string::FromUtf8Error,
 };
 
 impl From<BollardError> for OrcaError {
@@ -58,6 +59,14 @@ impl From<serde_yaml::Error> for OrcaError {
         })
     }
 }
+impl From<FromUtf8Error> for OrcaError {
+    fn from(error: FromUtf8Error) -> Self {
+        Self(Kind::FromUtf8Error {
+            source: error,
+            backtrace: Some(Backtrace::capture()),
+        })
+    }
+}
 fn format_stack(backtrace: Option<&Backtrace>) -> String {
     backtrace.map_or(
         String::new(),
@@ -73,6 +82,9 @@ impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.0 {
             Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
+            | Kind::FailedToExtractRunInfo { backtrace, .. }
+            | Kind::FailedToStartPod { backtrace, .. }
+            | Kind::FromUtf8Error { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
