@@ -11,7 +11,7 @@ use bollard::{
     container::{LogOutput, LogsOptions, StartContainerOptions, WaitContainerOptions},
     image::{CreateImageOptions, ImportImageOptions},
 };
-use colored::Colorize;
+use colored::Colorize as _;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, ResultExt as _, futures::TryFutureExt as _};
 use std::{collections::HashMap, path::PathBuf};
