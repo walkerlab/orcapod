@@ -184,11 +184,12 @@ fn command_parse() -> Result<()> {
 
 #[test]
 /// Expect pod to fail due to bad command, where the expected behavior should auto delete the container and return an error
-fn expect_pod_start_fail() -> Result<()> {
+fn fail_at_start() -> Result<()> {
     execute_wrapper(|namespace_lookup, orchestrator| {
         let mut pod_job = pod_job_style(namespace_lookup)?;
         pod_job.pod.image = "alpine:3.14".to_owned();
         pod_job.pod.command = "python file_does_not_exist.py".to_owned();
+
         let container_name = match orchestrator.start_blocking(namespace_lookup, &pod_job) {
             Ok(_) => panic!("Pod was launched successfully when it should have failed."),
             Err(err) => {
@@ -244,6 +245,48 @@ fn expect_pod_start_fail() -> Result<()> {
                 .list_blocking()?
                 .iter()
                 .any(|run| *run == *pod_run),
+            "Unexpected container remains."
+        );
+
+        Ok(())
+    })
+}
+
+#[test]
+fn fail_during_execution() -> Result<()> {
+    execute_wrapper(|namespace_lookup, orchestrator| {
+        let mut pod_job = pod_job_style(namespace_lookup)?;
+        pod_job.pod.image = "alpine:3.14".to_owned();
+        pod_job.pod.command = "python file_does_not_exist.py".to_owned();
+
+        pod_job.pod.image = "alpine:3.14".to_owned();
+        pod_job.pod.command = r#"bin/sh -c 'echo "hi" && bad_command'"#.to_owned();
+        pod_job.pod.input_stream = HashMap::new();
+        pod_job.input_stream = HashMap::new();
+
+        // Start job and wait for completion
+        let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
+        let pod_result = orchestrator.get_result_blocking(&pod_run)?;
+
+        assert_eq!(
+            pod_result.status,
+            Status::Failed(127),
+            "Should be in failed state"
+        );
+
+        assert_eq!(
+            pod_result.logs, "hi\nbin/sh: bad_command: not found\n",
+            "Logs do not match error"
+        );
+
+        // Clean up the pod
+        orchestrator.delete_blocking(&pod_run)?;
+
+        assert!(
+            !orchestrator
+                .list_blocking()?
+                .iter()
+                .any(|run| *run == pod_run),
             "Unexpected container remains."
         );
 
