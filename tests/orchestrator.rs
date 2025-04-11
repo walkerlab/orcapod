@@ -275,7 +275,7 @@ fn fail_during_execution() -> Result<()> {
         );
 
         assert_eq!(
-            pod_result.logs, "hi\nbin/sh: bad_command: not found\n",
+            pod_result.logs, "hi\n\nSTDERR:\nbin/sh: bad_command: not found\n",
             "Logs do not match error"
         );
 

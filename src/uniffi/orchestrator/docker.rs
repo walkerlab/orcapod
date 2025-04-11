@@ -222,30 +222,37 @@ impl Orchestrator for LocalDockerOrchestrator {
 
         // Get logs (For now it is only doing stdout and doesn't deal with stderr)
         // NOTE: this probably can be improved. Just not sure what is the correct syntax to avoid the two collects
-        let mut logs = String::from_utf8(
-            self.api
-                .logs::<String>(
-                    &pod_run.assigned_name,
-                    Some(LogsOptions {
-                        stdout: true,
-                        stderr: true,
-                        ..Default::default()
-                    }),
-                )
-                .try_collect::<Vec<_>>()
-                .await?
-                .iter()
-                .flat_map(|log_output| -> Vec<u8> {
-                    match log_output {
-                        LogOutput::StdOut { message } | LogOutput::StdErr { message } => {
-                            message.to_vec()
-                        }
-                        LogOutput::StdIn { .. } => todo!(),
-                        LogOutput::Console { .. } => todo!(),
-                    }
-                })
-                .collect::<Vec<u8>>(),
-        )?;
+        let mut std_out = Vec::new();
+        let mut std_err = Vec::new();
+
+        self.api
+            .logs::<String>(
+                &pod_run.assigned_name,
+                Some(LogsOptions {
+                    stdout: true,
+                    stderr: true,
+                    ..Default::default()
+                }),
+            )
+            .try_collect::<Vec<_>>()
+            .await?
+            .iter()
+            .for_each(|log_output| match log_output {
+                LogOutput::StdOut { message } => {
+                    std_out.extend(message.to_vec());
+                }
+                LogOutput::StdErr { message } => {
+                    std_err.extend(message.to_vec());
+                }
+                LogOutput::StdIn { .. } => todo!(),
+                LogOutput::Console { .. } => todo!(),
+            });
+
+        let mut logs = String::from_utf8(std_out)?;
+        if !std_err.is_empty() {
+            logs.push_str("\nSTDERR:\n");
+            logs.push_str(&String::from_utf8(std_err)?);
+        }
 
         // Check for errors, if exist, attach it to logs
         let error = self
