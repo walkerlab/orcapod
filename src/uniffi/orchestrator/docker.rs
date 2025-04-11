@@ -11,6 +11,7 @@ use bollard::{
     container::{LogOutput, LogsOptions, StartContainerOptions, WaitContainerOptions},
     image::{CreateImageOptions, ImportImageOptions},
 };
+use colored::Colorize;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, ResultExt as _, futures::TryFutureExt as _};
 use std::{collections::HashMap, path::PathBuf};
@@ -211,7 +212,11 @@ impl Orchestrator for LocalDockerOrchestrator {
             .await
         {
             Ok(_) => {}
-            Err(error) => println!("{error}"),
+            Err(error) => println!(
+                "{}{}",
+                "Warning: ".bright_yellow(),
+                error.to_string().bright_cyan()
+            ),
         }
         let result_info = self.get_info(pod_run).await?;
 
