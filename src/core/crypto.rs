@@ -1,12 +1,13 @@
 use crate::{
     core::util::get,
     uniffi::{
-        error::Result,
+        error::{Result, selector},
         model::{Blob, BlobKind},
     },
 };
 use serde_yaml;
 use sha2::{Digest as _, Sha256};
+use snafu::ResultExt as _;
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
@@ -47,7 +48,11 @@ pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
 ///
 /// Will return error if unable to access file.
 pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
-    hash_stream(&mut File::open(filepath)?)
+    hash_stream(
+        &mut File::open(&filepath).context(selector::InvalidFilepath {
+            path: filepath.as_ref(),
+        })?,
+    )
 }
 /// Evaluate checksum hash of a directory.
 ///

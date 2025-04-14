@@ -34,5 +34,7 @@ RUN \
     cargo install cargo-llvm-cov && \
     rustup component add llvm-tools-preview && \
     # rust crate structure diagram
-    cargo install cargo-modules
+    cargo install cargo-modules && \
+    # expand rust macros (useful in debugging)
+    cargo install cargo-expand
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

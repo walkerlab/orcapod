@@ -36,7 +36,7 @@ serde = { version = "1.0.210", features = ["derive"] } # serialization/deseriali
 serde_json = "1.0.137" # JSON in sharing memory with local docker orchestrator
 serde_yaml = "0.9.34" # YAML in filestore
 sha2 = "0.10.8" # checksums based on SHA256 
-thiserror = "2.0.11" # library error handling API
+snafu = { version = "0.8.5", features = ["futures"] } # library error handling API
 tokio = { version = "1.41.0", features = ["full"] } # a runtime for async applications
 tokio-util = "0.7.13" # utilities for async calls
 

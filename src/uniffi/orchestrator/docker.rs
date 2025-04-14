@@ -1,7 +1,7 @@
 use crate::{
     core::{orchestrator::docker::RE_IMAGE_TAG, util::get},
     uniffi::{
-        error::{Kind, OrcaError, Result},
+        error::{OrcaError, Result, selector},
         model::{Pod, PodJob, PodResult},
         orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
     },
@@ -12,6 +12,7 @@ use bollard::{
     image::{CreateImageOptions, ImportImageOptions},
 };
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
+use snafu::{OptionExt as _, futures::TryFutureExt as _};
 use std::{collections::HashMap, path::PathBuf};
 use tokio::{fs::File, runtime::Runtime};
 use tokio_util::{
@@ -79,27 +80,32 @@ impl Orchestrator for LocalDockerOrchestrator {
             )?,
             ImageKind::Tarball(image_info) => {
                 let location = namespace_lookup[&image_info.namespace].join(&image_info.path);
-                let byte_stream = FramedRead::new(File::open(&location).await?, BytesCodec::new())
-                    .map_err(|err| -> Result<BytesMut> {
-                        let resolved_error = Err::<BytesMut, OrcaError>(err.into())?;
-                        Ok(resolved_error)
-                    })
-                    .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
+                let byte_stream = FramedRead::new(
+                    File::open(&location)
+                        .context(selector::InvalidFilepath { path: &location })
+                        .await?,
+                    BytesCodec::new(),
+                )
+                .map_err(|err| -> Result<()> {
+                    Err::<BytesMut, OrcaError>(err.into())?; // raise on error since we discard below
+                    Ok(())
+                })
+                .map(|result| result.ok().map_or(Bytes::new(), BytesMut::freeze));
                 let mut stream =
                     self.api
                         .import_image_stream(ImportImageOptions::default(), byte_stream, None);
                 let mut local_image = String::new();
                 while let Some(response) = stream.next().await {
                     local_image = RE_IMAGE_TAG
-                        .captures_iter(&response?.stream.ok_or(OrcaError::from(
-                            Kind::EmptyResponseWhenLoadingContainerAltImage {
+                        .captures_iter(&response?.stream.context(
+                            selector::EmptyResponseWhenLoadingContainerAltImage {
                                 path: location.clone(),
                             },
-                        ))?)
+                        )?)
                         .find_map(|x| x.name("image").map(|name| name.as_str().to_owned()))
-                        .ok_or(OrcaError::from(Kind::NoTagFoundInContainerAltImage {
+                        .context(selector::NoTagFoundInContainerAltImage {
                             path: location.clone(),
-                        }))?;
+                        })?;
                 }
                 Self::prepare_container_start_inputs(
                     namespace_lookup,
@@ -185,9 +191,9 @@ impl Orchestrator for LocalDockerOrchestrator {
             .list_containers(HashMap::from([("label".to_owned(), labels)]))
             .await?
             .next()
-            .ok_or(OrcaError::from(Kind::NoMatchingPodRun {
+            .context(selector::NoMatchingPodRun {
                 pod_job_hash: pod_run.pod_job.hash.clone(),
-            }))?;
+            })?;
         Ok(run_info)
     }
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
@@ -202,11 +208,11 @@ impl Orchestrator for LocalDockerOrchestrator {
             pod_run.assigned_name.clone(),
             result_info.status,
             result_info.created,
-            result_info.terminated.ok_or(OrcaError::from(
-                Kind::InvalidPodResultTerminatedDatetime {
+            result_info
+                .terminated
+                .context(selector::InvalidPodResultTerminatedDatetime {
                     pod_job_hash: pod_run.pod_job.hash.clone(),
-                },
-            ))?,
+                })?,
         )
     }
 }

@@ -1,4 +1,5 @@
-use crate::uniffi::error::{Kind, Result};
+use crate::uniffi::error::{Result, selector};
+use snafu::OptionExt as _;
 use std::{any::type_name, collections::HashMap};
 
 #[expect(
@@ -14,7 +15,7 @@ pub fn get_type_name<T>() -> String {
 }
 
 pub fn get<'map, T>(map: &'map HashMap<String, T>, key: &str) -> Result<&'map T> {
-    Ok(map.get(key).ok_or(Kind::KeyMissing {
+    Ok(map.get(key).context(selector::KeyMissing {
         key: key.to_owned(),
     })?)
 }

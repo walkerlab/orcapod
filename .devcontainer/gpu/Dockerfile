@@ -33,6 +33,8 @@ RUN apt-get update && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs 
     rustup component add llvm-tools-preview && \
     # rust crate structure diagram
     cargo install cargo-modules && \
+    # expand rust macros (useful in debugging)
+    cargo install cargo-expand && \
     apt-get clean
 
 ENV PATH=${PATH}:/root/.local/bin

@@ -1,7 +1,7 @@
 use crate::{
     core::util::get,
     uniffi::{
-        error::{Kind, OrcaError, Result},
+        error::{Result, selector},
         model::{Input, PodJob},
         orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
     },
@@ -14,6 +14,7 @@ use chrono::DateTime;
 use futures_util::future::join_all;
 use names::{Generator, Name};
 use regex::Regex;
+use snafu::OptionExt as _;
 use std::{
     collections::HashMap,
     fs,
@@ -81,9 +82,9 @@ impl LocalDockerOrchestrator {
                                     .to_string_lossy(),
                                     stream_info
                                         .path
-                                        .join(blob.location.path.file_name().ok_or(
-                                            Kind::InvalidPath {
-                                                path: blob.location.path.clone(),
+                                        .join(blob.location.path.file_name().context(
+                                            selector::NoFileName {
+                                                path: blob.location.path.clone()
                                             }
                                         )?)
                                         .to_string_lossy(),
@@ -120,7 +121,7 @@ impl LocalDockerOrchestrator {
         let (input_binds, output_bind) = Self::prepare_mount_binds(namespace_lookup, pod_job)?;
         let container_name = Generator::with_naming(Name::Plain)
             .next()
-            .ok_or(OrcaError::from(Kind::GeneratedNamesOverflow))?;
+            .context(selector::GeneratedNamesOverflow)?;
         let labels = HashMap::from([
             ("org.orcapod".to_owned(), "true".to_owned()),
             (
@@ -207,7 +208,7 @@ impl LocalDockerOrchestrator {
                     let container_name = &container_summary
                         .names
                         .as_ref()
-                        .ok_or(OrcaError::from(Kind::NoContainerNames))?[0][1..];
+                        .context(selector::NoContainerNames)?[0][1..];
                     Ok((
                         container_name.to_owned(),
                         container_summary.clone(),

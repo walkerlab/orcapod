@@ -1,7 +1,7 @@
 use crate::{
     core::{model::to_yaml, util::get_type_name},
     uniffi::{
-        error::{Kind, OrcaError, Result},
+        error::{Result, selector},
         model::Annotation,
         store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
     },
@@ -12,6 +12,7 @@ use heck::ToSnakeCase as _;
 use regex::Regex;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_yaml;
+use snafu::OptionExt as _;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -85,12 +86,10 @@ impl LocalFileStore {
             &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
         )?
         .next()
-        .ok_or_else(|| {
-            OrcaError::from(Kind::NoAnnotationFound {
-                class: get_type_name::<T>().to_snake_case(),
-                name: name.to_owned(),
-                version: version.to_owned(),
-            })
+        .context(selector::NoAnnotationFound {
+            class: get_type_name::<T>().to_snake_case(),
+            name: name.to_owned(),
+            version: version.to_owned(),
         })?;
         Ok(model_info.hash)
     }
@@ -128,11 +127,15 @@ impl LocalFileStore {
                     })
             {
                 println!(
-                    "Skip saving {} annotation since `{}`, `{}`, `{}` exists.",
-                    model_type.bright_cyan(),
-                    found_hash.bright_cyan(),
-                    found_name.bright_cyan(),
-                    found_version.bright_cyan(),
+                    "{}",
+                    format!(
+                        "Skip saving {} annotation since `{}`, `{}`, `{}` exists.",
+                        model_type.bright_cyan(),
+                        found_hash.bright_cyan(),
+                        found_name.bright_cyan(),
+                        found_version.bright_cyan(),
+                    )
+                    .yellow(),
                 );
             } else {
                 Self::save_file(
@@ -145,9 +148,13 @@ impl LocalFileStore {
         let spec_file = &self.make_path::<T>(hash, Self::SPEC_RELPATH);
         if spec_file.exists() {
             println!(
-                "Skip saving {} model since `{}` exists.",
-                model_type.bright_cyan(),
-                hash.bright_cyan(),
+                "{}",
+                format!(
+                    "Skip saving {} model since `{}` exists.",
+                    model_type.bright_cyan(),
+                    hash.bright_cyan(),
+                )
+                .yellow(),
             );
         } else {
             Self::save_file(spec_file, to_yaml(model)?)?;
