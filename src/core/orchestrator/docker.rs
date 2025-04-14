@@ -1,7 +1,7 @@
 use crate::{
     core::util::get,
     uniffi::{
-        error::{Kind, Result, selector},
+        error::{Result, selector},
         model::{Input, PodJob},
         orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
     },
@@ -237,14 +237,11 @@ impl LocalDockerOrchestrator {
                 }
             };
 
-            match Self::extract_run_info(&container_summary, &container_inspect_response) {
-                Some(run_info) => Ok((container_name, run_info)),
-                None => Err(Kind::FailedToExtractRunInfo {
-                    container_name,
-                    backtrace: None,
-                }
-                .into()),
-            }
+            Ok(
+                Self::extract_run_info(&container_summary, &container_inspect_response)
+                    .map(|run_info| (container_name.clone(), run_info))
+                    .context(selector::FailedToExtractRunInfo { container_name })?,
+            )
         }))
     }
     pub(crate) async fn delete_container(&self, container_name: &str) -> Result<()> {
