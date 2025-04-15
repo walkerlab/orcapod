@@ -10,7 +10,7 @@ RUN \
 
 ## install remote
 RUN \
-    pip install git+https://github.com/guzman-raphael/orcapod@uniffi-client
+    pip install git+https://github.com/walkerlab/orcapod@dev
 
 ## install locally
 # COPY . /tmp/orcapod
