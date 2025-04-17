@@ -24,7 +24,12 @@ jobs:
           RUST_BACKTRACE: full
         run: |
           mkdir -p tests/.tmp
-          cargo llvm-cov --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture
+          cargo llvm-cov \
+            --ignore-filename-regex "bin/.*|lib\.rs" \
+            --codecov \
+            --output-path target/llvm-cov-target/codecov.json \
+            -- \
+              --nocapture
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:

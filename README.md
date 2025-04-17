@@ -1,5 +1,6 @@
 [![orcapod API docs](https://img.shields.io/website?url=https://walkerlab.github.io/orcapod/&label=docs)
 ](https://walkerlab.github.io/orcapod/)
+[![codecov](https://codecov.io/github/walkerlab/orcapod/graph/badge.svg)](https://codecov.io/github/walkerlab/orcapod)
 
 # orcapod
 
@@ -9,12 +10,12 @@
 
 ```bash
 #!/bin/bash
-set -e  # stop early on non-zero exit
+set -e  # fail early on non-zero exit
 cargo clippy --all-targets -- -D warnings  # syntax and style tests
 cargo fmt --check  # formatting test
-cargo llvm-cov -- --nocapture  # integration tests w/ stdout coverage summary
-cargo llvm-cov --html -- --nocapture  # integration tests w/ HTML coverage report (target/llvm-cov/html/index.html)
-cargo llvm-cov --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture # integration tests w/ coverage report prepared for codecov
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" -- --nocapture  # integration tests w/ stdout coverage summary
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --html -- --nocapture  # integration tests w/ HTML coverage report (target/llvm-cov/html/index.html)
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture # integration tests w/ coverage report prepared for codecov
 ```
 
 ## Docs
