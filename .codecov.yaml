@@ -26,7 +26,7 @@ coverage:
     #     if_ci_failed: error #success, failure, error, ignore
     #     informational: false
     #     only_pulls: false
-comment: false
+# comment: false
 # comment:                  #this is a top-level key
 #   layout: " diff, flags, files"
 #   behavior: default
