@@ -248,10 +248,10 @@ impl Orchestrator for LocalDockerOrchestrator {
                 LogOutput::Console { .. } => todo!(),
             });
 
-        let mut logs = String::from_utf8(std_out)?;
+        let mut logs = String::from_utf8_lossy(&std_out).to_string();
         if !std_err.is_empty() {
             logs.push_str("\nSTDERR:\n");
-            logs.push_str(&String::from_utf8(std_err)?);
+            logs.push_str(&String::from_utf8_lossy(&std_err));
         }
 
         // Check for errors, if exist, attach it to logs

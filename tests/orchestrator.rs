@@ -15,6 +15,7 @@ use orcapod::uniffi::{
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
 use std::{collections::HashMap, path::PathBuf};
+use tokio::runtime::Runtime;
 
 fn basic_test<T>(start: T) -> Result<()>
 where
@@ -287,6 +288,59 @@ fn fail_during_execution() -> Result<()> {
                 .list_blocking()?
                 .iter()
                 .any(|run| *run == pod_run),
+            "Unexpected container remains."
+        );
+
+        Ok(())
+    })
+}
+
+#[test]
+fn test_queued_status_container() -> Result<()> {
+    execute_wrapper(|namespace_lookup, orchestrator| {
+        let mut pod_job = pod_job_style(namespace_lookup)?;
+        pod_job.pod.image = "alpine:3.14".to_owned();
+        pod_job.pod.command = "python file_does_not_exist.py".to_owned();
+
+        pod_job.pod.image = "alpine:3.14".to_owned();
+
+        // Start job and wait for completion
+        let (container_name, options, config) =
+            LocalDockerOrchestrator::prepare_container_start_inputs(
+                namespace_lookup,
+                &pod_job,
+                pod_job.pod.image.clone(),
+            )?;
+
+        Runtime::new()?.block_on(orchestrator.api.create_container(options, config))?;
+
+        // List all containers and check if the queued_container is in the list
+        let pod_runs = orchestrator
+            .list_blocking()?
+            .into_iter()
+            .filter(|pod_run| pod_run.assigned_name == container_name)
+            .collect::<Vec<_>>();
+
+        assert!(
+            pod_runs.len() == 1,
+            "List didn't return just the queued pod."
+        );
+
+        let pod_run = pod_runs.first().unwrap();
+
+        // Check that the status is queued
+        assert!(
+            orchestrator.get_info_blocking(pod_run)?.status == Status::Queued,
+            "Status is not queued"
+        );
+
+        // Clean up container
+        orchestrator.delete_blocking(pod_run)?;
+        assert!(
+            !orchestrator
+                .list_blocking()?
+                .iter()
+                .any(|pod_run_from_list| *pod_run_from_list == *pod_run),
             "Unexpected container remains."
         );
 

@@ -114,7 +114,11 @@ impl LocalDockerOrchestrator {
         - Pod commands will always have at least 1 element
         "#
     )]
-    pub(crate) fn prepare_container_start_inputs(
+    /// Prepare the inputs for starting a container.
+    ///
+    /// # Errors
+    /// Will fail if pod job is invalid
+    pub fn prepare_container_start_inputs(
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: String,
@@ -267,6 +271,7 @@ impl LocalDockerOrchestrator {
         - No issue in core casting if between 0 - 3.40e38(f32:MAX)
         - No issue in exit code casting if between -3.27e4(i16:MIN) - 3.27e4(i16:MAX)
         - Containers will always have at least 1 name with at least 2 characters
+        - This functions requires a lot of boilerplate code to extract the run info
         "#
     )]
     fn extract_run_info(
@@ -330,10 +335,16 @@ impl LocalDockerOrchestrator {
                     ContainerStateStatusEnum::CREATED | ContainerStateStatusEnum::RESTARTING,
                     code,
                 ) => {
-                    if container_inspect_response.state.as_ref()?.error.is_some() {
-                        Status::Failed(code)
-                    } else {
+                    if container_inspect_response
+                        .state
+                        .as_ref()?
+                        .error
+                        .as_ref()?
+                        .is_empty()
+                    {
                         Status::Queued
+                    } else {
+                        Status::Failed(code)
                     }
                 }
                 _ => Status::Unknown,

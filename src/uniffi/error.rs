@@ -14,7 +14,6 @@ use std::{
     io,
     path::{self, PathBuf},
     result,
-    string::FromUtf8Error,
 };
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
@@ -86,11 +85,6 @@ pub enum Kind {
     #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
     NoTagFoundInContainerAltImage {
         path: PathBuf,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("Received UTF conversion error while trying to get logs"))]
-    FromUtf8Error {
-        source: FromUtf8Error,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
