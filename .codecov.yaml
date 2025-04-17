@@ -1,0 +1,8 @@
+# https://docs.codecov.com/docs/codecovyml-reference
+# curl -X POST --data-binary @.codecov.yaml https://codecov.io/validate
+coverage:
+  status:
+    patch:
+      default:
+        target: 100%
+        threshold: 0%
