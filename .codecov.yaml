@@ -36,5 +36,5 @@ coverage:
 #   hide_project_coverage: false # [true :: only show coverage on the git diff aka patch coverage]]
 parsers:
   cobertura:
-    partials_as_hits: false
-    handle_missing_conditions: false
+    partials_as_hits: true
+    handle_missing_conditions: true
