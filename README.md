@@ -15,7 +15,8 @@ cargo clippy --all-targets -- -D warnings  # syntax and style tests
 cargo fmt --check  # formatting test
 cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" -- --nocapture  # integration tests w/ stdout coverage summary
 cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --html -- --nocapture  # integration tests w/ HTML coverage report (target/llvm-cov/html/index.html)
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture # integration tests w/ coverage report prepared for codecov
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture  # integration tests w/ codecov coverage report
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --cobertura --output-path target/llvm-cov-target/cobertura.xml -- --nocapture  # integration tests w/ cobertura coverage report
 ```
 
 ## Docs

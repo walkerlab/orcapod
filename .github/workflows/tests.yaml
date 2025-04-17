@@ -26,13 +26,13 @@ jobs:
           mkdir -p tests/.tmp
           cargo llvm-cov \
             --ignore-filename-regex "bin/.*|lib\.rs" \
-            --codecov \
-            --output-path target/llvm-cov-target/codecov.json \
+            --cobertura \
+            --output-path target/llvm-cov-target/cobertura.xml \
             -- \
               --nocapture
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:
           fail_ci_if_error: true
-          files: target/llvm-cov-target/codecov.json
+          files: target/llvm-cov-target/cobertura.xml
           verbose: true
