@@ -37,4 +37,4 @@ coverage:
 parsers:
   cobertura:
     partials_as_hits: true
-    handle_missing_conditions: true
+    # handle_missing_conditions: true
