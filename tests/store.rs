@@ -118,7 +118,10 @@ fn pod_files() -> Result<()> {
     assert!(spec_file.exists(), "Spec file missing.");
     assert!(annotation_file.exists(), "Annotation file missing.");
 
-    store.delete_pod(&ModelID::Hash(pod_style.hash))?;
+    store.delete_pod(&ModelID::Annotation(
+        annotation.name.clone(),
+        annotation.version.clone(),
+    ))?;
     assert!(!spec_file.exists(), "Spec file wasn't cleaned up.");
     assert!(
         !annotation_file.exists(),
