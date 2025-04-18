@@ -1,9 +1,4 @@
-#![expect(
-    clippy::expect_used,
-    missing_docs,
-    clippy::panic_in_result_fn,
-    reason = "OK in tests."
-)]
+#![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 pub mod fixture;
 use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style};
@@ -75,9 +70,8 @@ where
     assert!(
         orchestrator
             .get_info_blocking(&pod_run)
-            .expect_err("Unexpectedly succeeded.")
-            .is_purged_pod_run(),
-        "Returned a different OrcaError than one expected when getting info of a purged pod run."
+            .is_err_and(|error| error.is_purged_pod_run() && !format!("{error:?}").is_empty()),
+        "Did not raise a purged pod run error."
     );
     Ok(())
 }
