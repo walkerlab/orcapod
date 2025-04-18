@@ -3,9 +3,12 @@
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style};
 use glob::glob;
-use orcapod::uniffi::{
-    error::{OrcaError, Result},
-    orchestrator::{Orchestrator as _, docker::LocalDockerOrchestrator},
+use orcapod::{
+    core::crypto::hash_file,
+    uniffi::{
+        error::{OrcaError, Result},
+        orchestrator::{Orchestrator as _, docker::LocalDockerOrchestrator},
+    },
 };
 use serde_json;
 use serde_yaml;
@@ -67,5 +70,21 @@ fn external_yaml() {
     assert!(
         serde_yaml::from_str::<HashMap<String, String>>(":").is_err_and(contains_debug),
         "Did not raise a serde yaml error."
+    );
+}
+
+#[test]
+fn internal_invalid_filepath() {
+    assert!(
+        hash_file("nonexistent_file.txt").is_err_and(contains_debug),
+        "Did not raise an invalid filepath error."
+    );
+}
+
+#[test]
+fn internal_key_missing() {
+    assert!(
+        pod_job_style(&HashMap::new()).is_err_and(contains_debug),
+        "Did not raise a key missing error."
     );
 }
