@@ -21,7 +21,7 @@ jobs:
           token: ${{ steps.generate_app_token.outputs.token }}
       - name: Generate crate diagram
         run: |
-          mkdir -p docs
+          mkdir -p docs/images
           set -o pipefail
           cargo modules dependencies \
             --no-uses --no-fns \
