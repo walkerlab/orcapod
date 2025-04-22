@@ -1,19 +1,21 @@
-#![expect(missing_docs, clippy::expect_used, reason = "OK in tests.")]
+#![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style};
 use glob::glob;
-use orcapod::uniffi::{
-    error::{OrcaError, Result},
-    orchestrator::{Orchestrator as _, docker::LocalDockerOrchestrator},
+use orcapod::{
+    core::crypto::hash_file,
+    uniffi::{
+        error::{OrcaError, Result},
+        orchestrator::{Orchestrator as _, docker::LocalDockerOrchestrator},
+    },
 };
 use serde_json;
 use serde_yaml;
-use std::{collections::HashMap, fmt, fs, path::PathBuf, result};
+use std::{collections::HashMap, fs, path::PathBuf};
 
-fn check<A: fmt::Debug, B: Into<OrcaError>>(value: result::Result<A, B>) -> String {
-    let error: OrcaError = value.expect_err("Did not return an expected error.").into();
-    format!("{error:?}")
+fn contains_debug(error: impl Into<OrcaError>) -> bool {
+    !format!("{:?}", error.into()).is_empty()
 }
 
 #[test]
@@ -21,31 +23,68 @@ fn external_bollard() -> Result<()> {
     let orch = LocalDockerOrchestrator::new()?;
     let mut pod_job = pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
     pod_job.pod.image = "nonexistent_image".to_owned();
-    check(orch.start_blocking(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job));
+    assert!(
+        orch.start_blocking(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job)
+            .is_err_and(contains_debug),
+        "Did not raise a bollard error."
+    );
     Ok(())
 }
 
 #[test]
 fn external_glob() {
-    check(glob("a**/b"));
+    assert!(
+        glob("a**/b").is_err_and(contains_debug),
+        "Did not raise a glob error."
+    );
 }
 
 #[test]
 fn external_io() {
-    check(fs::read_to_string("nonexistent_file.txt"));
+    assert!(
+        fs::read_to_string("nonexistent_file.txt").is_err_and(contains_debug),
+        "Did not raise an I/O error."
+    );
 }
 
 #[test]
 fn external_path_prefix() {
-    check(PathBuf::from("/fake/path").strip_prefix("/missing/path"));
+    assert!(
+        PathBuf::from("/fake/path")
+            .strip_prefix("/missing/path")
+            .is_err_and(contains_debug),
+        "Did not raise a path prefix error."
+    );
 }
 
 #[test]
 fn external_json() {
-    check(serde_json::from_str::<HashMap<String, String>>("{"));
+    assert!(
+        serde_json::from_str::<HashMap<String, String>>("{").is_err_and(contains_debug),
+        "Did not raise a serde json error."
+    );
 }
 
 #[test]
 fn external_yaml() {
-    check(serde_yaml::from_str::<HashMap<String, String>>(":"));
+    assert!(
+        serde_yaml::from_str::<HashMap<String, String>>(":").is_err_and(contains_debug),
+        "Did not raise a serde yaml error."
+    );
+}
+
+#[test]
+fn internal_invalid_filepath() {
+    assert!(
+        hash_file("nonexistent_file.txt").is_err_and(contains_debug),
+        "Did not raise an invalid filepath error."
+    );
+}
+
+#[test]
+fn internal_key_missing() {
+    assert!(
+        pod_job_style(&HashMap::new()).is_err_and(contains_debug),
+        "Did not raise a key missing error."
+    );
 }
