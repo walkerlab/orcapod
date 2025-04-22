@@ -220,8 +220,6 @@ impl Orchestrator for LocalDockerOrchestrator {
         }
         let result_info = self.get_info(pod_run).await?;
 
-        // Get logs (For now it is only doing stdout and doesn't deal with stderr)
-        // NOTE: this probably can be improved. Just not sure what is the correct syntax to avoid the two collects
         let mut std_out = Vec::new();
         let mut std_err = Vec::new();
 
