@@ -1,5 +1,4 @@
 #![expect(
-    clippy::expect_used,
     missing_docs,
     clippy::panic_in_result_fn,
     clippy::panic,
@@ -83,9 +82,8 @@ where
     assert!(
         orchestrator
             .get_info_blocking(&pod_run)
-            .expect_err("Unexpectedly succeeded.")
-            .is_purged_pod_run(),
-        "Returned a different OrcaError than one expected when getting info of a purged pod run."
+            .is_err_and(|error| error.is_purged_pod_run() && !format!("{error:?}").is_empty()),
+        "Did not raise a purged pod run error."
     );
     Ok(())
 }
@@ -301,8 +299,8 @@ fn test_queued_status_container() -> Result<()> {
         let mut pod_job = pod_job_style(namespace_lookup)?;
         pod_job.pod.image = "alpine:3.14".to_owned();
         pod_job.pod.command = "python file_does_not_exist.py".to_owned();
-
-        pod_job.pod.image = "alpine:3.14".to_owned();
+        pod_job.pod.input_stream = HashMap::new();
+        pod_job.input_stream = HashMap::new();
 
         // Start job and wait for completion
         let (container_name, options, config) =

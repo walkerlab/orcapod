@@ -223,9 +223,8 @@ fn pod_annotation_delete() -> Result<()> {
     assert!(
         store
             .delete_annotation::<Pod>("style-transfer", "9.9.9")
-            .expect_err("Unexpectedly succeeded.")
-            .is_invalid_annotation(),
-        "Returned a different OrcaError than one expected when deleting an invalid annotation."
+            .is_err_and(|error| error.is_invalid_annotation() && !format!("{error:?}").is_empty()),
+        "Did not raise an invalid annotation error."
     );
     Ok(())
 }
