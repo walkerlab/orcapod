@@ -27,7 +27,7 @@ use tempfile::TempDir;
 // --- fixtures ---
 
 pub static NAMESPACE_LOOKUP_READ_ONLY: LazyLock<HashMap<String, PathBuf>> =
-    LazyLock::new(|| HashMap::from([("default".to_owned(), PathBuf::from("./tests/data"))]));
+    LazyLock::new(|| HashMap::from([("default".to_owned(), PathBuf::from("./tests/extra/data"))]));
 
 pub fn pod_style() -> Result<Pod> {
     Pod::new(
@@ -76,7 +76,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
             description: "This is an example pod job.".to_owned(),
             version: "0.1.0".to_owned(),
         }),
-        pod_style()?,
+        pod_style()?.into(),
         HashMap::from([
             (
                 "extra-style".to_owned(),
@@ -134,7 +134,7 @@ pub fn pod_result_style(
             description: "This is an example pod result.".to_owned(),
             version: "0.0.0".to_owned(),
         }),
-        pod_job_style(namespace_lookup)?,
+        pod_job_style(namespace_lookup)?.into(),
         "simple-endeavour".to_owned(),
         Status::Completed,
         1_737_922_307,
@@ -143,7 +143,7 @@ pub fn pod_result_style(
 }
 
 pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
-    let build_context_location = PathBuf::from("./tests/example_pod/style_transfer");
+    let build_context_location = PathBuf::from("./tests/extra/example_pod/style_transfer");
 
     if let Some(parent) = binary_location.as_ref().parent() {
         fs::create_dir_all(parent)?;

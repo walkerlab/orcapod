@@ -7,7 +7,7 @@ use orcapod::uniffi::{
     model::OrcaPath,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
 
 fn basic_test<T>(start: T) -> Result<()>
 where
@@ -18,7 +18,7 @@ where
 {
     let test_dirs = TestDirs::new(&HashMap::from([(
         "default".to_owned(),
-        Some("./tests/data/"),
+        Some("./tests/extra/data/"),
     )]))?;
     let namespace_lookup = test_dirs.namespace_lookup();
     let orchestrator = LocalDockerOrchestrator::new()?;
@@ -95,7 +95,7 @@ fn offline_container_image_basic() -> Result<()> {
                 &pod_job,
                 &container_image_kind,
             )?,
-            pod_job.pod.command,
+            pod_job.pod.command.clone(),
             Some(container_image),
         ))
     })
@@ -105,13 +105,15 @@ fn offline_container_image_basic() -> Result<()> {
 fn remote_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
         let mut pod_job = pod_job_style(namespace_lookup)?;
-        pod_job.pod.image = "alpine:3.14".to_owned();
-        pod_job.pod.command = "sleep 5".to_owned();
-        pod_job.pod.input_stream = HashMap::new();
+        let mut pod = pod_job.pod.deref().clone();
+        pod.image = "alpine:3.14".to_owned();
+        pod.command = "sleep 5".to_owned();
+        pod.input_stream = HashMap::new();
+        pod_job.pod = Arc::new(pod);
         pod_job.input_stream = HashMap::new();
         Ok((
             orchestrator.start_blocking(namespace_lookup, &pod_job)?,
-            pod_job.pod.command,
+            pod_job.pod.command.clone(),
             None,
         ))
     })

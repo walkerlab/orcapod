@@ -38,4 +38,12 @@ RUN apt-get update && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs 
     apt-get clean
 
 ENV PATH=${PATH}:/root/.local/bin
+RUN \
+    # install python manager
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    uv venv -p 3.9 ~/.local/share/base && \
+    # pip package based on C lib/client
+    uv pip install cffi maturin ipykernel -p ~/.local/share/base && \
+    echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
+ENV VIRTUAL_ENV=/root/.local/share/base
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

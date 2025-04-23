@@ -14,11 +14,13 @@ use std::{
     path::{self, PathBuf},
     result,
 };
+use uniffi;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
-#[derive(Snafu, Debug)]
+#[derive(Snafu, Debug, uniffi::Error)]
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
+#[uniffi(flat_error)]
 pub(crate) enum Kind {
     #[snafu(display(
         "Received an empty response when attempting to load the alternate container image file: {path:?}."
@@ -103,16 +105,21 @@ pub(crate) enum Kind {
     },
 }
 /// A stable error API interface.
-#[derive(Snafu)]
-pub struct OrcaError(pub(crate) Kind);
+#[derive(Snafu, uniffi::Object)]
+#[snafu(display("{self:?}"))]
+#[uniffi::export(Display)]
+pub struct OrcaError {
+    pub(crate) kind: Kind,
+}
 
+#[uniffi::export]
 impl OrcaError {
     /// Returns `true` if the error was caused by an invalid model annotation.
     pub const fn is_invalid_annotation(&self) -> bool {
-        matches!(self.0, Kind::NoAnnotationFound { .. })
+        matches!(self.kind, Kind::NoAnnotationFound { .. })
     }
     /// Returns `true` if the error was caused by querying a purged pod run.
     pub const fn is_purged_pod_run(&self) -> bool {
-        matches!(self.0, Kind::NoMatchingPodRun { .. })
+        matches!(self.kind, Kind::NoMatchingPodRun { .. })
     }
 }

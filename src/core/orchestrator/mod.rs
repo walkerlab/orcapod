@@ -9,7 +9,7 @@ use crate::{
 impl PodRun {
     pub(crate) fn new<O: Orchestrator>(pod_job: &PodJob, assigned_name: String) -> Self {
         Self {
-            pod_job: pod_job.clone(),
+            pod_job: pod_job.clone().into(),
             orchestrator_source: get_type_name::<O>(),
             assigned_name,
         }

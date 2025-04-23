@@ -21,18 +21,18 @@ jobs:
           token: ${{ steps.generate_app_token.outputs.token }}
       - name: Generate crate diagram
         run: |
-          mkdir -p docs
+          mkdir -p docs/images
           set -o pipefail
           cargo modules dependencies \
             --no-uses --no-fns \
             --focus-on "orcapod::uniffi::model::{Pod}" \
             --layout dot | \
-            dot -T svg > docs/crate_diagram.svg
+            dot -T svg > docs/images/crate_diagram.svg
       - name: Sync GitHub
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add docs/crate_diagram.svg
+          git add docs/images/crate_diagram.svg
           git commit -m "Update crate diagram." || echo "Diagram unchanged, skipping commit."
           git push
   api:

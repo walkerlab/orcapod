@@ -1,19 +1,23 @@
 use crate::uniffi::{
     error::Result,
-    model::{Pod, PodJob, PodResult},
+    model::{ModelType, Pod, PodJob, PodResult},
     store::{ModelID, ModelInfo, Store},
 };
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use derive_more::Display;
+use getset::CloneGetters;
+use std::{fs, path::PathBuf};
+use uniffi;
 /// Support for a storage backend on a local filesystem directory.
-#[derive(Debug)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 pub struct LocalFileStore {
     /// A local path to a directory where store will be located.
     pub directory: PathBuf,
 }
 
+#[uniffi::export]
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<()> {
         self.save_model(pod, &pod.hash, pod.annotation.as_ref())
@@ -38,7 +42,9 @@ impl Store for LocalFileStore {
         let (mut pod_job, annotation, hash) = self.load_model::<PodJob>(model_id)?;
         pod_job.annotation = annotation;
         pod_job.hash = hash;
-        pod_job.pod = self.load_pod(&ModelID::Hash(pod_job.pod.hash))?;
+        pod_job.pod = self
+            .load_pod(&ModelID::Hash(pod_job.pod.hash.clone()))?
+            .into();
         Ok(pod_job)
     }
     fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
@@ -55,7 +61,9 @@ impl Store for LocalFileStore {
         let (mut pod_result, annotation, hash) = self.load_model::<PodResult>(model_id)?;
         pod_result.annotation = annotation;
         pod_result.hash = hash;
-        pod_result.pod_job = self.load_pod_job(&ModelID::Hash(pod_result.pod_job.hash))?;
+        pod_result.pod_job = self
+            .load_pod_job(&ModelID::Hash(pod_result.pod_job.hash.clone()))?
+            .into();
         Ok(pod_result)
     }
     fn list_pod_result(&self) -> Result<Vec<ModelInfo>> {
@@ -64,21 +72,23 @@ impl Store for LocalFileStore {
     fn delete_pod_result(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodResult>(model_id)
     }
-    fn delete_annotation<T>(&self, name: &str, version: &str) -> Result<()> {
-        let hash = self.lookup_hash::<T>(name, version)?;
-        let annotation_file =
-            self.make_path::<T>(&hash, Self::make_annotation_relpath(name, version));
+    fn delete_annotation(&self, model_type: &ModelType, name: &str, version: &str) -> Result<()> {
+        let annotation_file = self.make_path(
+            model_type,
+            &self.lookup_hash(model_type, name, version)?,
+            Self::make_annotation_relpath(name, version),
+        );
         fs::remove_file(&annotation_file)?;
 
         Ok(())
     }
 }
 
+#[uniffi::export]
 impl LocalFileStore {
     /// Construct a local file store instance in a specific directory.
-    pub fn new(directory: impl AsRef<Path>) -> Self {
-        Self {
-            directory: directory.as_ref().into(),
-        }
+    #[uniffi::constructor]
+    pub const fn new(directory: PathBuf) -> Self {
+        Self { directory }
     }
 }

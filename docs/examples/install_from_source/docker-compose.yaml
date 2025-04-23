@@ -1,0 +1,26 @@
+# docker compose down && docker compose up --build
+services:
+  orcapod_python:
+    build:
+      context: ../../..
+      dockerfile: ./docs/examples/install_from_source/Dockerfile
+    command: 
+      - bash
+      - -lc
+      - |
+        set -e
+        echo "Install successful"
+
+        # Try importing
+        python - <<EOF
+
+        import orcapod
+        import importlib.metadata
+
+        version = importlib.metadata.version("orcapod")
+        print(f"orcapod version: {version}")
+        
+        EOF
+
+        # Keep alive to try yourself i.e. docker exec -it install_from_source-orcapod_python-1 bash
+        tail -f /dev/null

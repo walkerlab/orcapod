@@ -94,5 +94,20 @@
             "args": [],
             "cwd": "${workspaceFolder}",
         },
+        {
+            "name": "Python: Debug File",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "preLaunchTask": "package_orcapod_python",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            },
+            "program": "tests/extra/python/smoke_test.py",
+            "args": [
+                "./tests/.tmp"
+            ]
+        }
     ]
 }

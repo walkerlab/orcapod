@@ -12,50 +12,67 @@ use std::{
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
-        Self(Kind::BollardError {
-            source: error,
-            backtrace: Some(Backtrace::capture()),
-        })
+        Self {
+            kind: Kind::BollardError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
     }
 }
 impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
-        Self(Kind::GlobPatternError {
-            source: error,
-            backtrace: Some(Backtrace::capture()),
-        })
+        Self {
+            kind: Kind::GlobPatternError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
     }
 }
 impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
-        Self(Kind::IoError {
-            source: error,
-            backtrace: Some(Backtrace::capture()),
-        })
+        Self {
+            kind: Kind::IoError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
     }
 }
 impl From<path::StripPrefixError> for OrcaError {
     fn from(error: path::StripPrefixError) -> Self {
-        Self(Kind::PathPrefixError {
-            source: error,
-            backtrace: Some(Backtrace::capture()),
-        })
+        Self {
+            kind: Kind::PathPrefixError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
     }
 }
 impl From<serde_json::Error> for OrcaError {
     fn from(error: serde_json::Error) -> Self {
-        Self(Kind::SerdeJsonError {
-            source: error,
-            backtrace: Some(Backtrace::capture()),
-        })
+        Self {
+            kind: Kind::SerdeJsonError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
     }
 }
 impl From<serde_yaml::Error> for OrcaError {
     fn from(error: serde_yaml::Error) -> Self {
-        Self(Kind::SerdeYamlError {
-            source: error,
-            backtrace: Some(Backtrace::capture()),
-        })
+        Self {
+            kind: Kind::SerdeYamlError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<Kind> for OrcaError {
+    fn from(error: Kind) -> Self {
+        Self { kind: error }
     }
 }
 fn format_stack(backtrace: Option<&Backtrace>) -> String {
@@ -71,7 +88,7 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 }
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
+        match &self.kind {
             Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
@@ -88,7 +105,7 @@ impl fmt::Debug for OrcaError {
             | Kind::PathPrefixError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
             | Kind::SerdeYamlError { backtrace, .. } => {
-                write!(f, "{}{}", self.0, format_stack(backtrace.as_ref()))
+                write!(f, "{}{}", self.kind, format_stack(backtrace.as_ref()))
             }
         }
     }
