@@ -16,7 +16,7 @@ use uniffi;
 
 /// Available models.
 #[derive(uniffi::Enum, Debug)]
-pub enum Model {
+pub enum ModelType {
     /// A reusable, containerized computational unit.
     Pod,
     /// A compute job that specifies resource requests and input/output targets.

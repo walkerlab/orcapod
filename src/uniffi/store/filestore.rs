@@ -1,6 +1,6 @@
 use crate::uniffi::{
     error::Result,
-    model::{Model, Pod, PodJob, PodResult},
+    model::{ModelType, Pod, PodJob, PodResult},
     store::{ModelID, ModelInfo, Store},
 };
 use derive_more::Display;
@@ -72,10 +72,10 @@ impl Store for LocalFileStore {
     fn delete_pod_result(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodResult>(model_id)
     }
-    fn delete_annotation(&self, model_kind: &Model, name: &str, version: &str) -> Result<()> {
+    fn delete_annotation(&self, model_type: &ModelType, name: &str, version: &str) -> Result<()> {
         let annotation_file = self.make_path(
-            model_kind,
-            &self.lookup_hash(model_kind, name, version)?,
+            model_type,
+            &self.lookup_hash(model_type, name, version)?,
             Self::make_annotation_relpath(name, version),
         );
         fs::remove_file(&annotation_file)?;

@@ -1,6 +1,6 @@
 use crate::uniffi::{
     error::Result,
-    model::{Model, Pod, PodJob, PodResult},
+    model::{ModelType, Pod, PodJob, PodResult},
 };
 use uniffi;
 /// Options for identifying a model.
@@ -114,7 +114,7 @@ pub trait Store: Send + Sync {
     ///
     /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
     /// and `version`.
-    fn delete_annotation(&self, model_kind: &Model, name: &str, version: &str) -> Result<()>;
+    fn delete_annotation(&self, model_type: &ModelType, name: &str, version: &str) -> Result<()>;
 }
 /// Store implementation on a local filesystem.
 pub mod filestore;

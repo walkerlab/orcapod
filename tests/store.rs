@@ -14,7 +14,7 @@ use orcapod::{
     core::{crypto::hash_buffer, model::to_yaml},
     uniffi::{
         error::Result,
-        model::{Annotation, Model},
+        model::{Annotation, ModelType},
         store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
     },
 };
@@ -196,7 +196,7 @@ fn pod_annotation_delete() -> Result<()> {
         "Pod list didn't return 3 expected entries."
     );
     // case 2: delete new annotation, assert list gives 2 entries: hash, annotation (original).
-    store.delete_annotation(&Model::Pod, "new-name", "0.5.0")?;
+    store.delete_annotation(&ModelType::Pod, "new-name", "0.5.0")?;
     assert_eq!(
         store.list_pod()?,
         vec![
@@ -215,7 +215,7 @@ fn pod_annotation_delete() -> Result<()> {
     );
     // case 3: delete original annotation, assert list gives 1 entry: hash.
     store.delete_annotation(
-        &Model::Pod,
+        &ModelType::Pod,
         "style-transfer",
         &model_version
             .to_owned()
@@ -233,7 +233,7 @@ fn pod_annotation_delete() -> Result<()> {
     // case 4: delete invalid annotation, error should be returned.
     assert!(
         store
-            .delete_annotation(&Model::Pod, "style-transfer", "9.9.9")
+            .delete_annotation(&ModelType::Pod, "style-transfer", "9.9.9")
             .is_err_and(|error| error.is_invalid_annotation() && !format!("{error:?}").is_empty()),
         "Did not raise an invalid annotation error."
     );

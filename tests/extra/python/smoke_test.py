@@ -14,7 +14,7 @@ from orcapod import (
     LocalDockerOrchestrator,
     LocalFileStore,
     ModelId,
-    Model,
+    ModelType,
 )
 
 
@@ -26,7 +26,6 @@ def create_pod(data, _):
             version="1.0.0",
         ),
         image="alpine:3.14",
-        # command=r"sh -c 'sleep 5 && echo finished...'", # needs arg parsing before will work
         command="sleep 1",
         input_stream={},
         output_dir="/tmp/output",
@@ -106,7 +105,7 @@ def load_pod(data, _):
 
 def delete_annotation(data, _):
     data["store"].delete_annotation(
-        model_kind=Model.POD,
+        model_type=ModelType.POD,
         name=data["pod"].annotation().name,
         version=data["pod"].annotation().version,
     )
