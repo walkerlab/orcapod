@@ -1,4 +1,5 @@
-name: Build Diagram
+name: Diagram Builder
+description: Build Diagram
 runs:
   using: composite  
   steps:
