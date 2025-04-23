@@ -6,7 +6,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/build-diagram
+      - name: Build Diagram
+        uses: ./.github/actions/build-diagram
   syntax-style-format-and-integration:
     runs-on: ubuntu-latest
     env:

@@ -1,17 +1,16 @@
-name: Diagram Builder
-description: Build Diagram
+name: Build Diagram
 runs:
   using: composite  
   steps:
-    - name: Install dependencies
-      shell: bash
+    - shell: bash
       run: |
+        : Install dependencies
         sudo apt-get update
         sudo apt-get install graphviz -y
         cargo install cargo-modules
-    - name: Generate crate diagram
-      shell: bash
+    - shell: bash
       run: |
+        : Generate crate diagram
         mkdir -p docs/images
         set -o pipefail
         cargo modules dependencies --lib --max-depth 0 \
