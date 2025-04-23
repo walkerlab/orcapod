@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-diagram
-  main:
+  syntax-style-format-and-integration:
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
