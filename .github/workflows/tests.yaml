@@ -5,6 +5,7 @@ jobs:
   diagram:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/build-diagram
   main:
     runs-on: ubuntu-latest
