@@ -3,11 +3,13 @@ runs:
   using: composite  
   steps:
     - name: Install dependencies
+      shell: bash
       run: |
         sudo apt-get update
         sudo apt-get install graphviz -y
         cargo install cargo-modules
     - name: Generate crate diagram
+      shell: bash
       run: |
         mkdir -p docs/images
         set -o pipefail
