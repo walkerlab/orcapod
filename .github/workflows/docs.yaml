@@ -23,7 +23,7 @@ jobs:
         run: |
           mkdir -p docs/images
           set -o pipefail
-          cargo modules dependencies \
+          cargo modules dependencies --lib \
             --no-uses --no-fns \
             --focus-on "orcapod::uniffi::model::{Pod}" \
             --layout dot | \
