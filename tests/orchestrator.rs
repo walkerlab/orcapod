@@ -205,8 +205,6 @@ fn fail_at_start() -> Result<()> {
             }
         };
 
-        println!("Container name: {container_name}");
-
         // Make sure the pod has been deleted after failing to start
         let list_result = orchestrator
             .list_blocking()?
