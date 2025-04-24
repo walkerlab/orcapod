@@ -19,7 +19,7 @@ use std::{collections::HashMap, fs::read, path::PathBuf};
 
 #[test]
 fn consistent_hash() -> Result<()> {
-    let filepath = "./tests/data/images/subject.jpeg";
+    let filepath = "./tests/extra/data/images/subject.jpeg";
     assert_eq!(
         hash_file(filepath)?,
         hash_buffer(&read(filepath)?),
@@ -30,7 +30,7 @@ fn consistent_hash() -> Result<()> {
 
 #[test]
 fn complex_hash() -> Result<()> {
-    let dirpath = "./tests/data/images";
+    let dirpath = "./tests/extra/data/images";
     assert_eq!(
         hash_dir(dirpath)?,
         "6c96a478ea25e34fab045bc82858a2980b2cfb22db32e83c01349a8e7ed3b42c".to_owned(),

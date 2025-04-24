@@ -12,7 +12,7 @@ use orcapod::{
 };
 use serde_json;
 use serde_yaml;
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{collections::HashMap, fs, ops::Deref as _, path::PathBuf, sync::Arc};
 
 fn contains_debug(error: impl Into<OrcaError>) -> bool {
     !format!("{:?}", error.into()).is_empty()
@@ -22,7 +22,9 @@ fn contains_debug(error: impl Into<OrcaError>) -> bool {
 fn external_bollard() -> Result<()> {
     let orch = LocalDockerOrchestrator::new()?;
     let mut pod_job = pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
-    pod_job.pod.image = "nonexistent_image".to_owned();
+    let mut pod = pod_job.pod.deref().clone();
+    pod.image = "nonexistent_image".to_owned();
+    pod_job.pod = Arc::new(pod);
     assert!(
         orch.start_blocking(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job)
             .is_err_and(contains_debug),

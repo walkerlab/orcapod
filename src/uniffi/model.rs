@@ -8,13 +8,32 @@ use crate::{
     },
     uniffi::{error::Result, orchestrator::Status},
 };
+use derive_more::Display;
+use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use uniffi;
+
+/// Available models.
+#[derive(uniffi::Enum, Debug)]
+pub enum ModelType {
+    /// A reusable, containerized computational unit.
+    Pod,
+    /// A compute job that specifies resource requests and input/output targets.
+    PodJob,
+    /// Result from a compute job run.
+    PodResult,
+}
 
 // --- core model structs ---
 
 /// A reusable, containerized computational unit.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
+#[derive(
+    uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Default, Clone, Display, CloneGetters,
+)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
     #[serde(skip)]
@@ -44,12 +63,14 @@ pub struct Pod {
     pub required_gpu: Option<GPURequirement>,
 }
 
+#[uniffi::export]
 impl Pod {
     /// Construct a new pod instance.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
+    #[uniffi::constructor]
     pub fn new(
         annotation: Option<Annotation>,
         image: String,
@@ -83,7 +104,12 @@ impl Pod {
 }
 
 /// A compute job that specifies resource requests and input/output targets.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
+#[derive(
+    uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Clone, Default, Display, CloneGetters,
+)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 pub struct PodJob {
     /// Metadata that doesn't affect reproducibility.
     #[serde(skip)]
@@ -93,7 +119,7 @@ pub struct PodJob {
     pub hash: String,
     /// A pod to base the pod job on.
     #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
-    pub pod: Pod,
+    pub pod: Arc<Pod>,
     /// Attached, external input streams.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_stream: HashMap<String, Input>,
@@ -108,15 +134,17 @@ pub struct PodJob {
     pub env_vars: Option<HashMap<String, String>>,
 }
 
+#[uniffi::export]
 impl PodJob {
     /// Construct a new pod job instance.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue initializing a `PodJob` instance.
+    #[uniffi::constructor]
     pub fn new(
         annotation: Option<Annotation>,
-        pod: Pod,
+        pod: Arc<Pod>,
         mut input_stream: HashMap<String, Input>,
         output_dir: OrcaPath,
         cpu_limit: f32,
@@ -160,7 +188,7 @@ impl PodJob {
 }
 
 /// Result from a compute job run.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct PodResult {
     /// Metadata that doesn't affect reproducibility.
     #[serde(skip)]
@@ -173,7 +201,7 @@ pub struct PodResult {
         serialize_with = "serialize_pod_job",
         deserialize_with = "deserialize_pod_job"
     )]
-    pub pod_job: PodJob,
+    pub pod_job: Arc<PodJob>,
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
@@ -194,7 +222,7 @@ impl PodResult {
     /// Will return `Err` if there is an issue initializing a `PodResult` instance.
     pub fn new(
         annotation: Option<Annotation>,
-        pod_job: PodJob,
+        pod_job: Arc<PodJob>,
         assigned_name: String,
         status: Status,
         created: u64,
@@ -221,7 +249,7 @@ impl PodResult {
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Annotation {
     /// A unique name.
     pub name: String,
@@ -231,7 +259,7 @@ pub struct Annotation {
     pub description: String,
 }
 /// Specification for GPU requirements in computation.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
     /// GPU model specification.
     pub model: GPUModel,
@@ -241,7 +269,7 @@ pub struct GPURequirement {
     pub count: u16,
 }
 /// GPU model specification.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
     /// NVIDIA-manufactured card where `String` is the specific model e.g. ???
     NVIDIA(String),
@@ -250,7 +278,7 @@ pub enum GPUModel {
 }
 /// Streams are named and represent an abstraction for the file(s) that represent some particular
 /// data.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct StreamInfo {
     /// Path to stream file or directory.
     pub path: PathBuf,
@@ -258,7 +286,7 @@ pub struct StreamInfo {
     pub match_pattern: String,
 }
 /// Input options.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum Input {
     /// A single BLOB.
@@ -267,7 +295,7 @@ pub enum Input {
     Collection(Vec<Blob>),
 }
 /// Location of BLOB data.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct OrcaPath {
     /// Namespace alias.
     pub namespace: String,
@@ -276,7 +304,7 @@ pub struct OrcaPath {
 }
 
 /// BLOB with metadata.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob {
     /// BLOB available options.
     pub kind: BlobKind,
@@ -286,7 +314,7 @@ pub struct Blob {
     pub checksum: String,
 }
 /// File or directory options for BLOBs.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {
     /// A single file.
     #[default]
@@ -294,3 +322,11 @@ pub enum BlobKind {
     /// A single directory.
     Directory,
 }
+
+// --- utils ----
+
+uniffi::custom_type!(PathBuf, String, {
+    remote,
+    try_lift: |val| Ok(PathBuf::from(&val)),
+    lower: |obj| obj.display().to_string(),
+});

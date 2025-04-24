@@ -1,7 +1,8 @@
 {
 	"name": "Development",
 	"build": {
-		"dockerfile": "Dockerfile"
+		"dockerfile": "Dockerfile",
+		"context": ".."
 	},
 	"overrideCommand": false,
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
@@ -33,7 +34,10 @@
 				"eamodio.gitlens", // Git explorer in VSCode
 				"streetsidesoftware.code-spell-checker", // Catch spelling errors in docs
 				"GitHub.copilot-chat", // GitHub Copilot AI assistant
-				"tintinweb.graphviz-interactive-preview" // Graphviz DOT preview
+				"tintinweb.graphviz-interactive-preview", // Graphviz DOT preview
+				"ms-python.python", // Python IDE
+				"ms-toolsai.jupyter", // Jupyter IDE
+				"ms-python.black-formatter" // Python code formatter
 			]
 		}
 	}

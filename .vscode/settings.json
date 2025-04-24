@@ -2,7 +2,6 @@
     "editor.formatOnPaste": false,
     "editor.formatOnSave": true,
     "files.insertFinalNewline": true,
-    "notebook.formatOnSave.enabled": true,
     "editor.rulers": [
         100
     ],
@@ -18,4 +17,8 @@
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,
     "lldb.consoleMode": "evaluate",
+    "python.defaultInterpreterPath": "~/.local/share/base/bin/python3",
+    "python.terminal.activateEnvironment": false,
+    "notebook.formatOnSave.enabled": true,
+    "notebook.output.scrolling": true
 }

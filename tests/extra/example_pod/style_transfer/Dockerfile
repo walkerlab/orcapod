@@ -1,4 +1,4 @@
-# docker build ./tests/example_pod/style_transfer -t example.server.com/user/style-transfer:1.0.0
+# docker build ./tests/extra/example_pod/style_transfer -t example.server.com/user/style-transfer:1.0.0
 # docker run --rm -d \
 #   -l orcapod=true \
 #   -l orcapod.pod_job.model_id.type=annotation \
@@ -6,9 +6,9 @@
 #   -l orcapod.pod_job.model_id.version=0.1.0 \
 #   --entrypoint python \
 #   -e DELAY=60 \
-#   -v ./tests/data/images/dog.jpeg:/input/image.jpeg:ro \
-#   -v ./tests/data/styles/mosaic.t7:/input/style.t7:ro \
-#   -v ./tests/data/output:/output \
+#   -v ./tests/extra/data/images/dog.jpeg:/input/image.jpeg:ro \
+#   -v ./tests/extra/data/styles/mosaic.t7:/input/style.t7:ro \
+#   -v ./tests/extra/data/output:/output \
 #   --cpus=0.5 \
 #   --memory=2g \
 #   example.server.com/user/style-transfer:1.0.0 \

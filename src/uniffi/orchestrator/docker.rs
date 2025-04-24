@@ -6,29 +6,36 @@ use crate::{
         orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
     },
 };
+use async_trait;
 use bollard::{
     Docker,
     container::{LogOutput, LogsOptions, StartContainerOptions, WaitContainerOptions},
     image::{CreateImageOptions, ImportImageOptions},
 };
 use colored::Colorize as _;
+use derive_more::Display;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, ResultExt as _, futures::TryFutureExt as _};
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::{fs::File, runtime::Runtime};
 use tokio_util::{
     bytes::{Bytes, BytesMut},
     codec::{BytesCodec, FramedRead},
 };
+use uniffi;
 
 /// Support for an orchestration engine using a local docker installation.
-#[derive(Debug)]
+#[derive(uniffi::Object, Debug, Display)]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 pub struct LocalDockerOrchestrator {
     /// API to interact with Docker daemon.
     pub api: Docker,
     async_driver: Runtime,
 }
 
+#[uniffi::export]
+#[async_trait::async_trait]
 impl Orchestrator for LocalDockerOrchestrator {
     fn start_with_altimage_blocking(
         &self,
@@ -168,7 +175,7 @@ impl Orchestrator for LocalDockerOrchestrator {
             pod_job
                 .hash
                 .clone_from(get(&run_info.labels, "org.orcapod.pod_job.hash")?);
-            pod_job.pod = pod;
+            pod_job.pod = pod.into();
             Ok(PodRun::new::<Self>(&pod_job, assigned_name))
         })
         .collect()
@@ -272,7 +279,7 @@ impl Orchestrator for LocalDockerOrchestrator {
 
         PodResult::new(
             None,
-            pod_run.pod_job.clone(),
+            Arc::clone(&pod_run.pod_job),
             pod_run.assigned_name.clone(),
             result_info.status,
             result_info.created,
@@ -286,6 +293,7 @@ impl Orchestrator for LocalDockerOrchestrator {
     }
 }
 
+#[uniffi::export]
 impl LocalDockerOrchestrator {
     /// How to create a local docker orchestrator with an absolute path on docker host where binds
     /// will be mounted from.
@@ -293,6 +301,7 @@ impl LocalDockerOrchestrator {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a local docker orchestrator.
+    #[uniffi::constructor]
     pub fn new() -> Result<Self> {
         Ok(Self {
             api: Docker::connect_with_local_defaults()?,

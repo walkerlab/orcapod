@@ -20,6 +20,7 @@ RUN \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \
     echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /home/vscode/.bashrc && \
+    chown vscode:nogroup /home/vscode/.bashrc && \
     apt-get clean
 
 USER vscode
@@ -37,4 +38,12 @@ RUN \
     cargo install cargo-modules && \
     # expand rust macros (useful in debugging)
     cargo install cargo-expand
+RUN \
+    # install python manager
+    curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    uv venv -p 3.9 ~/.local/share/base && \
+    # pip package based on C lib/client
+    uv pip install cffi maturin ipykernel -p ~/.local/share/base && \
+    echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
+ENV VIRTUAL_ENV=/home/vscode/.local/share/base
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]

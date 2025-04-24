@@ -1,0 +1,10 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "package_orcapod_python",
+            "type": "shell",
+            "command": ". ~/.local/share/base/bin/activate && maturin develop --uv"
+        }
+    ]
+}
