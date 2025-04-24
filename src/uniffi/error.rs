@@ -2,7 +2,6 @@
     clippy::field_scoped_visibility_modifiers,
     reason = "Needed since SNAFU dynamically generating selectors."
 )]
-#![expect(missing_docs, reason = "Errors are self-explanatory.")]
 
 use bollard::errors::Error as BollardError;
 use glob;
@@ -48,7 +47,7 @@ pub(crate) enum Kind {
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
     #[snafu(display("{source} ({path:?})."))]
-    InvalidFileorDirPath {
+    InvalidFileOrDirPath {
         path: PathBuf,
         source: io::Error,
         backtrace: Option<Backtrace>,
@@ -137,5 +136,9 @@ impl OrcaError {
     /// Returns `true` if the error was caused by querying a purged pod run.
     pub const fn is_purged_pod_run(&self) -> bool {
         matches!(self.kind, Kind::NoMatchingPodRun { .. })
+    }
+    /// Returns `true` if the error was caused by an invalid file or directory path.
+    pub const fn is_failed_to_start_pod(&self) -> bool {
+        matches!(self.kind, Kind::FailedToStartPod { .. })
     }
 }

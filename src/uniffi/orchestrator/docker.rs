@@ -90,7 +90,7 @@ impl Orchestrator for LocalDockerOrchestrator {
                 let location = namespace_lookup[&image_info.namespace].join(&image_info.path);
                 let byte_stream = FramedRead::new(
                     File::open(&location)
-                        .context(selector::InvalidFileorDirPath { path: &location })
+                        .context(selector::InvalidFileOrDirPath { path: &location })
                         .await?,
                     BytesCodec::new(),
                 )

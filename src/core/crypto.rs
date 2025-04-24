@@ -49,7 +49,7 @@ pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
 /// Will return error if unable to access file.
 pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
     hash_stream(
-        &mut File::open(&filepath).context(selector::InvalidFileorDirPath {
+        &mut File::open(&filepath).context(selector::InvalidFileOrDirPath {
             path: filepath.as_ref(),
         })?,
     )
@@ -63,7 +63,7 @@ pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
     let summary: BTreeMap<String, String> = dirpath
         .as_ref()
         .read_dir()
-        .context(selector::InvalidFileorDirPath {
+        .context(selector::InvalidFileOrDirPath {
             path: dirpath.as_ref(),
         })?
         .map(|path| {

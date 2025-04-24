@@ -49,14 +49,14 @@ fn nested_dir_hash() -> Result<()> {
             description: "This is an example pod job.".to_owned(),
             version: "0.1.0".to_owned(),
         }),
-        pod_style()?,
+        pod_style()?.into(),
         HashMap::from([(
             "nested_dir".to_owned(),
             Input::Unary(Blob {
                 kind: BlobKind::Directory,
                 location: OrcaPath {
                     namespace: "default".to_owned(),
-                    path: "data".into(),
+                    path: "extra".into(),
                 },
                 checksum: String::new(),
             }),
@@ -78,7 +78,7 @@ fn nested_dir_hash() -> Result<()> {
         Input::Unary(blob) => {
             assert_eq!(
                 blob.checksum,
-                hash_dir("./tests/data")?,
+                hash_dir("./tests/extra")?,
                 "Checksum didn't match."
             );
         }

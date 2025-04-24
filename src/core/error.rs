@@ -93,7 +93,7 @@ impl fmt::Debug for OrcaError {
             | Kind::FailedToExtractRunInfo { backtrace, .. }
             | Kind::FailedToStartPod { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
-            | Kind::InvalidFileorDirPath { backtrace, .. }
+            | Kind::InvalidFileOrDirPath { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::NoAnnotationFound { backtrace, .. }
