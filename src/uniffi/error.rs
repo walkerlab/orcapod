@@ -10,11 +10,14 @@ use serde_yaml;
 use snafu::prelude::Snafu;
 use std::{
     backtrace::Backtrace,
+    collections::HashMap,
     io,
     path::{self, PathBuf},
     result,
 };
 use uniffi;
+
+use super::model::Input;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -86,6 +89,12 @@ pub(crate) enum Kind {
     #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
     NoTagFoundInContainerAltImage {
         path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Input stream {stream:?} missing required stream_key {key}"))]
+    MissingStreamKey {
+        stream: HashMap<String, Input>,
+        key: String,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
