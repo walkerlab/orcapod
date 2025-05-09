@@ -47,6 +47,8 @@ pub(crate) enum Kind {
         source: BollardError,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("Failed to get last added node."))]
+    FailToGetLastAddedNode { backtrace: Option<Backtrace> },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
     #[snafu(display("{source} ({path:?})."))]

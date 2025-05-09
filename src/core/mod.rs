@@ -4,6 +4,6 @@ pub(crate) mod error;
 /// Components of the data model.
 pub mod model;
 pub(crate) mod orchestrator;
-pub(crate) mod pipeline;
+pub mod pipeline;
 pub(crate) mod store;
 pub(crate) mod util;

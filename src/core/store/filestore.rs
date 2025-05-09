@@ -34,7 +34,7 @@ static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
                             (?<hash>[0-9a-f]+)\/
                                 (
                                     annotation\/
-                                        (?<name>[0-9a-zA-Z\-]+)
+                                        (?<name>[0-9a-zA-Z\-_ ]+)
                                         -
                                         (?<version>[0-9]+\.[0-9]+\.[0-9]+)
                                         \.yaml

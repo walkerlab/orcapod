@@ -8,16 +8,19 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::uniffi::{
-    error::Result,
-    model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, PodResult, StreamInfo},
-    orchestrator::Status,
-    store::{ModelID, ModelInfo, Store},
+use orcapod::{
+    core::pipeline::{Mapper, MapperNode, Node, NodeFunctions, Pipeline, PodNode},
+    uniffi::{
+        error::Result,
+        model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, PodResult, StreamInfo},
+        orchestrator::Status,
+        store::{ModelID, ModelInfo, Store},
+    },
 };
 use std::{
     collections::HashMap,
     fs::{self, File},
-    hash::RandomState,
+    hash::{Hash, RandomState},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::LazyLock,
@@ -186,6 +189,65 @@ pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestCo
         build_context_location,
         binary_location: binary_location.as_ref().to_path_buf(),
     })
+}
+
+// Pipeline stuff
+
+pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
+    Pod::new(
+        Some(Annotation {
+            name: pod_name.to_owned(),
+            description: "Pod append it's own name to the end of the file.".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+        "alpine:3.14".to_owned(),
+        format!(
+            "cp /input/input.txt /output/input.txt && echo \"Touch by Pod: {pod_name}\" >> /output/input.txt"
+        ),
+        HashMap::from([(
+            "input_text_file".to_owned(),
+            StreamInfo {
+                path: PathBuf::from("/input/input.txt"),
+                match_pattern: r".*\.txt".to_owned(),
+            },
+        )]),
+        PathBuf::from("/output"),
+        HashMap::from([(
+            "output_txt_file".to_owned(),
+            StreamInfo {
+                path: PathBuf::from("/output/input.txt"),
+                match_pattern: r".*\.txt".to_owned(),
+            },
+        )]),
+        "N/A".to_owned(),
+        0.25,        // 250 millicores as frac cores
+        1_u64 << 30, // 1GiB in bytes
+        None,
+    )
+}
+
+#[test]
+pub fn pipeline_style() -> Result<()> {
+    // Create a simple pipeline where the functions job is to add append their name into the input file
+    // Structure: A -> B -> C
+    let pod_a = pod_append_name("A")?;
+    let pod_b = pod_append_name("B")?;
+    let pod_c = pod_append_name("C")?;
+
+    let file_renamer = Mapper::new(HashMap::from([(
+        "input_text_file".to_owned(),
+        "output_txt_file".to_owned(),
+    )]))?;
+
+    // Set the root node
+    let mut root_node = PodNode::new(pod_a);
+
+    root_node.add_child(Node::Mapper(MapperNode::new(file_renamer.clone())));
+    root_node.add_child(Node::Pod(Box::new(PodNode::new(pod_b))));
+    root_node.add_child(Node::Mapper(MapperNode::new(file_renamer)));
+    root_node.add_child(Node::Pod(Box::new(PodNode::new(pod_c))));
+
+    Ok(())
 }
 
 // --- util ---

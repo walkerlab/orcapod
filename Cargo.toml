@@ -109,6 +109,7 @@ inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel s
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
 iter-over-hash-type = { level = "allow", priority = 127 }              # allow iterating over hash types
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
+min_ident_chars = { level = "allow", priority = 127 }                  # allow short identifiers
 missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing assert before indexing ok
 missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok
 missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
@@ -130,6 +131,7 @@ question_mark_used = { level = "allow", priority = 127 }               # allow q
 self_named_module_files = { level = "allow", priority = 127 }          # mod files ok
 semicolon_inside_block = { level = "allow", priority = 127 }           # ok to keep inside block
 separated_literal_suffix = { level = "allow", priority = 127 }         # literal suffixes should be separated by underscore
+shadow_reuse = { level = "allow", priority = 127 }                     # Allow shadow reuses in the cases of impl into
 single_char_lifetime_names = { level = "allow", priority = 127 }       # single char lifetimes ok
 single_component_path_imports = { level = "allow", priority = 127 }    # allow for readability
 std_instead_of_alloc = { level = "allow", priority = 127 }             # we should use std when possible

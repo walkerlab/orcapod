@@ -91,6 +91,7 @@ impl fmt::Debug for OrcaError {
         match &self.kind {
             Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::FailedToExtractRunInfo { backtrace, .. }
+            | Kind::FailToGetLastAddedNode { backtrace, .. }
             | Kind::FailedToStartPod { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFileOrDirPath { backtrace, .. }
