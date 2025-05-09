@@ -10,7 +10,7 @@
 pub mod fixture;
 use bollard::image::CreateImageOptions;
 use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style};
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 use orcapod::uniffi::{
     error::Result,
     model::OrcaPath,
