@@ -74,7 +74,7 @@ fn nested_dir_hash() -> Result<()> {
         &namespace_lookup,
     )?;
 
-    match &pod_job.input_stream["nested_dir"] {
+    match &pod_job.input_map["nested_dir"] {
         Input::Unary(blob) => {
             assert_eq!(
                 blob.checksum,

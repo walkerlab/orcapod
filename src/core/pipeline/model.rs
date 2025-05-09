@@ -67,30 +67,29 @@ impl Pipeline {}
 struct PipelineJob {
     pub pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_stream: HashMap<String, Input>,
+    pub input_map: HashMap<String, Input>,
 }
 
 impl PipelineJob {
-    fn new(pipeline: Pipeline, input_stream: HashMap<String, Input>) -> Result<Self> {
+    fn new(pipeline: Pipeline, input_map: HashMap<String, Input>) -> Result<Self> {
         // Check if input_stream has all the correct mapping
         pipeline
             .root_nodes
             .iter()
             .flat_map(|node| node.get_input_stream_keys())
             .map(|input_stream_key| {
-                input_stream
+                Ok(input_map
                     .get(input_stream_key)
                     .context(selector::MissingStreamKey {
-                        stream: input_stream.clone(),
+                        input_map: input_map.clone(),
                         key: input_stream_key.clone(),
-                    })
-                    .map_err(Into::into)
+                    }))
             })
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
             pipeline,
-            input_stream,
+            input_map,
         })
     }
 }

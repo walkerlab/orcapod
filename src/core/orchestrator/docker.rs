@@ -63,7 +63,7 @@ impl LocalDockerOrchestrator {
             .try_fold::<_, _, Result<_>>(
                 vec![],
                 |mut flattened_binds, (stream_name, stream_info)| {
-                    flattened_binds.extend(match get(&pod_job.input_stream, stream_name)? {
+                    flattened_binds.extend(match get(&pod_job.input_map, stream_name)? {
                         Input::Unary(blob) => {
                             vec![format!(
                                 "{}:{}:{}",

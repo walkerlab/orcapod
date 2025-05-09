@@ -123,7 +123,7 @@ fn remote_container_image_basic() -> Result<()> {
         pod.command = "sleep 5".to_owned();
         pod.input_stream = HashMap::new();
         pod_job.pod = Arc::new(pod);
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_map = HashMap::new();
         Ok((
             orchestrator.start_blocking(namespace_lookup, &pod_job)?,
             pod_job.pod.command.clone(),
@@ -157,7 +157,7 @@ fn command_parse() -> Result<()> {
         pod.input_stream = HashMap::new();
         pod_job.pod = pod.into();
 
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_map = HashMap::new();
 
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
@@ -262,7 +262,7 @@ fn fail_during_execution() -> Result<()> {
         pod.command = r#"bin/sh -c 'echo "hi" && bad_command'"#.to_owned();
         pod.input_stream = HashMap::new();
         pod_job.pod = pod.into();
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_map = HashMap::new();
 
         // Start job and wait for completion
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
@@ -304,7 +304,7 @@ fn test_queued_status_container() -> Result<()> {
         pod.command = "python file_does_not_exist.py".to_owned();
         pod.input_stream = HashMap::new();
         pod_job.pod = pod.into();
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_map = HashMap::new();
 
         // Start job and wait for completion
         let (container_name, options, config) =

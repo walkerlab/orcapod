@@ -11,8 +11,11 @@ use crate::{
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
+use snafu::OptionExt as _;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
+
+use super::error::selector;
 
 /// Available models.
 #[derive(uniffi::Enum, Debug)]
@@ -122,7 +125,7 @@ pub struct PodJob {
     pub pod: Arc<Pod>,
     /// Attached, external input streams.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_stream: HashMap<String, Input>,
+    pub input_map: HashMap<String, Input>,
     /// Attached, external output directory.
     pub output_dir: OrcaPath,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -145,14 +148,28 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_stream: HashMap<String, Input>,
+        mut input_map: HashMap<String, Input>,
         output_dir: OrcaPath,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
-        input_stream = input_stream
+        // Check if input_map has all the required stream_keys
+        pod.input_stream
+            .keys()
+            .map(|input_stream_key| {
+                Ok(input_map
+                    .get(input_stream_key)
+                    .context(selector::MissingStreamKey {
+                        input_map: input_map.clone(),
+                        key: input_stream_key.clone(),
+                    }))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Hash all the input_map blobs
+        input_map = input_map
             .into_iter()
             .map(|(stream_name, stream_input)| match stream_input {
                 Input::Unary(blob) => Ok((
@@ -174,7 +191,7 @@ impl PodJob {
             annotation,
             hash: String::new(),
             pod,
-            input_stream,
+            input_map,
             output_dir,
             cpu_limit,
             memory_limit,

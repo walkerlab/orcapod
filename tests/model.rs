@@ -49,7 +49,7 @@ fn pod_to_yaml() -> Result<()> {
 fn hash_pod_job() -> Result<()> {
     assert_eq!(
         pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "b1b332a66917a7f561206ff8359a65066874727c16c57fe9a3b98d95eac7975b",
+        "fe5e2c22d00bdf6423a005676140e7ecefbf3fb835380cb5faa36b756bab14e3",
         "Hash didn't match."
     );
     Ok(())
@@ -62,7 +62,7 @@ fn pod_job_to_yaml() -> Result<()> {
         indoc! {"
             class: pod_job
             pod: 7cc9db247fdbe214520140ef610fc6c23a1f1c5a56e0a6868c72ead03f0be968
-            input_stream:
+            input_map:
               base-input:
               - kind: File
                 location:
@@ -98,7 +98,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "3689472bb271c10e9d4a3e15af3a04d63021a28d1349c2e77d1324ffde192a94",
+        "3be623128267a2e457b0456473db5206c1ec5815229c98df03bfb9f759f74824",
         "Hash didn't match."
     );
     Ok(())
@@ -110,7 +110,7 @@ fn pod_result_to_yaml() -> Result<()> {
         to_yaml(&pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_result
-            pod_job: b1b332a66917a7f561206ff8359a65066874727c16c57fe9a3b98d95eac7975b
+            pod_job: fe5e2c22d00bdf6423a005676140e7ecefbf3fb835380cb5faa36b756bab14e3
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307
