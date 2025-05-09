@@ -8,7 +8,9 @@
 )]
 
 pub mod fixture;
+use bollard::image::CreateImageOptions;
 use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style};
+use futures_util::StreamExt as _;
 use orcapod::uniffi::{
     error::Result,
     model::OrcaPath,
@@ -306,6 +308,19 @@ fn test_queued_status_container() -> Result<()> {
         pod_job.pod = pod.into();
         pod_job.input_map = HashMap::new();
 
+        let runtime = Runtime::new()?;
+
+        let image_options = Some(CreateImageOptions {
+            from_image: pod_job.pod.image.clone(),
+            ..Default::default()
+        });
+        runtime.block_on(
+            orchestrator
+                .api
+                .create_image(image_options, None, None)
+                .collect::<Vec<_>>(),
+        );
+
         // Start job and wait for completion
         let (container_name, options, config) =
             LocalDockerOrchestrator::prepare_container_start_inputs(
@@ -314,7 +329,7 @@ fn test_queued_status_container() -> Result<()> {
                 pod_job.pod.image.clone(),
             )?;
 
-        Runtime::new()?.block_on(orchestrator.api.create_container(options, config))?;
+        runtime.block_on(orchestrator.api.create_container(options, config))?;
 
         // List all containers and check if the queued_container is in the list
         let pod_runs = orchestrator
