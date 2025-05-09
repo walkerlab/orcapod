@@ -125,7 +125,6 @@ impl Orchestrator for LocalDockerOrchestrator {
         self.api
             .create_container(container_options, container_config)
             .await?;
-        // Try to start container, if fails, delete it
         self.api
             .start_container(&assigned_name, None::<StartContainerOptions<String>>)
             .await
