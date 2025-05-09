@@ -242,16 +242,15 @@ pub fn pipeline_style() -> Result<()> {
     // Set the root node
     let mut root_node = PodNode::new(pod_a);
 
-    root_node.add_child(Node::Mapper(MapperNode::new(file_renamer.clone())));
-    root_node.add_child(Node::Pod(Box::new(PodNode::new(pod_b))));
-    root_node.add_child(Node::Mapper(MapperNode::new(file_renamer)));
-    root_node.add_child(Node::Pod(Box::new(PodNode::new(pod_c))));
+    root_node.add_child(file_renamer.clone());
+    root_node.add_child(pod_b);
+    root_node.add_child(file_renamer);
+    root_node.add_child(pod_c);
 
     Ok(())
 }
 
 // --- util ---
-
 pub struct TestDirs(pub HashMap<String, TempDir>);
 
 impl TestDirs {

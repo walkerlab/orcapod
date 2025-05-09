@@ -16,15 +16,26 @@ pub enum Node {
     Mapper(MapperNode),
 }
 
-impl From<Pod> for Node {
-    fn from(pod: Pod) -> Self {
-        Self::Pod(Box::new(PodNode {
-            pod,
-            children: Vec::new(),
-        }))
+impl Node {
+    pub fn get_children(&self) -> &Vec<Self> {
+        match self {
+            Self::Pod(pod_node) => pod_node.get_children(),
+            Self::Mapper(mapper_node) => mapper_node.get_children(),
+        }
     }
 }
 
+impl From<Pod> for Node {
+    fn from(pod: Pod) -> Self {
+        Self::Pod(Box::new(PodNode::new(pod)))
+    }
+}
+
+impl From<Mapper> for Node {
+    fn from(mapper: Mapper) -> Self {
+        Self::Mapper(MapperNode::new(mapper))
+    }
+}
 pub trait NodeFunctions {
     fn get_hash(&self) -> &String;
 
@@ -38,7 +49,9 @@ pub trait NodeFunctions {
 
     fn add_child(&mut self, child: impl Into<Node>) -> &Node;
 
-    fn get_last_added_child(&self) -> Result<&Node>;
+    /// # Errors
+    /// Will error if it fails to get the last child in the vector
+    fn get_last_child(&self) -> Result<&Node>;
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
@@ -65,10 +78,10 @@ impl NodeFunctions for PodNode {
     fn add_child(&mut self, child: impl Into<Node>) -> &Node {
         self.children.push(child.into());
 
-        self.get_last_added_child().unwrap()
+        self.get_last_child().unwrap()
     }
 
-    fn get_last_added_child(&self) -> Result<&Node> {
+    fn get_last_child(&self) -> Result<&Node> {
         self.children.last().ok_or(OrcaError {
             kind: Kind::FailToGetLastAddedNode {
                 backtrace: Some(Backtrace::capture()),
@@ -133,10 +146,10 @@ impl NodeFunctions for MapperNode {
     #[expect(clippy::unwrap_used, reason = "This should never fail")]
     fn add_child(&mut self, child: impl Into<Node>) -> &Node {
         self.children.push(child.into());
-        self.get_last_added_child().unwrap()
+        self.get_last_child().unwrap()
     }
 
-    fn get_last_added_child(&self) -> Result<&Node> {
+    fn get_last_child(&self) -> Result<&Node> {
         self.children.last().ok_or(OrcaError {
             kind: Kind::FailToGetLastAddedNode {
                 backtrace: Some(Backtrace::capture()),
@@ -161,37 +174,41 @@ impl NodeFunctions for MapperNode {
     }
 }
 
-// struct EdgeInfo<T: NodeFunctions> {
-//     from: T,
-//     to: BTreeMap<Node, ()>,
-// }
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Pipeline<T: NodeFunctions> {
-    hash: String,
-    root_nodes: Vec<T>,
+#[derive(PartialEq)]
+struct EdgeInfo<'a> {
+    from: &'a Node,
+    to: &'a Vec<Node>,
 }
 
-impl<T: NodeFunctions> Pipeline<T> {
-    // pub fn new(root_nodes: Vec<T>) -> Result<Self> {
-    //     // Recursively hash the parent and children with sort
-    //     let edges = Vec::new();
-    // }
+pub struct Pipeline {
+    hash: String,
+    root_nodes: Vec<Node>,
+}
 
-    // fn extract_edges(node: T, edge_buffer: &mut Vec<EdgeInfo<T>>) {
-    //     edge_buffer.push(EdgeInfo {
-    //         from: node,
-    //         to: node
-    //             .get_children()
-    //             .iter()
-    //             .map(|child| {
-    //                 let mut child_edges = Vec::new();
-    //                 Self::extract_edges(child, &mut child_edges);
-    //                 child_edges
-    //             })
-    //             .collect(),
-    //     });
-    // }
+impl Pipeline {
+    pub fn get_edges_vec(&self) -> Vec<EdgeInfo> {
+        let mut edge_buffer = Vec::new();
+
+        // Iterate over the root nodes and extract edges
+        self.root_nodes.iter().for_each(|node| {
+            Self::extract_edges(node, &mut edge_buffer);
+        });
+
+        edge_buffer
+    }
+
+    pub fn extract_edges<'a>(node: &'a Node, edge_buffer: &mut Vec<EdgeInfo<'a>>) {
+        // Add the current node to the edge buffer
+        edge_buffer.push(EdgeInfo {
+            from: node,
+            to: node.get_children(),
+        });
+
+        // Recursively add the children to the edge buffer
+        node.get_children().iter().for_each(|child| {
+            Self::extract_edges(child, edge_buffer);
+        });
+    }
 }
 
 // #[derive(Serialize, Deserialize, Debug)]
