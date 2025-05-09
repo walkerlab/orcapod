@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt as _;
-use std::collections::HashMap;
+use std::{backtrace::Backtrace, collections::HashMap};
 
 use crate::uniffi::{
-    error::{Result, selector},
+    error::{Kind, OrcaError, Result, selector},
     model::{Input, Pod},
 };
 
@@ -73,19 +73,20 @@ struct PipelineJob {
 impl PipelineJob {
     fn new(pipeline: Pipeline, input_map: HashMap<String, Input>) -> Result<Self> {
         // Check if input_stream has all the correct mapping
-        pipeline
+        if let Some(missing_key) = pipeline
             .root_nodes
             .iter()
             .flat_map(|node| node.get_input_stream_keys())
-            .map(|input_stream_key| {
-                Ok(input_map
-                    .get(input_stream_key)
-                    .context(selector::MissingStreamKey {
-                        input_map: input_map.clone(),
-                        key: input_stream_key.clone(),
-                    }))
-            })
-            .collect::<Result<Vec<_>>>()?;
+            .find(|key| !input_map.contains_key(*key))
+        {
+            return Err(OrcaError {
+                kind: Kind::MissingStreamKey {
+                    input_map,
+                    key: missing_key.clone(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            });
+        }
 
         Ok(Self {
             pipeline,

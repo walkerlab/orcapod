@@ -11,11 +11,10 @@ use crate::{
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use snafu::OptionExt as _;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
 
-use super::error::selector;
+use super::error::{Kind, OrcaError};
 
 /// Available models.
 #[derive(uniffi::Enum, Debug)]
@@ -156,17 +155,19 @@ impl PodJob {
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
         // Check if input_map has all the required stream_keys
-        pod.input_stream
+        if let Some(missing_key) = pod
+            .input_stream
             .keys()
-            .map(|input_stream_key| {
-                Ok(input_map
-                    .get(input_stream_key)
-                    .context(selector::MissingStreamKey {
-                        input_map: input_map.clone(),
-                        key: input_stream_key.clone(),
-                    }))
-            })
-            .collect::<Result<Vec<_>>>()?;
+            .find(|key| !input_map.contains_key(*key))
+        {
+            return Err(OrcaError {
+                kind: Kind::MissingStreamKey {
+                    input_map,
+                    key: missing_key.clone(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            });
+        }
 
         // Hash all the input_map blobs
         input_map = input_map

@@ -1,12 +1,13 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 pub mod fixture;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style, pod_style};
 use glob::glob;
 use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
+        model::{Annotation, Blob, BlobKind, Input, OrcaPath, PodJob},
         orchestrator::{Orchestrator as _, docker::LocalDockerOrchestrator},
     },
 };
@@ -30,6 +31,70 @@ fn external_bollard() -> Result<()> {
             .is_err_and(contains_debug),
         "Did not raise a bollard error."
     );
+    Ok(())
+}
+
+#[test]
+fn invalid_pod_job_stream_map() -> Result<()> {
+    let pod_job = PodJob::new(
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod job.".to_owned(),
+            version: "0.1.0".to_owned(),
+        }),
+        pod_style()?.into(),
+        HashMap::from([
+            (
+                "wrong_key".to_owned(),
+                Input::Unary(Blob {
+                    kind: BlobKind::File,
+                    location: OrcaPath {
+                        namespace: "default".to_owned(),
+                        path: PathBuf::from("styles/mosaic.t7"),
+                    },
+                    checksum: String::new(),
+                }),
+            ),
+            (
+                "base-input".to_owned(),
+                Input::Collection(vec![
+                    Blob {
+                        kind: BlobKind::File,
+                        location: OrcaPath {
+                            namespace: "default".to_owned(),
+                            path: PathBuf::from("styles/style1.t7"),
+                        },
+                        checksum: String::new(),
+                    },
+                    Blob {
+                        kind: BlobKind::File,
+                        location: OrcaPath {
+                            namespace: "default".to_owned(),
+                            path: PathBuf::from("images/subject.jpeg"),
+                        },
+                        checksum: String::new(),
+                    },
+                ]),
+            ),
+        ]),
+        OrcaPath {
+            namespace: "default".to_owned(),
+            path: PathBuf::from("output"),
+        },
+        0.5,         // 500 millicores as frac cores
+        2_u64 << 30, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
+        Some(HashMap::from([
+            ("ZZZ".to_owned(), "PLEASE".to_owned()),
+            ("AAA".to_owned(), "SORT".to_owned()),
+        ])),
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    );
+
+    assert!(
+        pod_job.is_err_and(contains_debug),
+        "Did not raise a pod job error."
+    );
+
     Ok(())
 }
 
