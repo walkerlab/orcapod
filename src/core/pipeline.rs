@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::{backtrace::Backtrace, collections::HashMap};
+use tokio::{sync::RwLock, task::JoinHandle};
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
     model::{Annotation, Input, Pod},
+    orchestrator::Orchestrator,
 };
 
 use crate::core::model::serialize_hashmap;
@@ -24,6 +26,13 @@ impl Node {
         match self {
             Self::Pod(pod_node) => pod_node.get_children(),
             Self::Mapper(mapper_node) => mapper_node.get_children(),
+        }
+    }
+
+    pub async fn process(&self, join_handles: &mut Vec<JoinHandle<()>>) {
+        match self {
+            Self::Pod(pod_node) => pod_node.process(join_handles).await,
+            Self::Mapper(mapper_node) => mapper_node.process(join_handles).await,
         }
     }
 }
@@ -49,7 +58,7 @@ pub trait NodeFunctions {
     /// Get the children of the node
     fn get_children(&self) -> &Vec<Node>;
 
-    fn process(&self) {}
+    async fn process(&self, pipeline_run: &impl PipelineRun);
 
     fn get_input_stream_keys(&self) -> impl Iterator<Item = &String>;
 
@@ -101,6 +110,18 @@ impl NodeFunctions for PodNode {
 
     fn get_children(&self) -> &Vec<Node> {
         &self.children
+    }
+
+    async fn process(&self, pipeline_run: &impl PipelineRun) {
+        println!("Processing pod node: {:?}", self.pod.hash);
+
+        // Spin up a new thread for each of the children
+        pipeline_run.get_join_handles().blocking_write().extend(
+            self.children
+                .iter()
+                .map(|child| tokio::spawn(child.process(join_handles)))
+                .collect::<Vec<_>>(),
+        );
     }
 }
 
@@ -163,10 +184,6 @@ impl NodeFunctions for MapperNode {
                 backtrace: Some(Backtrace::capture()),
             },
         })
-    }
-
-    fn process(&self) {
-        todo!()
     }
 
     fn get_hash(&self) -> &String {
@@ -303,17 +320,26 @@ fn find_missing_keys<'a>(
 //     result: Vec<PodResult>,
 // }
 
-// struct PipelineRun {
-//     pipeline: Pipeline,
-//     orchestrator: dyn Orchestrator,
-// }
+trait PipelineRun {
+    fn get_join_handles(&self) -> &RwLock<Vec<JoinHandle<()>>>;
+}
+struct DockerPipelineRun {
+    pipeline: Pipeline,
+    join_handles: RwLock<Vec<JoinHandle<()>>>,
+}
+
+impl PipelineRun for DockerPipelineRun {
+    fn get_join_handles(&self) -> &RwLock<Vec<JoinHandle<()>>> {
+        &self.join_handles
+    }
+}
 
 // struct PipelineRunInfo {
 //     status: Status,
 //     // Fill the rest out later
 // }
 
-// struct PipelineRunner {
-//     orchestrator: Box<dyn Orchestrator>,
-//     active_pipelines: Vec<PipelineJob>,
-// }
+struct DockerRunner {
+    orchestrator: Box<dyn Orchestrator>,
+    active_pipelines: RwLock<Vec<DockerPipelineRun>>,
+}
