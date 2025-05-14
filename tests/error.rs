@@ -35,7 +35,7 @@ fn external_bollard() -> Result<()> {
 }
 
 #[test]
-fn invalid_pod_job_stream_map() -> Result<()> {
+fn invalid_pod_job_input_map() -> Result<()> {
     let pod_job = PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),

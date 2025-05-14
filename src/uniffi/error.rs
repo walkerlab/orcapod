@@ -93,10 +93,10 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Input map {input_map:?} missing required stream_key {key}"))]
+    #[snafu(display("Input map {input_map:?} missing required stream_key {missing_keys:?}"))]
     MissingStreamKey {
         input_map: HashMap<String, Input>,
-        key: String,
+        missing_keys: Vec<String>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

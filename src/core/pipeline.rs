@@ -3,16 +3,19 @@ use std::{backtrace::Backtrace, collections::HashMap};
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
-    model::Pod,
+    model::{Annotation, Input, Pod},
 };
 
 use crate::core::model::serialize_hashmap;
 
 use super::{crypto::hash_buffer, model::to_yaml};
 
+/// Enum for storing different types of nodes in the pipeline
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum Node {
+    /// Pod node
     Pod(Box<PodNode>),
+    /// Mapper node
     Mapper(MapperNode),
 }
 
@@ -36,12 +39,15 @@ impl From<Mapper> for Node {
         Self::Mapper(MapperNode::new(mapper))
     }
 }
+
+/// Trait for node functions
+/// This trait defines the functions that all nodes must implement
 pub trait NodeFunctions {
+    /// Get the hash of the node
     fn get_hash(&self) -> &String;
 
+    /// Get the children of the node
     fn get_children(&self) -> &Vec<Node>;
-
-    fn notify_children(&self) {}
 
     fn process(&self) {}
 
@@ -123,6 +129,7 @@ impl Mapper {
     }
 }
 
+/// Node design for renaming streams and inputs
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct MapperNode {
     mapper: Mapper,
@@ -130,6 +137,7 @@ pub struct MapperNode {
 }
 
 impl MapperNode {
+    /// New function for mapper node
     pub const fn new(mapper: Mapper) -> Self {
         Self {
             mapper,
@@ -157,10 +165,6 @@ impl NodeFunctions for MapperNode {
         })
     }
 
-    fn notify_children(&self) {
-        todo!()
-    }
-
     fn process(&self) {
         todo!()
     }
@@ -180,12 +184,32 @@ struct EdgeInfo<'a> {
     to: &'a Vec<Node>,
 }
 
+/// Pipeline struct
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Pipeline {
     hash: String,
+    #[serde(skip)]
+    annotation: Option<Annotation>,
     root_nodes: Vec<Node>,
 }
 
 impl Pipeline {
+    /// New function for pipeline
+    /// # Errors
+    /// Will error if it fails to convert to yaml
+    pub fn new(root_nodes: Vec<Node>, annotation: Option<Annotation>) -> Result<Self> {
+        let no_hash = Self {
+            hash: String::new(),
+            annotation,
+            root_nodes,
+        };
+
+        Ok(Self {
+            hash: hash_buffer(to_yaml(&no_hash)?),
+            ..no_hash
+        })
+    }
+
     pub fn get_edges_vec(&self) -> Vec<EdgeInfo> {
         let mut edge_buffer = Vec::new();
 
@@ -211,37 +235,60 @@ impl Pipeline {
     }
 }
 
-// #[derive(Serialize, Deserialize, Debug)]
-// struct PipelineJob {
-//     pub pipeline: Pipeline,
-//     #[serde(serialize_with = "serialize_hashmap")]
-//     pub input_map: HashMap<String, Input>,
-// }
+#[derive(Serialize, Deserialize, Debug)]
+struct PipelineJob {
+    pub pipeline: Pipeline,
+    #[serde(serialize_with = "serialize_hashmap")]
+    pub input_map: HashMap<String, Input>,
+}
 
-// impl PipelineJob {
-//     fn new(pipeline: Pipeline, input_map: HashMap<String, Input>) -> Result<Self> {
-//         // Check if input_stream has all the correct mapping
-//         if let Some(missing_key) = pipeline
-//             .root_nodes
-//             .iter()
-//             .flat_map(|node| node.get_input_stream_keys())
-//             .find(|key| !input_map.contains_key(*key))
-//         {
-//             return Err(OrcaError {
-//                 kind: Kind::MissingStreamKey {
-//                     input_map,
-//                     key: missing_key.clone(),
-//                     backtrace: Some(Backtrace::capture()),
-//                 },
-//             });
-//         }
+impl PipelineJob {
+    fn new(pipeline: Pipeline, input_map: HashMap<String, Input>) -> Result<Self> {
+        // Check if input_map has all the requires keys
+        let missing_keys = pipeline
+            .root_nodes
+            .iter()
+            .flat_map(|node| match node {
+                Node::Pod(pod_node) => {
+                    find_missing_keys(&input_map, pod_node.pod.input_stream.keys())
+                }
+                Node::Mapper(mapper_node) => {
+                    find_missing_keys(&input_map, mapper_node.mapper.mapping.keys())
+                }
+            })
+            .collect::<Vec<_>>();
 
-//         Ok(Self {
-//             pipeline,
-//             input_map,
-//         })
-//     }
-// }
+        if !missing_keys.is_empty() {
+            return Err(OrcaError {
+                kind: Kind::MissingStreamKey {
+                    input_map,
+                    missing_keys,
+                    backtrace: Some(Backtrace::capture()),
+                },
+            });
+        }
+
+        Ok(Self {
+            pipeline,
+            input_map,
+        })
+    }
+}
+
+fn find_missing_keys<'a>(
+    input_map: &HashMap<String, Input>,
+    keys_to_check: impl Iterator<Item = &'a String>,
+) -> Vec<String> {
+    keys_to_check
+        .filter_map(|key| {
+            if input_map.contains_key(key) {
+                None
+            } else {
+                Some(key.clone())
+            }
+        })
+        .collect()
+}
 
 // struct PipelineResult {
 //     result: Vec<PodResult>,

@@ -155,20 +155,27 @@ impl PodJob {
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
         // Check if input_map has all the required stream_keys
-        if let Some(missing_key) = pod
+        let missing_keys = pod
             .input_stream
             .keys()
-            .find(|key| !input_map.contains_key(*key))
-        {
+            .filter_map(|key| {
+                if input_map.contains_key(key) {
+                    None
+                } else {
+                    Some(key.to_owned())
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if !missing_keys.is_empty() {
             return Err(OrcaError {
                 kind: Kind::MissingStreamKey {
                     input_map,
-                    key: missing_key.clone(),
+                    missing_keys,
                     backtrace: Some(Backtrace::capture()),
                 },
             });
         }
-
         // Hash all the input_map blobs
         input_map = input_map
             .into_iter()

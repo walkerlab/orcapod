@@ -9,7 +9,7 @@
 
 use names::{Generator, Name};
 use orcapod::{
-    core::pipeline::{Mapper, MapperNode, Node, NodeFunctions, Pipeline, PodNode},
+    core::pipeline::{Mapper, MapperNode, Node, NodeFunctions as _, Pipeline, PodNode},
     uniffi::{
         error::Result,
         model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, PodResult, StreamInfo},
@@ -246,6 +246,15 @@ pub fn pipeline_style() -> Result<()> {
     root_node.add_child(pod_b);
     root_node.add_child(file_renamer);
     root_node.add_child(pod_c);
+
+    Pipeline::new(
+        vec![Node::Pod(Box::new(root_node))],
+        Some(Annotation {
+            name: "pipeline_style".to_owned(),
+            description: "This is an example pipeline.".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+    )?;
 
     Ok(())
 }
