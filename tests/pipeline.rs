@@ -1,2 +1,10 @@
+mod fixture;
+
+use fixture::pipeline;
+use orcapod::uniffi::error::Result;
+
 #[test]
-fn fixture() {}
+fn pipeline_creation() -> Result<()> {
+    pipeline()?;
+    Ok(())
+}

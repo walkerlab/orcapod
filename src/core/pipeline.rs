@@ -236,14 +236,22 @@ impl Pipeline {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct PipelineJob {
+pub struct PipelineJob {
     pub pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_map: HashMap<String, Input>,
+    pub annotation: Option<Annotation>,
 }
 
 impl PipelineJob {
-    fn new(pipeline: Pipeline, input_map: HashMap<String, Input>) -> Result<Self> {
+    /// New function for pipeline job
+    /// # Errors
+    /// Error out if there are missing keys or failed to convert to yaml
+    pub fn new(
+        pipeline: Pipeline,
+        input_map: HashMap<String, Input>,
+        annotation: Option<Annotation>,
+    ) -> Result<Self> {
         // Check if input_map has all the requires keys
         let missing_keys = pipeline
             .root_nodes
@@ -271,6 +279,7 @@ impl PipelineJob {
         Ok(Self {
             pipeline,
             input_map,
+            annotation,
         })
     }
 }

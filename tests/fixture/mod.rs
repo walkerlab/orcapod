@@ -9,7 +9,7 @@
 
 use names::{Generator, Name};
 use orcapod::{
-    core::pipeline::{Mapper, MapperNode, Node, NodeFunctions as _, Pipeline, PodNode},
+    core::pipeline::{Mapper, Node, NodeFunctions as _, Pipeline, PipelineJob, PodNode},
     uniffi::{
         error::Result,
         model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, PodResult, StreamInfo},
@@ -20,7 +20,7 @@ use orcapod::{
 use std::{
     collections::HashMap,
     fs::{self, File},
-    hash::{Hash, RandomState},
+    hash::RandomState,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::LazyLock,
@@ -226,8 +226,7 @@ pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
     )
 }
 
-#[test]
-pub fn pipeline_style() -> Result<()> {
+pub fn pipeline() -> Result<Pipeline> {
     // Create a simple pipeline where the functions job is to add append their name into the input file
     // Structure: A -> B -> C
     let pod_a = pod_append_name("A")?;
@@ -254,9 +253,20 @@ pub fn pipeline_style() -> Result<()> {
             description: "This is an example pipeline.".to_owned(),
             version: "1.0.0".to_owned(),
         }),
-    )?;
+    )
+}
 
-    Ok(())
+pub fn pipeline_job() -> Result<PipelineJob> {
+    // Create a simple pipeline_job
+    PipelineJob::new(
+        pipeline()?,
+        HashMap::new(),
+        Some(Annotation {
+            name: "Pipeline Job".to_owned(),
+            description: "Example pipeline_job".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+    )
 }
 
 // --- util ---
