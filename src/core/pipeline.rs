@@ -1,263 +1,137 @@
-use serde::{Deserialize, Serialize};
-use std::{backtrace::Backtrace, collections::HashMap};
+use serde::Serialize;
+use std::{
+    backtrace::Backtrace,
+    collections::{HashMap, HashSet},
+};
 use tokio::{sync::RwLock, task::JoinHandle};
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
-    model::{Annotation, Input, Pod},
-    orchestrator::Orchestrator,
+    model::{Annotation, Input, Mapper, Pod},
 };
 
 use crate::core::model::serialize_hashmap;
 
-use super::{crypto::hash_buffer, model::to_yaml};
-
-/// Enum for storing different types of nodes in the pipeline
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, PartialEq, Debug, Clone)]
+/// Enum to store different types of nodes explicitly
 pub enum Node {
     /// Pod node
-    Pod(Box<PodNode>),
+    Pod(Box<Pod>),
     /// Mapper node
-    Mapper(MapperNode),
+    Mapper(Mapper),
 }
 
 impl Node {
-    pub fn get_children(&self) -> &Vec<Self> {
+    /// Get the hash of the node
+    pub fn get_hash(&self) -> String {
         match self {
-            Self::Pod(pod_node) => pod_node.get_children(),
-            Self::Mapper(mapper_node) => mapper_node.get_children(),
-        }
-    }
-
-    pub async fn process(&self, join_handles: &mut Vec<JoinHandle<()>>) {
-        match self {
-            Self::Pod(pod_node) => pod_node.process(join_handles).await,
-            Self::Mapper(mapper_node) => mapper_node.process(join_handles).await,
+            Self::Pod(pod) => pod.hash.clone(),
+            Self::Mapper(mapper) => mapper.hash.clone(),
         }
     }
 }
 
 impl From<Pod> for Node {
     fn from(pod: Pod) -> Self {
-        Self::Pod(Box::new(PodNode::new(pod)))
+        Self::Pod(Box::new(pod))
     }
 }
-
 impl From<Mapper> for Node {
     fn from(mapper: Mapper) -> Self {
-        Self::Mapper(MapperNode::new(mapper))
+        Self::Mapper(mapper)
     }
-}
-
-/// Trait for node functions
-/// This trait defines the functions that all nodes must implement
-pub trait NodeFunctions {
-    /// Get the hash of the node
-    fn get_hash(&self) -> &String;
-
-    /// Get the children of the node
-    fn get_children(&self) -> &Vec<Node>;
-
-    async fn process(&self, pipeline_run: &impl PipelineRun);
-
-    fn get_input_stream_keys(&self) -> impl Iterator<Item = &String>;
-
-    fn add_child(&mut self, child: impl Into<Node>) -> &Node;
-
-    /// # Errors
-    /// Will error if it fails to get the last child in the vector
-    fn get_last_child(&self) -> Result<&Node>;
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct PodNode {
-    pod: Pod,
-    children: Vec<Node>,
-}
-
-impl PodNode {
-    pub const fn new(pod: Pod) -> Self {
-        Self {
-            pod,
-            children: Vec::new(),
-        }
-    }
-}
-
-impl NodeFunctions for PodNode {
-    fn get_input_stream_keys(&self) -> impl Iterator<Item = &String> {
-        self.pod.input_stream.keys()
-    }
-
-    #[expect(clippy::unwrap_used, reason = "This should never fail")]
-    fn add_child(&mut self, child: impl Into<Node>) -> &Node {
-        self.children.push(child.into());
-
-        self.get_last_child().unwrap()
-    }
-
-    fn get_last_child(&self) -> Result<&Node> {
-        self.children.last().ok_or(OrcaError {
-            kind: Kind::FailToGetLastAddedNode {
-                backtrace: Some(Backtrace::capture()),
-            },
-        })
-    }
-
-    fn get_hash(&self) -> &String {
-        &self.pod.hash
-    }
-
-    fn get_children(&self) -> &Vec<Node> {
-        &self.children
-    }
-
-    async fn process(&self, pipeline_run: &impl PipelineRun) {
-        println!("Processing pod node: {:?}", self.pod.hash);
-
-        // Spin up a new thread for each of the children
-        pipeline_run.get_join_handles().blocking_write().extend(
-            self.children
-                .iter()
-                .map(|child| tokio::spawn(child.process(join_handles)))
-                .collect::<Vec<_>>(),
-        );
-    }
-}
-
-/// Mapper
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub struct Mapper {
-    hash: String,
-    #[serde(serialize_with = "serialize_hashmap")]
-    mapping: HashMap<String, String>,
-}
-
-impl Mapper {
-    /// New function for mapping that computes the hash for
-    /// # Errors
-    /// Will error if it fails to convert to yaml
-    pub fn new(mapping: HashMap<String, String>) -> Result<Self> {
-        let no_hash = Self {
-            hash: String::new(),
-            mapping,
-        };
-
-        Ok(Self {
-            hash: hash_buffer(to_yaml(&no_hash)?),
-            ..no_hash
-        })
-    }
-}
-
-/// Node design for renaming streams and inputs
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct MapperNode {
-    mapper: Mapper,
-    children: Vec<Node>,
-}
-
-impl MapperNode {
-    /// New function for mapper node
-    pub const fn new(mapper: Mapper) -> Self {
-        Self {
-            mapper,
-            children: Vec::new(),
-        }
-    }
-}
-
-impl NodeFunctions for MapperNode {
-    fn get_input_stream_keys(&self) -> impl Iterator<Item = &String> {
-        self.mapper.mapping.keys()
-    }
-
-    #[expect(clippy::unwrap_used, reason = "This should never fail")]
-    fn add_child(&mut self, child: impl Into<Node>) -> &Node {
-        self.children.push(child.into());
-        self.get_last_child().unwrap()
-    }
-
-    fn get_last_child(&self) -> Result<&Node> {
-        self.children.last().ok_or(OrcaError {
-            kind: Kind::FailToGetLastAddedNode {
-                backtrace: Some(Backtrace::capture()),
-            },
-        })
-    }
-
-    fn get_hash(&self) -> &String {
-        &self.mapper.hash
-    }
-
-    fn get_children(&self) -> &Vec<Node> {
-        &self.children
-    }
-}
-
-#[derive(PartialEq)]
-struct EdgeInfo<'a> {
-    from: &'a Node,
-    to: &'a Vec<Node>,
 }
 
 /// Pipeline struct
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Debug, PartialEq, Default)]
 pub struct Pipeline {
     hash: String,
     #[serde(skip)]
     annotation: Option<Annotation>,
-    root_nodes: Vec<Node>,
+    nodes: HashMap<String, Node>,   // String are hashes of the nodes
+    edges: HashMap<String, String>, // Strings are hashes of the nodes
+    output_nodes: HashSet<String>,
 }
 
 impl Pipeline {
-    /// New function for pipeline
-    /// # Errors
-    /// Will error if it fails to convert to yaml
-    pub fn new(root_nodes: Vec<Node>, annotation: Option<Annotation>) -> Result<Self> {
-        let no_hash = Self {
-            hash: String::new(),
+    /// Creates a new `Pipeline` instance.
+    pub const fn new(
+        nodes: HashMap<String, Node>,
+        edges: HashMap<String, String>,
+        output_nodes: HashSet<String>,
+        annotation: Option<Annotation>,
+    ) -> Self {
+        Self {
+            hash: String::new(), // TODO: Need to implement to yaml then hash that
+            nodes,
+            edges,
+            output_nodes,
             annotation,
-            root_nodes,
-        };
-
-        Ok(Self {
-            hash: hash_buffer(to_yaml(&no_hash)?),
-            ..no_hash
-        })
+        }
     }
 
-    pub fn get_edges_vec(&self) -> Vec<EdgeInfo> {
-        let mut edge_buffer = Vec::new();
-
-        // Iterate over the root nodes and extract edges
-        self.root_nodes.iter().for_each(|node| {
-            Self::extract_edges(node, &mut edge_buffer);
-        });
-
-        edge_buffer
+    /// Function to get the root nodes of the pipeline
+    pub fn get_root_nodes(&self) -> Vec<&Node> {
+        // Return a nodes with degree of 0
+        self.edges
+            .iter()
+            .filter_map(|(key, value)| {
+                if value.is_empty() {
+                    self.nodes.get(key)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
-    pub fn extract_edges<'a>(node: &'a Node, edge_buffer: &mut Vec<EdgeInfo<'a>>) {
-        // Add the current node to the edge buffer
-        edge_buffer.push(EdgeInfo {
-            from: node,
-            to: node.get_children(),
-        });
-
-        // Recursively add the children to the edge buffer
-        node.get_children().iter().for_each(|child| {
-            Self::extract_edges(child, edge_buffer);
-        });
+    /// Function to get the leaf nodes of the pipeline
+    /// Mainly used to get the output nodes when user does not specify them
+    fn get_leaf_nodes(&self) -> Vec<&Node> {
+        // Return a nodes with degree of 0
+        self.edges
+            .iter()
+            .filter_map(|(key, value)| {
+                if value.is_empty() {
+                    self.nodes.get(key)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+impl From<PipelineBuilder> for Pipeline {
+    fn from(val: PipelineBuilder) -> Self {
+        let output_nodes: HashSet<String> = if val.pipeline.output_nodes.is_empty() {
+            // If there are no output nodes, then we need to set the output nodes to the leaf nodes
+            val.pipeline
+                .get_leaf_nodes()
+                .iter()
+                .map(|node| node.get_hash())
+                .collect()
+        } else {
+            val.pipeline.output_nodes
+        };
+
+        Self::new(
+            val.pipeline.nodes,
+            val.pipeline.edges,
+            output_nodes,
+            val.pipeline.annotation,
+        )
+    }
+}
+
+#[derive(Serialize, Debug)]
+/// `PipelineJob` struct
+/// This struct is used to store the pipeline and the input map
 pub struct PipelineJob {
-    pub pipeline: Pipeline,
+    pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_map: HashMap<String, Input>,
-    pub annotation: Option<Annotation>,
+    input_map: HashMap<String, Input>,
+    annotation: Option<Annotation>,
 }
 
 impl PipelineJob {
@@ -271,15 +145,11 @@ impl PipelineJob {
     ) -> Result<Self> {
         // Check if input_map has all the requires keys
         let missing_keys = pipeline
-            .root_nodes
+            .get_root_nodes()
             .iter()
             .flat_map(|node| match node {
-                Node::Pod(pod_node) => {
-                    find_missing_keys(&input_map, pod_node.pod.input_stream.keys())
-                }
-                Node::Mapper(mapper_node) => {
-                    find_missing_keys(&input_map, mapper_node.mapper.mapping.keys())
-                }
+                Node::Pod(pod) => find_missing_keys(&input_map, pod.input_stream.keys()),
+                Node::Mapper(mapper) => find_missing_keys(&input_map, mapper.mapping.keys()),
             })
             .collect::<Vec<_>>();
 
@@ -323,23 +193,93 @@ fn find_missing_keys<'a>(
 trait PipelineRun {
     fn get_join_handles(&self) -> &RwLock<Vec<JoinHandle<()>>>;
 }
-struct DockerPipelineRun {
+
+pub struct PipelineBuilder {
     pipeline: Pipeline,
-    join_handles: RwLock<Vec<JoinHandle<()>>>,
 }
 
-impl PipelineRun for DockerPipelineRun {
-    fn get_join_handles(&self) -> &RwLock<Vec<JoinHandle<()>>> {
-        &self.join_handles
+impl Default for PipelineBuilder {
+    fn default() -> Self {
+        Self {
+            pipeline: Pipeline {
+                hash: String::new(),
+                annotation: None,
+                nodes: HashMap::new(),
+                edges: HashMap::new(),
+                output_nodes: HashSet::new(),
+            },
+        }
     }
 }
 
-// struct PipelineRunInfo {
-//     status: Status,
-//     // Fill the rest out later
-// }
+impl PipelineBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
 
-struct DockerRunner {
-    orchestrator: Box<dyn Orchestrator>,
-    active_pipelines: RwLock<Vec<DockerPipelineRun>>,
+    /// Add nodes to the pipeline and return key to put in edges
+    ///
+    /// Cases:
+    /// 1. If the node is not in the pipeline.nodes, then it is added to the `hash_map` and the key is the node hash
+    /// 2. If the node is already in the pipeline.nodes, then the key is the hash + _{`num_matches`} to prevent collision
+    pub fn add_node(&mut self, node: impl Into<Node>) -> NodeHandle<'_> {
+        let node = node.into();
+        let hash = node.get_hash();
+
+        // Insert into node hash_map if does not exist
+        self.pipeline.nodes.entry(hash.clone()).or_insert(node);
+
+        NodeHandle {
+            node_key: self.get_node_key(&hash),
+            pipeline_builder: self,
+        }
+    }
+
+    fn add_edge_from_node(&mut self, from: String, node: impl Into<Node>) -> NodeHandle {
+        // Check if node exists in the pipeline.nodes
+        let node = node.into();
+        let hash = node.get_hash();
+
+        // Insert into node hash_map if does not exist
+        self.pipeline.nodes.entry(hash.clone()).or_insert(node);
+
+        // Get the node_key to add to the edge
+        let node_key = self.get_node_key(&hash);
+        // Add the edge
+        self.pipeline.edges.insert(from, node_key.clone());
+
+        NodeHandle {
+            node_key,
+            pipeline_builder: self,
+        }
+    }
+
+    fn get_node_key(&self, node_hash: &str) -> String {
+        // Check if node is already in the pipeline, if so then we need to add a numerator to the hash
+        let num_matches = self
+            .pipeline
+            .nodes
+            .iter()
+            .filter(|(key, _)| *key == node_hash)
+            .count();
+
+        if num_matches > 0 {
+            // Node already exists, thus we need to add a numerator to the hash
+            format!("{node_hash}_{num_matches}")
+        } else {
+            node_hash.to_owned()
+        }
+    }
+}
+
+pub struct NodeHandle<'a> {
+    node_key: String,
+    pipeline_builder: &'a mut PipelineBuilder,
+}
+
+impl NodeHandle<'_> {
+    pub fn add_child(&mut self, node: impl Into<Node>) -> NodeHandle<'_> {
+        self.pipeline_builder
+            .add_edge_from_node(self.node_key.clone(), node)
+    }
 }

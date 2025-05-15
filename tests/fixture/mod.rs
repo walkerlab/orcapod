@@ -9,10 +9,12 @@
 
 use names::{Generator, Name};
 use orcapod::{
-    core::pipeline::{Mapper, Node, NodeFunctions as _, Pipeline, PipelineJob, PodNode},
+    core::pipeline::{Pipeline, PipelineBuilder, PipelineJob},
     uniffi::{
         error::Result,
-        model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, PodResult, StreamInfo},
+        model::{
+            Annotation, Blob, BlobKind, Input, Mapper, OrcaPath, Pod, PodJob, PodResult, StreamInfo,
+        },
         orchestrator::Status,
         store::{ModelID, ModelInfo, Store},
     },
@@ -26,6 +28,7 @@ use std::{
     sync::LazyLock,
 };
 use tempfile::TempDir;
+use tokio::net::unix::pipe;
 
 // --- fixtures ---
 
@@ -229,31 +232,30 @@ pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
 pub fn pipeline() -> Result<Pipeline> {
     // Create a simple pipeline where the functions job is to add append their name into the input file
     // Structure: A -> B -> C
+
+    // Create the components of the pipeline
     let pod_a = pod_append_name("A")?;
     let pod_b = pod_append_name("B")?;
     let pod_c = pod_append_name("C")?;
 
-    let file_renamer = Mapper::new(HashMap::from([(
+    let file_mapper = Mapper::new(HashMap::from([(
         "input_text_file".to_owned(),
         "output_txt_file".to_owned(),
     )]))?;
 
-    // Set the root node
-    let mut root_node = PodNode::new(pod_a);
+    // Use the builder to create the pipeline
+    let mut pipeline_builder = PipelineBuilder::new();
+    // Add the first node then chain the rest
+    pipeline_builder
+        .add_node(pod_a)
+        .add_child(file_mapper.clone())
+        .add_child(pod_b)
+        .add_child(file_mapper)
+        .add_child(pod_c);
 
-    root_node.add_child(file_renamer.clone());
-    root_node.add_child(pod_b);
-    root_node.add_child(file_renamer);
-    root_node.add_child(pod_c);
-
-    Pipeline::new(
-        vec![Node::Pod(Box::new(root_node))],
-        Some(Annotation {
-            name: "pipeline_style".to_owned(),
-            description: "This is an example pipeline.".to_owned(),
-            version: "1.0.0".to_owned(),
-        }),
-    )
+    // Convert it into the actual pipeline object
+    // NOTE: Since we didn't set the output_nodes, all the leaf nodes will be the output nodes
+    Ok(pipeline_builder.into())
 }
 
 pub fn pipeline_job() -> Result<PipelineJob> {
