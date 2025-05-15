@@ -194,6 +194,7 @@ trait PipelineRun {
     fn get_join_handles(&self) -> &RwLock<Vec<JoinHandle<()>>>;
 }
 
+/// Helper struct to assist in defining a pipeline in Rust
 pub struct PipelineBuilder {
     pipeline: Pipeline,
 }
@@ -213,6 +214,7 @@ impl Default for PipelineBuilder {
 }
 
 impl PipelineBuilder {
+    /// Creates a new `PipelineBuilder` instance.
     pub fn new() -> Self {
         Self::default()
     }
@@ -272,12 +274,14 @@ impl PipelineBuilder {
     }
 }
 
+/// Handle to store the `node_key` for the user to add children to it
 pub struct NodeHandle<'a> {
     node_key: String,
     pipeline_builder: &'a mut PipelineBuilder,
 }
 
 impl NodeHandle<'_> {
+    /// Add an node as a child to the current `node_key`
     pub fn add_child(&mut self, node: impl Into<Node>) -> NodeHandle<'_> {
         self.pipeline_builder
             .add_edge_from_node(self.node_key.clone(), node)

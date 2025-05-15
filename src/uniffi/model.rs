@@ -351,8 +351,12 @@ pub enum BlobKind {
 /// Mapper
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Mapper {
+    /// Hash of the Mapper
     pub hash: String,
     #[serde(serialize_with = "serialize_hashmap")]
+    /**
+    Mapping of `input_stream_keys` to `output_stream_keys` of the mapper
+    */
     pub mapping: HashMap<String, String>,
 }
 
