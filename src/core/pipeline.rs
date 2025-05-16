@@ -1,15 +1,23 @@
+use futures_util::{Stream, future::try_join_all};
 use serde::Serialize;
 use std::{
     backtrace::Backtrace,
     collections::{HashMap, HashSet},
+    iter::IntoIterator,
+    sync::Arc,
 };
+use tokio::{sync::Mutex, task::JoinHandle};
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
-    model::{Annotation, Input, Mapper, Pod},
+    model::{Annotation, Input, Mapper, Pod, StreamInfo},
+    orchestrator::Orchestrator,
 };
+use std::collections::hash_map::Entry;
 
 use crate::core::model::serialize_hashmap;
+
+use super::util::get;
 
 #[derive(Serialize, PartialEq, Debug, Clone)]
 /// Enum to store different types of nodes explicitly
@@ -26,6 +34,32 @@ impl Node {
         match self {
             Self::Pod(pod) => pod.hash.clone(),
             Self::Mapper(mapper) => mapper.hash.clone(),
+        }
+    }
+
+    /// # Errors
+    /// Error out if fail to join all parents futures
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Will be removed later when the full implmentation actual send the pod job to the orchestrator"
+    )]
+    pub fn process(
+        &self,
+        input_map: &HashMap<String, StreamInfo>,
+        orchestrator: impl Orchestrator,
+    ) -> Result<HashMap<String, StreamInfo>> {
+        match self {
+            Self::Pod(pod) => {
+                // Print out pod hash for now
+                println!("Processing pod: {}", pod.hash);
+                // TODO: Actual pod job creation and submission to orchestrator
+                Ok(input_map.clone())
+            }
+            Self::Mapper(mapper) => {
+                // Print out mapper hash for now
+                println!("Processing mapper: {}", mapper.hash);
+                Ok(input_map.clone())
+            }
         }
     }
 }
@@ -47,8 +81,8 @@ pub struct Pipeline {
     hash: String,
     #[serde(skip)]
     annotation: Option<Annotation>,
-    nodes: HashMap<String, Node>,   // String are hashes of the nodes
-    edges: HashMap<String, String>, // Strings are hashes of the nodes
+    pub nodes: HashMap<String, Node>, // String are hashes of the nodes without the _{num_matches}
+    pub edges: HashMap<String, Vec<String>>, // Strings are hashes of the nodes
     output_nodes: HashSet<String>,
 }
 
@@ -56,7 +90,7 @@ impl Pipeline {
     /// Creates a new `Pipeline` instance.
     pub const fn new(
         nodes: HashMap<String, Node>,
-        edges: HashMap<String, String>,
+        edges: HashMap<String, Vec<String>>,
         output_nodes: HashSet<String>,
         annotation: Option<Annotation>,
     ) -> Self {
@@ -69,35 +103,44 @@ impl Pipeline {
         }
     }
 
+    /// # Errors
+    /// Error out if the `node_key` is not found in the pipeline.nodes
+    pub fn get_node(&self, node_key: &str) -> Result<&Node> {
+        get(&self.nodes, node_key.trim_end_matches('_'))
+    }
+
     /// Function to get the root nodes of the pipeline
-    pub fn get_root_nodes(&self) -> Vec<&Node> {
-        // Return a nodes with degree of 0
-        self.edges
-            .iter()
-            .filter_map(|(key, _)| {
-                if self.edges.values().all(|v| v != key) {
-                    self.nodes.get(key)
-                } else {
-                    None
-                }
-            })
-            .collect()
+    pub fn get_root_nodes(&self) -> impl Iterator<Item = &Node> {
+        // Root nodes are those that are not values in the edges map (i.e., not children of any node)
+        self.nodes.iter().filter_map(move |(hash, node)| {
+            if self.edges.values().any(|v| v.contains(hash)) {
+                None
+            } else {
+                Some(node)
+            }
+        })
     }
 
     /// Function to get the leaf nodes of the pipeline
     /// Mainly used to get the output nodes when user does not specify them
-    fn get_leaf_nodes(&self) -> Vec<&Node> {
-        // Return a nodes with degree of 0
+    fn get_leaf_nodes(&self) -> impl Iterator<Item = &Node> {
+        // Leaf nodes are those that are not keys in the edges map (i.e., not parents of any node)
+        self.nodes.iter().filter_map(move |(hash, node)| {
+            if self.edges.keys().any(|k| k == hash) {
+                None
+            } else {
+                Some(node)
+            }
+        })
+    }
+
+    pub fn get_parents_key_for_node(&self, node_key: &str) -> impl Iterator<Item = &String> {
+        // Get the parents for the node_key
+        // Parents are those that have the node_key as a child in the edges map
+        let node_key = node_key.to_owned();
         self.edges
             .iter()
-            .filter_map(|(key, value)| {
-                if value.is_empty() {
-                    self.nodes.get(key)
-                } else {
-                    None
-                }
-            })
-            .collect()
+            .filter_map(move |(key, children)| children.contains(&node_key).then_some(key))
     }
 }
 
@@ -105,11 +148,7 @@ impl From<PipelineBuilder> for Pipeline {
     fn from(val: PipelineBuilder) -> Self {
         let output_nodes: HashSet<String> = if val.pipeline.output_nodes.is_empty() {
             // If there are no output nodes, then we need to set the output nodes to the leaf nodes
-            val.pipeline
-                .get_leaf_nodes()
-                .iter()
-                .map(|node| node.get_hash())
-                .collect()
+            val.pipeline.get_leaf_nodes().map(Node::get_hash).collect()
         } else {
             val.pipeline.output_nodes
         };
@@ -127,7 +166,7 @@ impl From<PipelineBuilder> for Pipeline {
 /// `PipelineJob` struct
 /// This struct is used to store the pipeline and the input map
 pub struct PipelineJob {
-    pipeline: Pipeline,
+    pub pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
     /// Mapping of outside input to keys to be match with the pipeline `input_map`
     pub input_map: HashMap<String, Input>,
@@ -146,7 +185,6 @@ impl PipelineJob {
         // Check if input_map has all the requires keys
         let missing_keys = pipeline
             .get_root_nodes()
-            .iter()
             .flat_map(|node| match node {
                 Node::Pod(pod) => find_missing_keys(&input_map, pod.input_stream.keys()),
                 Node::Mapper(mapper) => find_missing_keys(&input_map, mapper.mapping.keys()),
@@ -223,8 +261,8 @@ impl PipelineBuilder {
         // Get the node_key to add to the edge
         let node_key = self.get_node_key(&hash);
 
-        // Insert into node hash_map if does not exist
-        self.pipeline.nodes.entry(hash).or_insert(node);
+        // Insert into node hash_map if does not exist, else skip
+        self.pipeline.nodes.entry(node.get_hash()).or_insert(node);
 
         NodeHandle {
             node_key,
@@ -240,12 +278,20 @@ impl PipelineBuilder {
         // Get the node_key to add to the edge
         let node_key = self.get_node_key(&hash);
 
-        // Insert into node hash_map if does not exist
+        // Insert node into the pipeline.nodes if it does not exist
         self.pipeline.nodes.entry(hash).or_insert(node);
 
-        // Add the edge
-        println!("Adding edge from {from} to {node_key}");
-        self.pipeline.edges.insert(from, node_key.clone());
+        // Check if the from node exists in the pipeline.edges
+        // If it does not exist, then we need to create a new vector for it
+        // else we need to push the node_key to the vector
+        match self.pipeline.edges.entry(from) {
+            Entry::Occupied(mut e) => {
+                e.insert(vec![node_key.clone()]);
+            }
+            Entry::Vacant(e) => {
+                e.insert(vec![]);
+            }
+        }
 
         NodeHandle {
             node_key,

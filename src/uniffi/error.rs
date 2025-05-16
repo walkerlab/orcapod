@@ -15,6 +15,7 @@ use std::{
     path::{self, PathBuf},
     result,
 };
+use tokio::task::JoinError;
 use uniffi;
 
 use super::model::Input;
@@ -125,6 +126,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     SerdeYamlError {
         source: serde_yaml::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    TokioJoinError {
+        source: JoinError,
         backtrace: Option<Backtrace>,
     },
 }
