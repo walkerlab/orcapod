@@ -1,8 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{backtrace::Backtrace, collections::HashMap, sync::Arc};
 
-use tokio::{net::unix::pipe, sync::RwLock};
+use futures_util::future::join_all;
+use tokio::{sync::RwLock, task::JoinHandle};
 
-use crate::uniffi::{error::Result, model::StreamInfo};
+use crate::uniffi::{
+    error::{Kind, OrcaError, Result},
+    model::StreamInfo,
+};
 
 use super::{pipeline::PipelineJob, util::get};
 
@@ -12,7 +16,6 @@ pub trait PipelineRunner {
 
 struct PipelineRun {
     pipeline_job: PipelineJob,
-    join_handles: Arc<RwLock<Vec<tokio::task::JoinHandle<()>>>>,
     node_outputs: Arc<RwLock<HashMap<String, HashMap<String, StreamInfo>>>>,
 }
 
@@ -21,7 +24,6 @@ impl PipelineRun {
         Self {
             pipeline_job,
             node_outputs: Arc::new(RwLock::new(HashMap::new())),
-            join_handles: todo!(),
         }
     }
 
@@ -45,20 +47,31 @@ impl PipelineRun {
         let children_node_to_start = self.find_ready_to_start_children_node(&node_key).await?;
 
         // Process the children nodes
-        for node in children_node_to_start {
-            let input_map = self
+        let mut futures = Vec::with_capacity(children_node_to_start.len());
+        for child_node in children_node_to_start {
+            let input_map_for_child = self
                 .node_outputs
                 .read()
                 .await
                 .get(&node_key)
-                .unwrap()
+                .ok_or(OrcaError {
+                    kind: Kind::KeyMissing {
+                        key: node_key.clone(),
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                })?
                 .clone();
 
             let self_clone = Arc::clone(&self);
-            tokio::spawn(async move {
-                self_clone.process_node(node, input_map);
-            });
+            futures.push(tokio::spawn(async move {
+                self_clone.process_node(child_node, input_map_for_child);
+            }));
         }
+
+        // Wait for all children to finish
+        let results = join_all(futures).await;
+
+        results.into_iter().try_for_each(|result| result)?;
 
         Ok(())
     }
@@ -80,7 +93,5 @@ impl PipelineRun {
         Ok(ready_children)
     }
 }
-
-struct PipelineRunInfo;
 
 mod docker;

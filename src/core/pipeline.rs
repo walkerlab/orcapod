@@ -1,17 +1,12 @@
-use futures_util::{Stream, future::try_join_all};
 use serde::Serialize;
 use std::{
     backtrace::Backtrace,
     collections::{HashMap, HashSet},
-    iter::IntoIterator,
-    sync::Arc,
 };
-use tokio::{sync::Mutex, task::JoinHandle};
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
     model::{Annotation, Input, Mapper, Pod, StreamInfo},
-    orchestrator::Orchestrator,
 };
 use std::collections::hash_map::Entry;
 
@@ -101,32 +96,24 @@ impl Pipeline {
     /// # Errors
     /// Error out if the `node_key` is not found in the pipeline.nodes
     pub fn get_node(&self, node_key: &str) -> Result<&Node> {
-        get(&self.nodes, &node_key.trim_end_matches('_').to_string())
+        get(&self.nodes, node_key.trim_end_matches('_'))
     }
 
     /// Function to get the root nodes of the pipeline
-    pub fn get_root_nodes(&self) -> impl Iterator<Item = &Node> {
+    pub fn get_root_nodes(&self) -> impl Iterator<Item = &String> {
         // Root nodes are those that are not values in the edges map (i.e., not children of any node)
-        self.nodes.iter().filter_map(move |(hash, node)| {
-            if self.edges.values().any(|v| v.contains(hash)) {
-                None
-            } else {
-                Some(node)
-            }
-        })
+        self.edges
+            .keys()
+            .filter(move |k| !self.edges.values().any(|v| v.contains(*k)))
     }
 
     /// Function to get the leaf nodes of the pipeline
     /// Mainly used to get the output nodes when user does not specify them
-    fn get_leaf_nodes(&self) -> impl Iterator<Item = &Node> {
+    pub fn get_leaf_nodes(&self) -> impl Iterator<Item = &String> {
         // Leaf nodes are those that are not keys in the edges map (i.e., not parents of any node)
-        self.nodes.iter().filter_map(move |(hash, node)| {
-            if self.edges.keys().any(|k| k == hash) {
-                None
-            } else {
-                Some(node)
-            }
-        })
+        self.nodes
+            .keys()
+            .filter(move |k| !self.edges.keys().any(|v| v.contains(*k)))
     }
 
     pub fn get_parents_key_for_node(&self, node_key: &str) -> impl Iterator<Item = &String> {
@@ -143,7 +130,7 @@ impl From<PipelineBuilder> for Pipeline {
     fn from(val: PipelineBuilder) -> Self {
         let output_nodes: HashSet<String> = if val.pipeline.output_nodes.is_empty() {
             // If there are no output nodes, then we need to set the output nodes to the leaf nodes
-            val.pipeline.get_leaf_nodes().map(Node::get_hash).collect()
+            val.pipeline.get_leaf_nodes().cloned().collect()
         } else {
             val.pipeline.output_nodes
         };
@@ -180,11 +167,14 @@ impl PipelineJob {
         // Check if input_map has all the requires keys
         let missing_keys = pipeline
             .get_root_nodes()
-            .flat_map(|node| match node {
-                Node::Pod(pod) => find_missing_keys(&input_map, pod.input_stream.keys()),
-                Node::Mapper(mapper) => find_missing_keys(&input_map, mapper.mapping.keys()),
+            .map(|node_id| match pipeline.get_node(node_id)? {
+                Node::Pod(pod) => Ok(find_missing_keys(&input_map, pod.input_stream.keys())),
+                Node::Mapper(mapper) => Ok(find_missing_keys(&input_map, mapper.mapping.keys())),
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<Vec<String>>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<String>>();
 
         if !missing_keys.is_empty() {
             return Err(OrcaError {
@@ -281,10 +271,10 @@ impl PipelineBuilder {
         // else we need to push the node_key to the vector
         match self.pipeline.edges.entry(from) {
             Entry::Occupied(mut e) => {
-                e.insert(vec![node_key.clone()]);
+                e.get_mut().push(node_key.clone());
             }
             Entry::Vacant(e) => {
-                e.insert(vec![]);
+                e.insert(vec![node_key.clone()]);
             }
         }
 
