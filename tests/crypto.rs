@@ -12,7 +12,7 @@ use orcapod::{
     core::crypto::{hash_buffer, hash_dir, hash_file},
     uniffi::{
         error::Result,
-        model::{Annotation, Blob, BlobKind, Input, OrcaPath, PodJob},
+        model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, StreamInfo},
     },
 };
 use std::{collections::HashMap, fs::read, path::PathBuf};
@@ -43,13 +43,22 @@ fn complex_hash() -> Result<()> {
 fn nested_dir_hash() -> Result<()> {
     let namespace_lookup = HashMap::from([("default".to_owned(), PathBuf::from("./tests"))]);
 
+    let mut pod_style = pod_style()?;
+    pod_style.input_stream = HashMap::from([(
+        "nested_dir".into(),
+        StreamInfo {
+            path: PathBuf::from("/input"),
+            match_pattern: r"\/".to_owned(),
+        },
+    )]);
+
     let pod_job = PodJob::new(
         Some(Annotation {
             name: "style-transfer".to_owned(),
             description: "This is an example pod job.".to_owned(),
             version: "0.1.0".to_owned(),
         }),
-        pod_style()?.into(),
+        pod_style.into(),
         HashMap::from([(
             "nested_dir".to_owned(),
             Input::Unary(Blob {

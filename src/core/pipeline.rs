@@ -3,7 +3,6 @@ use std::{
     backtrace::Backtrace,
     collections::{HashMap, HashSet},
 };
-use tokio::{sync::RwLock, task::JoinHandle};
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
@@ -75,8 +74,8 @@ impl Pipeline {
         // Return a nodes with degree of 0
         self.edges
             .iter()
-            .filter_map(|(key, value)| {
-                if value.is_empty() {
+            .filter_map(|(key, _)| {
+                if self.edges.values().all(|v| v != key) {
                     self.nodes.get(key)
                 } else {
                     None
@@ -130,7 +129,8 @@ impl From<PipelineBuilder> for Pipeline {
 pub struct PipelineJob {
     pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
-    input_map: HashMap<String, Input>,
+    /// Mapping of outside input to keys to be match with the pipeline `input_map`
+    pub input_map: HashMap<String, Input>,
     annotation: Option<Annotation>,
 }
 
@@ -186,14 +186,6 @@ fn find_missing_keys<'a>(
         .collect()
 }
 
-// struct PipelineResult {
-//     result: Vec<PodResult>,
-// }
-
-trait PipelineRun {
-    fn get_join_handles(&self) -> &RwLock<Vec<JoinHandle<()>>>;
-}
-
 /// Helper struct to assist in defining a pipeline in Rust
 pub struct PipelineBuilder {
     pipeline: Pipeline,
@@ -228,11 +220,14 @@ impl PipelineBuilder {
         let node = node.into();
         let hash = node.get_hash();
 
+        // Get the node_key to add to the edge
+        let node_key = self.get_node_key(&hash);
+
         // Insert into node hash_map if does not exist
-        self.pipeline.nodes.entry(hash.clone()).or_insert(node);
+        self.pipeline.nodes.entry(hash).or_insert(node);
 
         NodeHandle {
-            node_key: self.get_node_key(&hash),
+            node_key,
             pipeline_builder: self,
         }
     }
@@ -242,12 +237,14 @@ impl PipelineBuilder {
         let node = node.into();
         let hash = node.get_hash();
 
-        // Insert into node hash_map if does not exist
-        self.pipeline.nodes.entry(hash.clone()).or_insert(node);
-
         // Get the node_key to add to the edge
         let node_key = self.get_node_key(&hash);
+
+        // Insert into node hash_map if does not exist
+        self.pipeline.nodes.entry(hash).or_insert(node);
+
         // Add the edge
+        println!("Adding edge from {from} to {node_key}");
         self.pipeline.edges.insert(from, node_key.clone());
 
         NodeHandle {

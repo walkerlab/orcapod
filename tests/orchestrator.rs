@@ -75,10 +75,7 @@ where
     // test delete
     orchestrator.delete_blocking(&pod_run)?;
     assert!(
-        !orchestrator
-            .list_blocking()?
-            .iter()
-            .any(|run| *run == pod_run),
+        !orchestrator.list_blocking()?.contains(&pod_run),
         "Unexpected container remains."
     );
     // try getting info of a purged pod run
@@ -178,10 +175,7 @@ fn command_parse() -> Result<()> {
         orchestrator.delete_blocking(&pod_run)?;
 
         assert!(
-            !orchestrator
-                .list_blocking()?
-                .iter()
-                .any(|pod_run_from_list| *pod_run_from_list == pod_run),
+            !orchestrator.list_blocking()?.contains(&pod_run),
             "Unexpected container remains."
         );
 
@@ -240,10 +234,7 @@ fn fail_at_start() -> Result<()> {
         orchestrator.delete_blocking(pod_run)?;
 
         assert!(
-            !orchestrator
-                .list_blocking()?
-                .iter()
-                .any(|run| *run == *pod_run),
+            !orchestrator.list_blocking()?.contains(pod_run),
             "Unexpected container remains."
         );
 
@@ -285,10 +276,7 @@ fn fail_during_execution() -> Result<()> {
         orchestrator.delete_blocking(&pod_run)?;
 
         assert!(
-            !orchestrator
-                .list_blocking()?
-                .iter()
-                .any(|run| *run == pod_run),
+            !orchestrator.list_blocking()?.contains(&pod_run),
             "Unexpected container remains."
         );
 
@@ -354,10 +342,7 @@ fn test_queued_status_container() -> Result<()> {
         // Clean up container
         orchestrator.delete_blocking(pod_run)?;
         assert!(
-            !orchestrator
-                .list_blocking()?
-                .iter()
-                .any(|pod_run_from_list| *pod_run_from_list == *pod_run),
+            !orchestrator.list_blocking()?.contains(pod_run),
             "Unexpected container remains."
         );
 

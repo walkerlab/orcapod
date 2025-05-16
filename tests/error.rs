@@ -14,7 +14,6 @@ use orcapod::{
 use serde_json;
 use serde_yaml;
 use std::{collections::HashMap, fs, ops::Deref as _, path::PathBuf, sync::Arc};
-use tokio::net::unix::pipe;
 
 fn contains_debug(error: impl Into<OrcaError>) -> bool {
     !format!("{:?}", error.into()).is_empty()

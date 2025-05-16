@@ -28,7 +28,6 @@ use std::{
     sync::LazyLock,
 };
 use tempfile::TempDir;
-use tokio::net::unix::pipe;
 
 // --- fixtures ---
 

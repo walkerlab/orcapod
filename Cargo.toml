@@ -129,6 +129,7 @@ pub_use = { level = "allow", priority = 127 }                          # ok to s
 pub_with_shorthand = { level = "allow", priority = 127 }               # allow use of pub(super)
 pub_without_shorthand = { level = "allow", priority = 127 }            # allow use of pub(in super)
 question_mark_used = { level = "allow", priority = 127 }               # allow question operator
+result_large_err = { level = "allow", priority = 127 }                 # allow large error types, performance hit is acceptable
 self_named_module_files = { level = "allow", priority = 127 }          # mod files ok
 semicolon_inside_block = { level = "allow", priority = 127 }           # ok to keep inside block
 separated_literal_suffix = { level = "allow", priority = 127 }         # literal suffixes should be separated by underscore

@@ -338,6 +338,18 @@ pub struct Blob {
     /// BLOB contents checksum.
     pub checksum: String,
 }
+
+impl Blob {
+    /// Constructor for Blob class with an empty checksum that will be computed when is used in `PodJob`
+    pub const fn new(kind: BlobKind, location: OrcaPath) -> Self {
+        Self {
+            kind,
+            location,
+            checksum: String::new(),
+        }
+    }
+}
+
 /// File or directory options for BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {
