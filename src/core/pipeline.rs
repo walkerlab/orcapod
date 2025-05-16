@@ -39,14 +39,9 @@ impl Node {
 
     /// # Errors
     /// Error out if fail to join all parents futures
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "Will be removed later when the full implmentation actual send the pod job to the orchestrator"
-    )]
     pub fn process(
         &self,
         input_map: &HashMap<String, StreamInfo>,
-        orchestrator: impl Orchestrator,
     ) -> Result<HashMap<String, StreamInfo>> {
         match self {
             Self::Pod(pod) => {
@@ -76,7 +71,7 @@ impl From<Mapper> for Node {
 }
 
 /// Pipeline struct
-#[derive(Serialize, Debug, PartialEq, Default)]
+#[derive(Serialize, Debug, PartialEq, Default, Clone)]
 pub struct Pipeline {
     hash: String,
     #[serde(skip)]
@@ -106,7 +101,7 @@ impl Pipeline {
     /// # Errors
     /// Error out if the `node_key` is not found in the pipeline.nodes
     pub fn get_node(&self, node_key: &str) -> Result<&Node> {
-        get(&self.nodes, node_key.trim_end_matches('_'))
+        get(&self.nodes, &node_key.trim_end_matches('_').to_string())
     }
 
     /// Function to get the root nodes of the pipeline
@@ -162,7 +157,7 @@ impl From<PipelineBuilder> for Pipeline {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 /// `PipelineJob` struct
 /// This struct is used to store the pipeline and the input map
 pub struct PipelineJob {
