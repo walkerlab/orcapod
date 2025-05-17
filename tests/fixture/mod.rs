@@ -261,7 +261,16 @@ pub fn pipeline_job() -> Result<PipelineJob> {
     // Create a simple pipeline_job
     PipelineJob::new(
         pipeline()?,
-        HashMap::new(),
+        HashMap::from([(
+            "input_text_file".to_owned(),
+            Input::Unary(Blob::new(
+                BlobKind::File,
+                OrcaPath {
+                    namespace: "default".to_owned(),
+                    path: PathBuf::from("data/input.txt"),
+                },
+            )),
+        )]),
         Some(Annotation {
             name: "Pipeline Job".to_owned(),
             description: "Example pipeline_job".to_owned(),

@@ -1,4 +1,9 @@
-#![allow(clippy::missing_docs_in_private_items, reason = "test code")]
+#![allow(
+    clippy::missing_docs_in_private_items,
+    clippy::panic_in_result_fn,
+    clippy::unwrap_used,
+    reason = "test code"
+)]
 //! Tests for pipeline creation functionality.
 //!
 //! This module contains tests that verify the correct creation of pipelines
@@ -10,24 +15,18 @@ use fixture::{pipeline, pipeline_job};
 use orcapod::uniffi::error::Result;
 
 #[test]
-fn pipeline_creation() -> Result<()> {
-    pipeline()?;
-    Ok(())
-}
-
-#[test]
 fn root_nodes() -> Result<()> {
     let pipeline = pipeline()?;
-    let root_nodes = pipeline.get_root_nodes().collect::<Vec<_>>();
-    assert_eq!(root_nodes.len(), 1);
+
+    assert_eq!(pipeline.get_root_nodes().count(), 1);
     Ok(())
 }
 
 #[test]
 fn get_leaf_nodes() -> Result<()> {
     let pipeline = pipeline()?;
-    let leaf_nodes = pipeline.get_leaf_nodes().collect::<Vec<_>>();
-    assert_eq!(leaf_nodes.len(), 1);
+
+    assert_eq!(pipeline.get_leaf_nodes().count(), 1);
     Ok(())
 }
 
@@ -35,10 +34,8 @@ fn get_leaf_nodes() -> Result<()> {
 fn get_parents_key_for_node() -> Result<()> {
     let pipeline = pipeline()?;
     let node_key = pipeline.get_root_nodes().next().unwrap();
-    let parents_keys = pipeline
-        .get_parents_key_for_node(node_key)
-        .collect::<Vec<_>>();
-    assert_eq!(parents_keys.len(), 0);
+
+    assert_eq!(pipeline.get_parents_key_for_node(node_key).count(), 0);
     Ok(())
 }
 

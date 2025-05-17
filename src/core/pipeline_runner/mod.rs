@@ -11,7 +11,7 @@ use crate::uniffi::{
 use super::{pipeline::PipelineJob, util::get};
 
 pub trait PipelineRunner {
-    fn start(&self, pipeline_job: PipelineJob) -> PipelineRun;
+    fn start(&self, pipeline_job: PipelineJob) -> Result<()>;
 }
 
 struct PipelineRun {
@@ -48,32 +48,46 @@ impl PipelineRun {
 
         // Process the children nodes
         let mut futures = Vec::with_capacity(children_node_to_start.len());
-        for child_node in children_node_to_start {
-            let input_map_for_child = self
-                .node_outputs
-                .read()
-                .await
-                .get(&node_key)
-                .ok_or(OrcaError {
-                    kind: Kind::KeyMissing {
-                        key: node_key.clone(),
-                        backtrace: Some(Backtrace::capture()),
-                    },
-                })?
-                .clone();
+        let mut child_key_and_input_map = Vec::with_capacity(children_node_to_start.len());
+        for child_key in children_node_to_start {
+            // Build input_map_for_child from all parent outputs
+            let input_map_for_child = {
+                let node_outputs = self.node_outputs.read().await;
+                let parent_keys = self
+                    .pipeline_job
+                    .pipeline
+                    .get_parents_key_for_node(&child_key);
+                parent_keys
+                    .filter_map(|parent_key| node_outputs.get(parent_key))
+                    .flat_map(|parent_output_map| parent_output_map.clone().into_iter())
+                    .collect::<HashMap<String, StreamInfo>>()
+            };
 
-            let self_clone = Arc::clone(&self);
-            futures.push(tokio::spawn(async move {
-                self_clone.process_node(child_node, input_map_for_child);
-            }));
+            child_key_and_input_map.push((child_key, input_map_for_child));
+        }
+
+        for (child_key, input_map_for_child) in child_key_and_input_map {
+            // Spawn a new task for each child node
+            futures.push(Self::start_node(
+                self.clone(),
+                child_key,
+                input_map_for_child,
+            ));
         }
 
         // Wait for all children to finish
         let results = join_all(futures).await;
-
-        results.into_iter().try_for_each(|result| result)?;
-
         Ok(())
+    }
+
+    fn start_node(
+        self: Arc<Self>,
+        node_key: String,
+        input_map: HashMap<String, StreamInfo>,
+    ) -> JoinHandle<Result<()>> {
+        // Spawn a new task for the node
+
+        tokio::spawn(async move { self.process_node(node_key, input_map).await })
     }
 
     async fn find_ready_to_start_children_node(&self, node_key: &str) -> Result<Vec<String>> {
