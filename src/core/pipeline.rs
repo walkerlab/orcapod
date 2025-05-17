@@ -34,10 +34,7 @@ impl Node {
 
     /// # Errors
     /// Error out if fail to join all parents futures
-    pub fn process(
-        &self,
-        input_map: &HashMap<String, StreamInfo>,
-    ) -> Result<HashMap<String, StreamInfo>> {
+    pub fn process(&self, input_map: &HashMap<String, Input>) -> Result<HashMap<String, Input>> {
         match self {
             Self::Pod(pod) => {
                 // Print out pod hash for now
@@ -148,6 +145,7 @@ impl From<PipelineBuilder> for Pipeline {
 /// `PipelineJob` struct
 /// This struct is used to store the pipeline and the input map
 pub struct PipelineJob {
+    pub hash: String,
     pub pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
     /// Mapping of outside input to keys to be match with the pipeline `input_map`
@@ -190,6 +188,7 @@ impl PipelineJob {
             pipeline,
             input_map,
             annotation,
+            hash: String::new(),
         })
     }
 }
