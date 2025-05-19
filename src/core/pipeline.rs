@@ -6,7 +6,7 @@ use std::{
 
 use crate::uniffi::{
     error::{Kind, OrcaError, Result},
-    model::{Annotation, Input, Mapper, Pod, StreamInfo},
+    model::{Annotation, Input, Mapper, Pod},
 };
 use std::collections::hash_map::Entry;
 
@@ -68,8 +68,10 @@ pub struct Pipeline {
     hash: String,
     #[serde(skip)]
     annotation: Option<Annotation>,
-    pub nodes: HashMap<String, Node>, // String are hashes of the nodes without the _{num_matches}
-    pub edges: HashMap<String, Vec<String>>, // Strings are hashes of the nodes
+    /// String are hashes of the nodes without the _{`num_matches`}
+    pub nodes: HashMap<String, Node>,
+    /// Strings are hashes of the nodes
+    pub edges: HashMap<String, Vec<String>>,
     output_nodes: HashSet<String>,
 }
 
@@ -92,8 +94,14 @@ impl Pipeline {
 
     /// # Errors
     /// Error out if the `node_key` is not found in the pipeline.nodes
+    #[expect(clippy::string_slice, reason = "Should never fail as we are in")]
     pub fn get_node(&self, node_key: &str) -> Result<&Node> {
-        get(&self.nodes, node_key.trim_end_matches('_'))
+        let char_to_cut_at = '_';
+
+        let key = node_key
+            .rfind(char_to_cut_at)
+            .map_or(node_key, |index| &node_key[..index]);
+        get(&self.nodes, key)
     }
 
     /// Function to get the root nodes of the pipeline
@@ -113,6 +121,7 @@ impl Pipeline {
             .filter(move |k| !self.edges.keys().any(|v| v.contains(*k)))
     }
 
+    /// Function to get the parents of a node
     pub fn get_parents_key_for_node(&self, node_key: &str) -> impl Iterator<Item = &String> {
         // Get the parents for the node_key
         // Parents are those that have the node_key as a child in the edges map
@@ -145,7 +154,9 @@ impl From<PipelineBuilder> for Pipeline {
 /// `PipelineJob` struct
 /// This struct is used to store the pipeline and the input map
 pub struct PipelineJob {
+    /// Hash of the pipeline job
     pub hash: String,
+    /// Pipeline struct
     pub pipeline: Pipeline,
     #[serde(serialize_with = "serialize_hashmap")]
     /// Mapping of outside input to keys to be match with the pipeline `input_map`

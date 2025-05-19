@@ -1,40 +1,47 @@
-use std::{backtrace::Backtrace, collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use futures_util::future::join_all;
-use tokio::{
-    sync::RwLock,
-    task::{JoinHandle, JoinSet},
-};
+use tokio::sync::RwLock;
 
 use crate::uniffi::{error::Result, model::Input};
 
-use super::{pipeline::PipelineJob, util::get};
+use super::pipeline::PipelineJob;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+/// # Errors:
+/// Error out if fail to start the pipeline job
 pub trait PipelineRunner {
+    /// Starts the given pipeline job.
+    ///
+    /// # Errors
+    /// Returns an error if the pipeline job fails to start.
     fn start(&self, pipeline_job: PipelineJob) -> Result<()>;
 }
 
 #[derive(Debug)]
-struct PipelineRun {
+/// Struct to store the active pipeline run.
+/// Currently only store the `node_outputs` as a form a memory cache.
+pub struct PipelineRun {
     pipeline_job: PipelineJob,
-    join_set: JoinSet<Result<()>>,
     node_outputs: Arc<RwLock<HashMap<String, HashMap<String, Input>>>>,
 }
 
 impl fmt::Display for PipelineRun {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PipelineRun {{ pipeline_job: {:?} }}", self.pipeline_job)
+        write!(
+            f,
+            "PipelineRun {{ pipeline_job: {} }}",
+            self.pipeline_job.hash
+        )
     }
 }
 
 impl PipelineRun {
+    /// New function to initialize the pipeline run
     pub fn new(pipeline_job: PipelineJob) -> Self {
         Self {
             pipeline_job,
             node_outputs: Arc::new(RwLock::new(HashMap::new())),
-            join_set: JoinSet::new(),
         }
     }
 
@@ -57,37 +64,47 @@ impl PipelineRun {
         Ok(node_key)
     }
 
-    /// Find all children that depends on the node_key and find out which one can be started
-    /// by checking if all parents have an output stored in the node_outputs
-    /// returns a HashMap of the node_keys and their parents
+    /// Find all children that depends on the `node_key` and find out which one can be started
+    /// by checking if all parents have an output stored in the `node_outputs`
+    /// returns a `HashMap` of the `node_keys` and their parents
+    #[expect(
+        clippy::unwrap_used,
+        reason = "The iterator already checks for the key before calling unwrap. Should never panic"
+    )]
     async fn get_ready_to_start_children(
         &self,
         node_key: &str,
-    ) -> Result<HashMap<String, HashMap<String, Input>>> {
+    ) -> HashMap<String, HashMap<String, Input>> {
         let node_outputs = self.node_outputs.read().await;
 
-        Ok(get(&self.pipeline_job.pipeline.edges, node_key)?
-            .iter()
-            .filter_map(|child_key| {
-                self.pipeline_job
-                    .pipeline
-                    .get_parents_key_for_node(child_key)
-                    .all(|parent_key| node_outputs.contains_key(parent_key))
-                    .then_some({
-                        let parents = self
-                            .pipeline_job
+        self.pipeline_job
+            .pipeline
+            .edges
+            .get(node_key)
+            .as_ref()
+            .map_or_else(HashMap::new, |child_nodes_key| {
+                child_nodes_key
+                    .iter()
+                    .filter_map(|child_key| {
+                        self.pipeline_job
                             .pipeline
-                            .get_parents_key_for_node(child_key);
-                        // Get the outputs for parents then combine them into a single hashmap
-                        let input_map_for_node = parents
-                            .map(|parent_key| node_outputs.get(parent_key).unwrap())
-                            .flatten()
-                            .map(|(k, v)| (k.clone(), v.clone()))
-                            .collect::<HashMap<String, Input>>();
-                        (child_key.clone(), input_map_for_node)
+                            .get_parents_key_for_node(child_key)
+                            .all(|parent_key| node_outputs.contains_key(parent_key))
+                            .then_some({
+                                let parents = self
+                                    .pipeline_job
+                                    .pipeline
+                                    .get_parents_key_for_node(child_key);
+                                // Get the outputs for parents then combine them into a single hashmap
+                                let input_map_for_node = parents
+                                    .flat_map(|parent_key| node_outputs.get(parent_key).unwrap())
+                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .collect::<HashMap<String, Input>>();
+                                (child_key.clone(), input_map_for_node)
+                            })
                     })
+                    .collect::<HashMap<String, HashMap<String, Input>>>()
             })
-            .collect::<HashMap<String, HashMap<String, Input>>>())
     }
 }
 
@@ -105,4 +122,5 @@ impl Hash for PipelineRun {
     }
 }
 
-mod docker;
+/// Docker pipeline runner
+pub mod docker;

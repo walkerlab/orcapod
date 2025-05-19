@@ -12,7 +12,9 @@
 mod fixture;
 
 use fixture::{pipeline, pipeline_job};
+use orcapod::core::pipeline_runner::docker::{self, DockerPipelineRunner};
 use orcapod::uniffi::error::Result;
+use tokio::runtime::Runtime;
 
 #[test]
 fn root_nodes() -> Result<()> {
@@ -45,7 +47,14 @@ fn pipeline_job_creation() -> Result<()> {
     Ok(())
 }
 
+/// Pipeline Runner Tests
+/// This module contains tests for the pipeline runner functionality.
+#[test]
 fn pipeline_run() -> Result<()> {
     let pipeline_job = pipeline_job()?;
+
+    let mut docker_pipeline_runner = DockerPipelineRunner::new();
+    Runtime::new()?.block_on(docker_pipeline_runner.start(pipeline_job))?;
+
     Ok(())
 }
