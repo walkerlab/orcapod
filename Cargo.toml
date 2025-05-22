@@ -47,6 +47,7 @@ glob = "0.3.1"
 heck = "0.5.0"
 # random name generator
 names = "0.14.0"
+petgraph = { version = "0.8.1", features = ["serde-1"] }
 # complex pattern matching in strings
 regex = "1.11.0"
 # serialization/deserialization to/from filestore

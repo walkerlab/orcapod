@@ -76,35 +76,7 @@ impl PipelineRun {
         node_key: &str,
     ) -> HashMap<String, HashMap<String, Input>> {
         let node_outputs = self.node_outputs.read().await;
-
-        self.pipeline_job
-            .pipeline
-            .edges
-            .get(node_key)
-            .as_ref()
-            .map_or_else(HashMap::new, |child_nodes_key| {
-                child_nodes_key
-                    .iter()
-                    .filter_map(|child_key| {
-                        self.pipeline_job
-                            .pipeline
-                            .get_parents_key_for_node(child_key)
-                            .all(|parent_key| node_outputs.contains_key(parent_key))
-                            .then_some({
-                                let parents = self
-                                    .pipeline_job
-                                    .pipeline
-                                    .get_parents_key_for_node(child_key);
-                                // Get the outputs for parents then combine them into a single hashmap
-                                let input_map_for_node = parents
-                                    .flat_map(|parent_key| node_outputs.get(parent_key).unwrap())
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect::<HashMap<String, Input>>();
-                                (child_key.clone(), input_map_for_node)
-                            })
-                    })
-                    .collect::<HashMap<String, HashMap<String, Input>>>()
-            })
+        todo!();
     }
 }
 

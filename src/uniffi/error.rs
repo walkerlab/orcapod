@@ -77,6 +77,11 @@ pub(crate) enum Kind {
     },
     #[snafu(display("No known container names."))]
     NoContainerNames { backtrace: Option<Backtrace> },
+    #[snafu(display("Invalid parent node key: {parent_node_key}."))]
+    NodeNotFound {
+        parent_node_key: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Missing file or directory name ({path:?})."))]
     NoFileName {
         path: PathBuf,

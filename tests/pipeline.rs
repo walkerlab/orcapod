@@ -36,6 +36,8 @@ fn get_leaf_nodes() -> Result<()> {
 fn get_parents_key_for_node() -> Result<()> {
     let pipeline = pipeline()?;
     let node_key = pipeline.get_root_nodes().next().unwrap();
+    println!("{:?}", pipeline.graph);
+    println!("node_key: {}", node_key);
 
     assert_eq!(pipeline.get_parents_key_for_node(node_key).count(), 0);
     Ok(())

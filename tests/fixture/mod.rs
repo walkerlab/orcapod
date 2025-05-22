@@ -247,10 +247,10 @@ pub fn pipeline() -> Result<Pipeline> {
     // Add the first node then chain the rest
     pipeline_builder
         .add_node(pod_a)
-        .add_child(file_mapper.clone())
-        .add_child(pod_b)
-        .add_child(file_mapper)
-        .add_child(pod_c);
+        .add_child(file_mapper.clone())?
+        .add_child(pod_b)?
+        .add_child(file_mapper)?
+        .add_child(pod_c)?;
 
     // Convert it into the actual pipeline object
     // NOTE: Since we didn't set the output_nodes, all the leaf nodes will be the output nodes

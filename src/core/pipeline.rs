@@ -8,7 +8,11 @@ use crate::uniffi::{
     error::{Kind, OrcaError, Result},
     model::{Annotation, Input, Mapper, Pod},
 };
-use std::collections::hash_map::Entry;
+use petgraph::{
+    Directed,
+    Direction::{Incoming, Outgoing},
+    Graph,
+};
 
 use crate::core::model::serialize_hashmap;
 
@@ -63,32 +67,32 @@ impl From<Mapper> for Node {
 }
 
 /// Pipeline struct
-#[derive(Serialize, Debug, PartialEq, Default, Clone)]
+#[derive(Serialize, Debug, Default, Clone)]
 pub struct Pipeline {
     hash: String,
     #[serde(skip)]
     annotation: Option<Annotation>,
     /// String are hashes of the nodes without the _{`num_matches`}
     pub nodes: HashMap<String, Node>,
-    /// Strings are hashes of the nodes
-    pub edges: HashMap<String, Vec<String>>,
+    /// Strings are unique hashes of the nodes with the _{`num_matches`}
+    pub graph: Graph<String, ()>,
     output_nodes: HashSet<String>,
 }
 
 impl Pipeline {
     /// Creates a new `Pipeline` instance.
     pub const fn new(
-        nodes: HashMap<String, Node>,
-        edges: HashMap<String, Vec<String>>,
-        output_nodes: HashSet<String>,
         annotation: Option<Annotation>,
+        nodes: HashMap<String, Node>,
+        graph: Graph<String, (), Directed>,
+        output_nodes: HashSet<String>,
     ) -> Self {
         Self {
             hash: String::new(), // TODO: Need to implement to yaml then hash that
-            nodes,
-            edges,
-            output_nodes,
             annotation,
+            nodes,
+            graph,
+            output_nodes,
         }
     }
 
@@ -106,47 +110,61 @@ impl Pipeline {
 
     /// Function to get the root nodes of the pipeline
     pub fn get_root_nodes(&self) -> impl Iterator<Item = &String> {
-        // Root nodes are those that are not values in the edges map (i.e., not children of any node)
-        self.edges
-            .keys()
-            .filter(move |k| !self.edges.values().any(|v| v.contains(*k)))
+        self.graph
+            .node_indices()
+            .filter(|&node_index| {
+                (self.graph.neighbors_directed(node_index, Incoming).count() == 0)
+            })
+            .map(|node_index| &self.graph[node_index])
     }
 
     /// Function to get the leaf nodes of the pipeline
     /// Mainly used to get the output nodes when user does not specify them
     pub fn get_leaf_nodes(&self) -> impl Iterator<Item = &String> {
         // Leaf nodes are those that are not keys in the edges map (i.e., not parents of any node)
-        self.nodes
-            .keys()
-            .filter(move |k| !self.edges.keys().any(|v| v.contains(*k)))
+        self.graph
+            .node_indices()
+            .filter(|&node_index| {
+                self.graph
+                    .neighbors_directed(node_index, Outgoing)
+                    .next()
+                    .is_none()
+            })
+            .map(|node_index| &self.graph[node_index])
     }
 
     /// Function to get the parents of a node
     pub fn get_parents_key_for_node(&self, node_key: &str) -> impl Iterator<Item = &String> {
-        // Get the parents for the node_key
-        // Parents are those that have the node_key as a child in the edges map
-        let node_key = node_key.to_owned();
-        self.edges
-            .iter()
-            .filter_map(move |(key, children)| children.contains(&node_key).then_some(key))
+        // Find the NodeIndex for the given node_key
+        let node_index = self
+            .graph
+            .node_indices()
+            .find(|&idx| self.graph[idx] == node_key);
+        node_index.into_iter().flat_map(move |idx| {
+            self.graph
+                .neighbors_directed(idx, Incoming)
+                .map(move |parent_idx| &self.graph[parent_idx])
+        })
+    }
+}
+
+impl PartialEq for Pipeline {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+            && self.nodes == other.nodes
+            && self.output_nodes == other.output_nodes
     }
 }
 
 impl From<PipelineBuilder> for Pipeline {
     fn from(val: PipelineBuilder) -> Self {
-        let output_nodes: HashSet<String> = if val.pipeline.output_nodes.is_empty() {
+        let mut pipeline = val.pipeline;
+        if pipeline.output_nodes.is_empty() {
             // If there are no output nodes, then we need to set the output nodes to the leaf nodes
-            val.pipeline.get_leaf_nodes().cloned().collect()
-        } else {
-            val.pipeline.output_nodes
-        };
+            pipeline.output_nodes = pipeline.get_leaf_nodes().cloned().collect();
+        }
 
-        Self::new(
-            val.pipeline.nodes,
-            val.pipeline.edges,
-            output_nodes,
-            val.pipeline.annotation,
-        )
+        pipeline
     }
 }
 
@@ -231,7 +249,7 @@ impl Default for PipelineBuilder {
                 hash: String::new(),
                 annotation: None,
                 nodes: HashMap::new(),
-                edges: HashMap::new(),
+                graph: Graph::new(),
                 output_nodes: HashSet::new(),
             },
         }
@@ -254,47 +272,54 @@ impl PipelineBuilder {
         let hash = node.get_hash();
 
         // Get the node_key to add to the edge
-        let node_key = self.get_node_key(&hash);
+        let node_key = self.compute_node_key(&hash);
 
         // Insert into node hash_map if does not exist, else skip
         self.pipeline.nodes.entry(node.get_hash()).or_insert(node);
 
+        // Add it to the graph
+        self.pipeline.graph.add_node(node_key.clone());
+
         NodeHandle {
             node_key,
             pipeline_builder: self,
         }
     }
 
-    fn add_edge_from_node(&mut self, from: String, node: impl Into<Node>) -> NodeHandle {
+    fn add_edge_from_node(&mut self, from: &str, node: impl Into<Node>) -> Result<NodeHandle> {
         // Check if node exists in the pipeline.nodes
         let node = node.into();
         let hash = node.get_hash();
 
-        // Get the node_key to add to the edge
-        let node_key = self.get_node_key(&hash);
+        // Get the node_key to add to the graph
+        let node_key = self.compute_node_key(&hash);
+        let new_node_idx = self.pipeline.graph.add_node(node_key.clone());
 
-        // Insert node into the pipeline.nodes if it does not exist
-        self.pipeline.nodes.entry(hash).or_insert(node);
+        // Insert node into the pipeline.nodes lut if it does not exist
+        self.pipeline.nodes.entry(hash.clone()).or_insert(node);
 
-        // Check if the from node exists in the pipeline.edges
-        // If it does not exist, then we need to create a new vector for it
-        // else we need to push the node_key to the vector
-        match self.pipeline.edges.entry(from) {
-            Entry::Occupied(mut e) => {
-                e.get_mut().push(node_key.clone());
-            }
-            Entry::Vacant(e) => {
-                e.insert(vec![node_key.clone()]);
-            }
-        }
+        self.pipeline.graph.add_edge(
+            self.pipeline
+                .graph
+                .node_indices()
+                .find(|&idx| self.pipeline.graph[idx] == from)
+                .ok_or(OrcaError {
+                    kind: Kind::NodeNotFound {
+                        parent_node_key: from.to_owned(),
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                })?,
+            new_node_idx,
+            (),
+        );
 
-        NodeHandle {
+        Ok(NodeHandle {
             node_key,
             pipeline_builder: self,
-        }
+        })
     }
 
-    fn get_node_key(&self, node_hash: &str) -> String {
+    fn compute_node_key(&self, node_hash: &str) -> String {
         // Check if node is already in the pipeline, if so then we need to add a numerator to the hash
         let num_matches = self
             .pipeline
@@ -320,8 +345,10 @@ pub struct NodeHandle<'a> {
 
 impl NodeHandle<'_> {
     /// Add an node as a child to the current `node_key`
-    pub fn add_child(&mut self, node: impl Into<Node>) -> NodeHandle<'_> {
+    /// # Errors
+    /// Shouldn't error as long the self is in the graph
+    pub fn add_child(&mut self, node: impl Into<Node>) -> Result<NodeHandle<'_>> {
         self.pipeline_builder
-            .add_edge_from_node(self.node_key.clone(), node)
+            .add_edge_from_node(&self.node_key, node)
     }
 }
