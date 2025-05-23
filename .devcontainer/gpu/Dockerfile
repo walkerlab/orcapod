@@ -23,7 +23,7 @@ RUN \
     apt-get clean
 
 ENV PATH="/root/.cargo/bin:${PATH}"
-RUN apt-get update && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y && \
+RUN apt-get update && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain 1.86.0 && \
     # rust auto formatting
     rustup component add rustfmt && \
     # rust style linter

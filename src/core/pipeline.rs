@@ -8,6 +8,7 @@ use crate::uniffi::{
     error::{Kind, OrcaError, Result},
     model::{Annotation, Input, Mapper, Pod},
 };
+use petgraph::prelude::NodeIndex;
 use petgraph::{
     Directed,
     Direction::{Incoming, Outgoing},
@@ -112,10 +113,14 @@ impl Pipeline {
     pub fn get_root_nodes(&self) -> impl Iterator<Item = &String> {
         self.graph
             .node_indices()
-            .filter(|&node_index| {
-                (self.graph.neighbors_directed(node_index, Incoming).count() == 0)
-            })
+            .filter(|&node_index| self.graph.neighbors_directed(node_index, Incoming).count() == 0)
             .map(|node_index| &self.graph[node_index])
+    }
+
+    pub fn get_root_nodes_idx(&self) -> impl Iterator<Item = NodeIndex> {
+        self.graph.node_indices().filter(|&node_index| {
+            (self.graph.neighbors_directed(node_index, Incoming).count() == 0)
+        })
     }
 
     /// Function to get the leaf nodes of the pipeline

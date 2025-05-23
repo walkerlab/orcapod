@@ -12,7 +12,7 @@
 mod fixture;
 
 use fixture::{pipeline, pipeline_job};
-use orcapod::core::pipeline_runner::docker::{self, DockerPipelineRunner};
+use orcapod::core::pipeline_runner::docker::DockerPipelineRunner;
 use orcapod::uniffi::error::Result;
 use tokio::runtime::Runtime;
 
