@@ -296,7 +296,7 @@ impl PipelineBuilder {
         let new_node_idx = self.pipeline.graph.add_node(node_key.clone());
 
         // Insert node into the pipeline.nodes lut if it does not exist
-        self.pipeline.nodes.entry(hash.clone()).or_insert(node);
+        self.pipeline.nodes.entry(hash).or_insert(node);
 
         self.pipeline.graph.add_edge(
             self.pipeline
