@@ -33,10 +33,14 @@ async-trait = "0.1.88"
 bollard = "0.17.1"
 # datetime utilities
 chrono = "0.4.39"
+# debug
+clap = "4.5.38"
 # font colors in printed strings
 colored = "2.1.0"
 # derive utilities for new types
 derive_more = { version = "2.0.1", features = ["display"] }
+# debug
+futures = "0.3.31"
 # chaining async calls and processing stream data in local docker orchestrator
 futures-util = "0.3.31"
 # auto derive getter access methods on structs
@@ -64,7 +68,10 @@ tokio = { version = "1.41.0", features = ["full"] }
 # utilities for async calls
 tokio-util = "0.7.13"
 # automated CFFI + bindings in other languages
-uniffi = { version = "0.29.1", features = ["cli"] }
+uniffi = { version = "0.29.1", features = ["cli", "tokio"] }
+# shared, distributed memory with querying
+# zenoh = { version = "1.3.4" }
+zenoh = { version = "1.3.4", features = ["shared-memory"] }
 
 [[bin]]
 name = "uniffi-bindgen"
@@ -113,6 +120,7 @@ missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing
 missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
 missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
 module_name_repetitions = { level = "allow", priority = 127 }          # allow use of module name in type names
+multiple_crate_versions = { level = "allow", priority = 127 }          # DEBUG
 multiple_inherent_impl = { level = "allow", priority = 127 }           # required in best practice to limit exposure over UniFFI
 must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
 mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok

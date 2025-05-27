@@ -1,15 +1,15 @@
 excessive-nesting-threshold = 4
 too-many-arguments-threshold = 10
 allowed-idents-below-min-chars = ["..", "k", "f", "re", "id", "Ok", "'_"]
-allowed-duplicate-crates = [
-    "bitflags",
-    "clap",
-    "clap_derive",
-    "clap_lex",
-    "hashbrown",
-    "heck",
-    "indexmap",
-    "strsim",
-    "syn",
-    "windows-sys",
-]
+# allowed-duplicate-crates = [
+#     "bitflags",
+#     "clap",
+#     "clap_derive",
+#     "clap_lex",
+#     "hashbrown",
+#     "heck",
+#     "indexmap",
+#     "strsim",
+#     "syn",
+#     "windows-sys",
+# ]

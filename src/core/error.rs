@@ -89,7 +89,8 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
+            Kind::AgentFailure { backtrace, .. }
+            | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }

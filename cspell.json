@@ -15,7 +15,8 @@
         "numpy",
         "graphviz",
         "uniffi",
-        "cffi"
+        "cffi",
+        "zenoh"
     ],
     "ignoreWords": [
         "relpath",
@@ -72,5 +73,12 @@
         "ipykernel",
         "getset",
         "strsim"
+    ],
+    "useGitignore": false,
+    "ignorePaths": [
+        "Cargo.lock",
+        "target",
+        "*.dot",
+        "tests/.tmp",
     ]
 }
