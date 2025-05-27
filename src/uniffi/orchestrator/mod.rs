@@ -212,6 +212,7 @@ impl AgentClient {
             .context(selector::AgentFailure {})?;
         Ok(())
     }
+    #[expect(clippy::use_debug, reason = "debug")]
     async fn watch_topic(&self) -> Result<()> {
         let subscriber = self
             .session
