@@ -1,6 +1,6 @@
 excessive-nesting-threshold = 4
 too-many-arguments-threshold = 10
-allowed-idents-below-min-chars = ["..", "k", "f", "re", "id", "Ok", "'_"]
+allowed-idents-below-min-chars = ["..", "k", "v", "f", "re", "id", "Ok", "'_"]
 # allowed-duplicate-crates = [
 #     "bitflags",
 #     "clap",

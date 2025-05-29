@@ -49,12 +49,14 @@ getset = { version = "0.1.5", git = "https://github.com/guzman-raphael/getset.gi
 glob = "0.3.1"
 # strings to snake_case
 heck = "0.5.0"
+# hashmaps that preserve insertion order
+indexmap = { version = "2.9.0", features = ["serde"] }
 # random name generator
 names = "0.14.0"
 # complex pattern matching in strings
 regex = "1.11.0"
 # serialization/deserialization to/from filestore
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.210", features = ["derive", "rc"] }
 # JSON in sharing memory with local docker orchestrator
 serde_json = "1.0.137"
 # YAML in filestore
