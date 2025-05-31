@@ -71,6 +71,8 @@
         "maturin",
         "ipykernel",
         "getset",
-        "strsim"
+        "strsim",
+        "getrandom",
+        "wasi"
     ]
 }
