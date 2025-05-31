@@ -36,24 +36,6 @@ impl Node {
             Self::Mapper(mapper) => mapper.hash.clone(),
         }
     }
-
-    /// # Errors
-    /// Error out if fail to join all parents futures
-    pub fn process(&self, input_map: &HashMap<String, Input>) -> Result<HashMap<String, Input>> {
-        match self {
-            Self::Pod(pod) => {
-                // Print out pod hash for now
-                println!("Processing pod: {}", pod.hash);
-                // TODO: Actual pod job creation and submission to orchestrator
-                Ok(input_map.clone())
-            }
-            Self::Mapper(mapper) => {
-                // Print out mapper hash for now
-                println!("Processing mapper: {}", mapper.hash);
-                Ok(input_map.clone())
-            }
-        }
-    }
 }
 
 impl From<Pod> for Node {
