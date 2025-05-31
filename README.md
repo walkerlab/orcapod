@@ -4,7 +4,7 @@
 
 # orcapod
 
-![orcapod crate diagram](docs/images/crate_diagram.svg "Orcapod Crate Diagram")
+![orcapod crate diagram](docs/images/orcapod_diagram.svg "Orcapod Crate Diagram")
 
 ## Tests
 
@@ -23,9 +23,9 @@ cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --cobertura --output-pat
 
 ```bash
 cargo doc --no-deps                       # gen api docs (target/doc/orcapod/index.html)
-cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::model::{Pod}" --layout dot > docs/images/crate_diagram.dot # orcapod diagram as DOT
-cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::model::{Pod}" --layout dot | dot -T png > docs/images/crate_diagram.png # orcapod diagram as PNG
-cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::model::{Pod}" --layout dot | dot -T svg > docs/images/crate_diagram.svg # orcapod diagram as SVG
+cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot > docs/images/orcapod_diagram.dot # orcapod diagram as DOT
+cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot | dot -T png > docs/images/orcapod_diagram.png # orcapod diagram as PNG
+cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot | dot -T svg > docs/images/orcapod_diagram.svg # orcapod diagram as SVG
 ```
 
 ## Project Management
