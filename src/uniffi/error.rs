@@ -4,6 +4,7 @@
 )]
 
 use bollard::errors::Error as BollardError;
+use chrono;
 use glob;
 use serde_json;
 use serde_yaml;
@@ -82,6 +83,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     BollardError {
         source: BollardError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    ChronoParseError {
+        source: chrono::ParseError,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

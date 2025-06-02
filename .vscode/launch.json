@@ -95,7 +95,7 @@
             "cwd": "${workspaceFolder}",
         },
         {
-            "name": "Python: Debug File",
+            "name": "Python: Debug smoke test",
             "type": "debugpy",
             "request": "launch",
             "console": "integratedTerminal",
@@ -104,11 +104,23 @@
             "env": {
                 "RUST_BACKTRACE": "1"
             },
-            // "program": "tests/extra/python/smoke_test.py",
-            // "args": [
-            //     "./tests/.tmp"
-            // ],
-            "program": "tests/extra/python/agent_watch_test.py",
+            "program": "tests/extra/python/smoke_test.py",
+            "args": [
+                "./tests/.tmp"
+            ]
+        },
+        {
+            "name": "Python: Debug agent test",
+            "type": "debugpy",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "preLaunchTask": "package_orcapod_python",
+            "env": {
+                "RUST_BACKTRACE": "1"
+            },
+            "program": "tests/extra/python/agent_start_test.py",
+            // "program": "tests/extra/python/agent_watch_test.py",
             // "program": "tests/extra/python/agent_pub_test.py",
         }
     ]
