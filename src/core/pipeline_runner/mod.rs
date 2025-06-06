@@ -18,12 +18,10 @@ pub trait PipelineRunner {
     fn start(&self, pipeline_job: PipelineJob) -> Result<()>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// Struct to store the active pipeline run.
-/// Currently only store the `node_outputs` as a form a memory cache.
 pub struct PipelineRun {
     pipeline_job: PipelineJob,
-    node_outputs: Arc<RwLock<HashMap<String, HashMap<String, Input>>>>,
 }
 
 impl fmt::Display for PipelineRun {
@@ -38,11 +36,8 @@ impl fmt::Display for PipelineRun {
 
 impl PipelineRun {
     /// New function to initialize the pipeline run
-    pub fn new(pipeline_job: PipelineJob) -> Self {
-        Self {
-            pipeline_job,
-            node_outputs: Arc::new(RwLock::new(HashMap::new())),
-        }
+    pub const fn new(pipeline_job: PipelineJob) -> Self {
+        Self { pipeline_job }
     }
 }
 

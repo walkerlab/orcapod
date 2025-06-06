@@ -162,18 +162,24 @@ impl Orchestrator for LocalDockerOrchestrator {
         .await?
         .map(|result| {
             let (assigned_name, run_info) = result?;
-            let mut pod: Pod = serde_json::from_str(get(&run_info.labels, "org.orcapod.pod")?)?;
-            pod.annotation =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod.annotation")?)?;
+            let mut pod: Pod =
+                serde_json::from_str(get(&run_info.labels, &"org.orcapod.pod".to_owned())?)?;
+            pod.annotation = serde_json::from_str(get(
+                &run_info.labels,
+                &"org.orcapod.pod.annotation".to_owned(),
+            )?)?;
             pod.hash
-                .clone_from(get(&run_info.labels, "org.orcapod.pod.hash")?);
+                .clone_from(get(&run_info.labels, &"org.orcapod.pod.hash".to_owned())?);
             let mut pod_job: PodJob =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job")?)?;
-            pod_job.annotation =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job.annotation")?)?;
-            pod_job
-                .hash
-                .clone_from(get(&run_info.labels, "org.orcapod.pod_job.hash")?);
+                serde_json::from_str(get(&run_info.labels, &"org.orcapod.pod_job".to_owned())?)?;
+            pod_job.annotation = serde_json::from_str(get(
+                &run_info.labels,
+                &"org.orcapod.pod_job.annotation".to_owned(),
+            )?)?;
+            pod_job.hash.clone_from(get(
+                &run_info.labels,
+                &"org.orcapod.pod_job.hash".to_owned(),
+            )?);
             pod_job.pod = pod.into();
             Ok(PodRun::new::<Self>(&pod_job, assigned_name))
         })

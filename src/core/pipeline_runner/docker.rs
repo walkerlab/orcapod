@@ -10,12 +10,16 @@ use tokio_stream::StreamExt as _;
 
 use super::PipelineRun;
 use crate::{
-    core::pipeline::{Node, PipelineJob},
+    core::{
+        pipeline::{Node, PipelineJob},
+        util::get,
+    },
     uniffi::{
-        error::{OrcaError, Result, selector},
+        error::{Result, selector},
         model::Input,
     },
 };
+use snafu::OptionExt as _;
 use std::{collections::HashMap, sync::Arc};
 
 #[derive(Clone)]
@@ -25,15 +29,15 @@ enum Message {
     Stop,                                             // Message to halt all operations
 }
 
-pub struct PipelineRunInfoInternal {
-    job_manger_send_handle: Sender<Message>,
-    rx: Receiver<HashMap<String, Input>>,
+pub struct PipelineRunInfo {
+    job_manager_send_handle: Sender<Message>,
+    node_tx: HashMap<String, Sender<Message>>,
 }
 
 /// Docker based pipeline runner meant to execute on a single machine
 #[derive(Default)]
 pub struct DockerPipelineRunner {
-    pipeline_runs: HashMap<Arc<PipelineRun>, HashMap<String, Sender<Message>>>, // For each pipeline run, we have a join set to track the tasks and wait on them
+    pipeline_runs: HashMap<Arc<PipelineRun>, PipelineRunInfo>, // For each pipeline run, we have a join set to track the tasks and wait on them
 }
 
 impl DockerPipelineRunner {
@@ -42,45 +46,45 @@ impl DockerPipelineRunner {
         Self::default()
     }
 
+    /// Start the `pipeline_job` returning `pipeline_run`un
+    ///
     /// # Errors
     /// Will error out if the pipeline job fails to start
-    pub fn start(&mut self, pipeline_job: PipelineJob) -> Result<()> {
+    pub fn start(&mut self, pipeline_job: PipelineJob) -> Result<PipelineRun> {
         // Create a new pipeline run
-        let pipeline_run = Arc::new(PipelineRun::new(pipeline_job));
+        let pipeline_run = PipelineRun { pipeline_job };
+        let pipeline_run_arc = Arc::new(pipeline_run.clone());
 
-        self.pipeline_runs
-            .insert(pipeline_run.clone(), HashMap::new());
+        // Insert into the list of pipeline runs
+        self.pipeline_runs.insert(
+            pipeline_run_arc.clone(),
+            PipelineRunInfo {
+                job_manager_send_handle: broadcast::channel::<Message>(1).0,
+                node_tx: HashMap::new(),
+            },
+        );
 
-        // Run the pipeline runner
-        self.start_pipeline_run_task(&pipeline_run)?;
+        // Create the source channel for the pipeline
+        // This channel will be used to send inputs to the pipeline
+        let (source_tx, _) = broadcast::channel::<Message>(1);
 
-        Ok(())
+        // Get reference to the pipeline
+        let pipeline = &pipeline_run_arc.pipeline_job.pipeline;
+
+        // Get all the leaf nodes and call the create_task_for_node function for each leaf node
+        // This will recursively create all the tasks and channels for the pipeline
+        for node_key in pipeline.get_leaf_nodes() {
+            self.create_task_for_node(node_key, &pipeline_run_arc, &source_tx)?;
+        }
+
+        Ok(pipeline_run)
     }
 
-    /// # Errors
-    /// Will error out if any of the tasks fails
-    pub fn start_pipeline_run_task(&mut self, pipeline_run: &Arc<PipelineRun>) -> Result<()> {
-        // TODO: Batch implementation
-
-        // Create source channel queue
-        let (tx, mut rx) = broadcast::channel::<HashMap<String, Input>>(1);
-
-        let graph = &pipeline_run.pipeline_job.pipeline.graph;
-
-        // Go through the graph from the leaf node and create all the tasks and channels
-        Ok(())
-    }
-
-    #[expect(
-        clippy::option_if_let_else,
-        reason = "This is a workaround since clippy suggestion throws compiler error"
-    )]
     fn create_task_for_node(
         &mut self,
         node_key: &str,
         pipeline_run: &Arc<PipelineRun>,
         source_tx: &Sender<Message>,
-        _job_manager_tx: &Sender<Message>,
     ) -> Result<Sender<Message>> {
         // Get parents for the node
         let mut parent_channel_rxs = pipeline_run
@@ -89,17 +93,16 @@ impl DockerPipelineRunner {
             .get_parents_key_for_node(node_key)
             .map(|parent_node_key| {
                 // Check if it exists in the pipeline_runs hashmap
-                match self.pipeline_runs[pipeline_run].get(parent_node_key) {
+
+                match get(&self.pipeline_runs, pipeline_run)?
+                    .node_tx
+                    .get(parent_node_key)
+                {
                     Some(rx) => Ok(rx.subscribe()),
                     None => {
-                        // Missing parent node, thus recursively create the task for the parent node
+                        // Missing parent node, thus call create_task for the parent node parent node first
                         Ok(self
-                            .create_task_for_node(
-                                parent_node_key,
-                                pipeline_run,
-                                source_tx,
-                                _job_manager_tx,
-                            )?
+                            .create_task_for_node(parent_node_key, pipeline_run, source_tx)?
                             .subscribe())
                     }
                 }
@@ -121,18 +124,31 @@ impl DockerPipelineRunner {
             node_key.to_owned(),
             pipeline_run.clone(),
             parent_channel_rxs,
+            get(&self.pipeline_runs, pipeline_run)?
+                .job_manager_send_handle
+                .subscribe(),
             tx.clone(),
         ));
+
+        // Insert it into the the tx into the pipeline_runs hashmap
+        self.pipeline_runs
+            .get_mut(pipeline_run)
+            .context(selector::KeyMissing {
+                key: pipeline_run.to_string(),
+            })?
+            .node_tx
+            .insert(node_key.to_owned(), tx.clone());
 
         // Return tx
         Ok(tx)
     }
 
-    /// For tx: Sender<Message>, we only want to send succesfully completed results to the next node
+    /// For tx: Sender<Message>, we only want to send successfully completed results to the next node
     async fn start_node_manager(
         node_key: String,
         pipeline_run: Arc<PipelineRun>,
         parent_channel_rxs: Vec<Receiver<Message>>,
+        mut job_manager_channel: Receiver<Message>,
         tx: Sender<Message>,
     ) -> Result<()> {
         // Get the node from the pipeline
@@ -141,7 +157,7 @@ impl DockerPipelineRunner {
         // Set up a join_set to track the tasks
         let mut task_join_set = JoinSet::new();
 
-        // Set up the MSPC to allow dynamic task creation and communication
+        // Set up the MPSC to allow dynamic task creation and communication
         // Note manager_tx is also passed to pod tasks to report failures
         let (manager_tx, manager_rx) = mpsc::channel::<Message>(1);
 
@@ -152,6 +168,12 @@ impl DockerPipelineRunner {
         for mut rx in parent_channel_rxs {
             futures.push(tokio::spawn(async move { rx.recv().await }));
         }
+
+        // Add the job manager channel to the futures unordered set
+        futures.push(tokio::spawn(
+            async move { job_manager_channel.recv().await },
+        ));
+
         // Listen to the MPSC channel
         while let Some(result) = futures.next().await {
             let rx_result = match result {
@@ -166,12 +188,9 @@ impl DockerPipelineRunner {
                 }
             };
 
-            let msg = match rx_result {
-                Ok(msg) => msg,
-                Err(_) => {
-                    eprintln!("Failed to receive message from parent channel");
-                    continue;
-                }
+            let Ok(msg) = rx_result else {
+                eprintln!("Failed to receive message from parent channel");
+                continue;
             };
 
             match msg {
@@ -206,9 +225,7 @@ impl DockerPipelineRunner {
                     task_join_set.shutdown().await;
                     break;
                 }
-                _ => {
-                    // Ignore other messages for now
-                }
+                Message::PodTaskCompleted(_, hash_map) => todo!(),
             }
         }
 

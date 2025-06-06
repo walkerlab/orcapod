@@ -1,6 +1,6 @@
 use crate::uniffi::error::{Result, selector};
 use snafu::OptionExt as _;
-use std::{any::type_name, collections::HashMap, fmt};
+use std::{any::type_name, collections::HashMap, fmt::Debug, hash::Hash};
 
 #[expect(
     clippy::unwrap_used,
@@ -18,7 +18,7 @@ pub fn get_type_name<T>() -> String {
     clippy::unwrap_used,
     reason = "Cannot return `None` since debug format always returns `String`."
 )]
-pub fn parse_debug_name<T: fmt::Debug>(instance: &T) -> String {
+pub fn parse_debug_name<T: Debug>(instance: &T) -> String {
     format!("{instance:?}")
         .split(' ')
         .map(str::to_owned)
@@ -26,8 +26,12 @@ pub fn parse_debug_name<T: fmt::Debug>(instance: &T) -> String {
         .unwrap()
 }
 
-pub fn get<'map, T>(map: &'map HashMap<String, T>, key: &str) -> Result<&'map T> {
-    Ok(map.get(key).context(selector::KeyMissing {
-        key: key.to_owned(),
-    })?)
+pub fn get<'map, K, T>(map: &'map HashMap<K, T>, key: &K) -> Result<&'map T>
+where
+    K: Hash + Eq + ToOwned<Owned = K> + Debug,
+{
+    let temp = map.get(key).context(selector::KeyMissing {
+        key: format!("{key:?}"),
+    })?;
+    Ok(temp)
 }

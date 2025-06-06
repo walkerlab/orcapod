@@ -56,7 +56,6 @@ fn pipeline_run() -> Result<()> {
     let pipeline_job = pipeline_job()?;
 
     let mut docker_pipeline_runner = DockerPipelineRunner::new();
-    Runtime::new()?.block_on(docker_pipeline_runner.start(pipeline_job))?;
 
     Ok(())
 }

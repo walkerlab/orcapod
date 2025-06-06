@@ -71,6 +71,9 @@
         "maturin",
         "ipykernel",
         "getset",
-        "strsim"
+        "strsim",
+        "petgraph",
+        "rfind",
+        "MPSC"
     ]
 }

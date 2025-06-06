@@ -88,7 +88,7 @@ impl Pipeline {
         let key = node_key
             .rfind(char_to_cut_at)
             .map_or(node_key, |index| &node_key[..index]);
-        get(&self.nodes, key)
+        get(&self.nodes, &key.to_owned())
     }
 
     /// Function to get the root nodes of the pipeline
@@ -99,10 +99,11 @@ impl Pipeline {
             .map(|node_index| &self.graph[node_index])
     }
 
+    /// Looks through the graph and find nodes that don't have any parents
     pub fn get_root_nodes_idx(&self) -> impl Iterator<Item = NodeIndex> {
-        self.graph.node_indices().filter(|&node_index| {
-            (self.graph.neighbors_directed(node_index, Incoming).count() == 0)
-        })
+        self.graph
+            .node_indices()
+            .filter(|&node_index| self.graph.neighbors_directed(node_index, Incoming).count() == 0)
     }
 
     /// Function to get the leaf nodes of the pipeline
