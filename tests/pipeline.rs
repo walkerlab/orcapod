@@ -14,7 +14,6 @@ mod fixture;
 use fixture::{pipeline, pipeline_job};
 use orcapod::core::pipeline_runner::docker::DockerPipelineRunner;
 use orcapod::uniffi::error::Result;
-use tokio::runtime::Runtime;
 
 #[test]
 fn root_nodes() -> Result<()> {
@@ -36,8 +35,6 @@ fn get_leaf_nodes() -> Result<()> {
 fn get_parents_key_for_node() -> Result<()> {
     let pipeline = pipeline()?;
     let node_key = pipeline.get_root_nodes().next().unwrap();
-    println!("{:?}", pipeline.graph);
-    println!("node_key: {}", node_key);
 
     assert_eq!(pipeline.get_parents_key_for_node(node_key).count(), 0);
     Ok(())
@@ -56,6 +53,8 @@ fn pipeline_run() -> Result<()> {
     let pipeline_job = pipeline_job()?;
 
     let mut docker_pipeline_runner = DockerPipelineRunner::new();
+
+    let pipeline_run = docker_pipeline_runner.start(pipeline_job)?;
 
     Ok(())
 }

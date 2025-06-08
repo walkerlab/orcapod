@@ -1,9 +1,6 @@
 use futures_util::stream::FuturesUnordered;
 use tokio::{
-    sync::{
-        broadcast::{self, Receiver, Sender},
-        mpsc,
-    },
+    sync::broadcast::{self, Receiver, Sender},
     task::JoinSet,
 };
 use tokio_stream::StreamExt as _;
@@ -22,14 +19,13 @@ use crate::{
 use snafu::OptionExt as _;
 use std::{collections::HashMap, sync::Arc};
 
-#[derive(Clone)]
-enum Message {
-    ParentJobCompleted(String, HashMap<String, Input>), // String is the parent_node_name, while HashMap is output of the parent node
-    PodTaskCompleted(String, HashMap<String, Input>), // String is the pod_hash for now, HashMap is the output of the pod
-    Stop,                                             // Message to halt all operations
+#[derive(Clone, Debug)]
+pub(crate) enum Message {
+    NodeOutput(String, HashMap<String, Input>), // String is the parent_node_name, while HashMap is output of the parent node
+    Stop,                                       // Message to halt all operations
 }
 
-pub struct PipelineRunInfo {
+struct PipelineRunInfo {
     job_manager_send_handle: Sender<Message>,
     node_tx: HashMap<String, Sender<Message>>,
 }
@@ -117,7 +113,7 @@ impl DockerPipelineRunner {
         }
 
         // Create the channel for this node
-        let (tx, rx) = broadcast::channel::<Message>(1);
+        let (tx, _) = broadcast::channel::<Message>(1);
 
         // Spawn the node_manager for this node
         tokio::spawn(Self::start_node_manager(
@@ -144,6 +140,10 @@ impl DockerPipelineRunner {
     }
 
     /// For tx: Sender<Message>, we only want to send successfully completed results to the next node
+    #[expect(
+        clippy::excessive_nesting,
+        reason = "This is a complex function that handles multiple tasks and channels"
+    )]
     async fn start_node_manager(
         node_key: String,
         pipeline_run: Arc<PipelineRun>,
@@ -156,10 +156,6 @@ impl DockerPipelineRunner {
 
         // Set up a join_set to track the tasks
         let mut task_join_set = JoinSet::new();
-
-        // Set up the MPSC to allow dynamic task creation and communication
-        // Note manager_tx is also passed to pod tasks to report failures
-        let (manager_tx, manager_rx) = mpsc::channel::<Message>(1);
 
         // Create a futures unordered set to dynamically listen to N number of receivers
         let mut futures = FuturesUnordered::new();
@@ -194,7 +190,7 @@ impl DockerPipelineRunner {
             };
 
             match msg {
-                Message::ParentJobCompleted(key, input_map) => {
+                Message::NodeOutput(_, input_map) => {
                     // Inputs from parents are ready, thus we need to process them if they are already computed and cached
                     // NOTE: Cache is TODO
                     match node {
@@ -206,18 +202,29 @@ impl DockerPipelineRunner {
                             // NOTE: For now just print the pod name
                             let tx_for_task = tx.clone();
                             let pod_for_task = pod.clone();
+                            let node_key_clone = node_key.clone();
                             task_join_set.spawn(async move {
                                 // Simulate pod execution
                                 println!("Executing pod: {}", pod_for_task.hash);
 
                                 // Simulate successful completion
-                                tx_for_task.send(Message::PodTaskCompleted(
-                                    pod_for_task.hash.clone(),
-                                    input_map,
-                                ))
+                                tx_for_task.send(Message::NodeOutput(node_key_clone, input_map))
                             });
                         }
-                        Node::Mapper(mapper) => {}
+                        Node::Mapper(mapper) => {
+                            // For mapper, we just apply it directly
+                            let output_map = mapper
+                                .mapping
+                                .iter()
+                                .map(|(input_key, output_key)| {
+                                    let input = get(&input_map, input_key)?.clone();
+                                    Ok((output_key.to_owned(), input))
+                                })
+                                .collect::<Result<HashMap<_, _>>>()?;
+
+                            // Send the output via the channel
+                            tx.send(Message::NodeOutput(node_key.clone(), output_map))?;
+                        }
                     }
                 }
                 Message::Stop => {
@@ -225,7 +232,6 @@ impl DockerPipelineRunner {
                     task_join_set.shutdown().await;
                     break;
                 }
-                Message::PodTaskCompleted(_, hash_map) => todo!(),
             }
         }
 

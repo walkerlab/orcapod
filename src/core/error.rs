@@ -1,4 +1,7 @@
-use crate::uniffi::error::{Kind, OrcaError};
+use crate::{
+    core::pipeline_runner::docker::Message,
+    uniffi::error::{Kind, OrcaError},
+};
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -9,7 +12,7 @@ use std::{
     io,
     path::{self},
 };
-use tokio::task::JoinError;
+use tokio::{sync::broadcast::error::SendError, task::JoinError};
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
@@ -82,6 +85,17 @@ impl From<JoinError> for OrcaError {
     }
 }
 
+impl From<SendError<Message>> for OrcaError {
+    fn from(error: SendError<Message>) -> Self {
+        Self {
+            kind: Kind::SendError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+
 impl From<Kind> for OrcaError {
     fn from(error: Kind) -> Self {
         Self { kind: error }
@@ -119,6 +133,7 @@ impl fmt::Debug for OrcaError {
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
+            | Kind::SendError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
             | Kind::SerdeYamlError { backtrace, .. }
             | Kind::TokioJoinError { backtrace, .. } => {

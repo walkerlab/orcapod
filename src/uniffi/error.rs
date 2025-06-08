@@ -15,8 +15,10 @@ use std::{
     path::{self, PathBuf},
     result,
 };
-use tokio::task::JoinError;
+use tokio::{sync::broadcast::error::SendError, task::JoinError};
 use uniffi;
+
+use crate::core::pipeline_runner::docker::Message;
 
 use super::model::Input;
 /// Shorthand for a Result that returns an `OrcaError`.
@@ -118,6 +120,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     PathPrefixError {
         source: path::StripPrefixError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    SendError {
+        source: SendError<Message>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
