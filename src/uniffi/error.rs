@@ -16,14 +16,16 @@ use std::{
     path::{self, PathBuf},
     result,
 };
+use tokio::task;
 use uniffi;
+use zenoh::query;
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
 #[derive(Snafu, Debug, uniffi::Error)]
-#[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
+#[snafu(module(selector), visibility(pub), context(suffix(false)))]
 #[uniffi(flat_error)]
-pub(crate) enum Kind {
+pub enum Kind {
     #[snafu(display("Agent encountered an error. Reason: {source}."))]
     AgentFailure {
         source: Box<dyn Error + Send + Sync>,
@@ -113,6 +115,21 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     SerdeYamlError {
         source: serde_yaml::Error,
+        backtrace: Option<Backtrace>,
+    },
+    // #[snafu(transparent)]
+    // SyncPoisonError {
+    //     source: Box<dyn Error + Send + Sync>,
+    //     backtrace: Option<Backtrace>,
+    // },
+    #[snafu(transparent)]
+    TokioTaskJoinError {
+        source: task::JoinError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    ZenohQueryError {
+        source: query::ReplyError,
         backtrace: Option<Backtrace>,
     },
 }

@@ -106,7 +106,7 @@ impl Pod {
 #[derive(
     uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Clone, Default, Display, CloneGetters,
 )]
-#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[getset(get_clone = "pub", impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct PodJob {

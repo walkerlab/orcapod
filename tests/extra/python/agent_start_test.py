@@ -11,9 +11,10 @@ from asyncio import run
 orch = LocalDockerOrchestrator()
 # orch.__class__ = Orchestrator
 
-# agent_client = AgentClient("test", "alpha")
+# agent_client = AgentClient(group="test", host="alpha")
 
-agent = Agent("test", "alpha", orch)
+agent = Agent(group="test", host="alpha", orchestrator=orch, is_queryable=True)
 agent_client = agent.client()
 
-run(agent.start(namespace_lookup={}, queryable=True, store=None))
+run(agent.start(namespace_lookup={}, store=None))
+# agent.start(namespace_lookup={}, queryable=True, store=None)

@@ -11,7 +11,7 @@
                     "--no-run",
                     "--package=orcapod",
                     "--test",
-                    "model"
+                    "agent"
                 ],
                 "filter": {
                     "kind": "test"
@@ -20,7 +20,7 @@
             "args": [
                 "--exact",
                 "--nocapture",
-                "hash_pod"
+                "docker_starter"
             ],
             "cwd": "${workspaceFolder}",
         },
@@ -117,7 +117,8 @@
             "justMyCode": false,
             "preLaunchTask": "package_orcapod_python",
             "env": {
-                "RUST_BACKTRACE": "1"
+                "RUST_BACKTRACE": "1",
+                "CARGO_LOG": "cargo::core::compiler::fingerprint=info"
             },
             "program": "tests/extra/python/agent_start_test.py",
             // "program": "tests/extra/python/agent_watch_test.py",

@@ -10,6 +10,8 @@ use std::{
     io,
     path::{self},
 };
+use tokio::task;
+use zenoh::query;
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
@@ -81,6 +83,39 @@ impl From<serde_yaml::Error> for OrcaError {
         }
     }
 }
+// impl<T> From<sync::PoisonError<T>> for OrcaError
+// where
+//     T: Sync + Send + 'static,
+// {
+//     fn from(error: sync::PoisonError<T>) -> Self {
+//         Self {
+//             kind: Kind::SyncPoisonError {
+//                 source: Box::new(error),
+//                 backtrace: Some(Backtrace::capture()),
+//             },
+//         }
+//     }
+// }
+impl From<task::JoinError> for OrcaError {
+    fn from(error: task::JoinError) -> Self {
+        Self {
+            kind: Kind::TokioTaskJoinError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<query::ReplyError> for OrcaError {
+    fn from(error: query::ReplyError) -> Self {
+        Self {
+            kind: Kind::ZenohQueryError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
 impl From<Kind> for OrcaError {
     fn from(error: Kind) -> Self {
         Self { kind: error }
@@ -117,7 +152,9 @@ impl fmt::Debug for OrcaError {
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
-            | Kind::SerdeYamlError { backtrace, .. } => {
+            | Kind::SerdeYamlError { backtrace, .. }
+            // | Kind::SyncPoisonError { backtrace, .. } 
+            | Kind::TokioTaskJoinError { backtrace, .. } | Kind::ZenohQueryError { backtrace, .. } => {
                 write!(f, "{}{}", self.kind, format_stack(backtrace.as_ref()))
             }
         }
