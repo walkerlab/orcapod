@@ -65,6 +65,8 @@ serde_yaml = "0.9.34"
 sha2 = "0.10.8"
 # library error handling API
 snafu = { version = "0.8.5", features = ["futures"] }
+# debug
+thiserror = "2.0.12"
 # a runtime for async applications
 tokio = { version = "1.41.0", features = ["full"] }
 # utilities for async calls

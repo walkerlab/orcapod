@@ -24,7 +24,7 @@ use orcapod::{
         error::{OrcaError, Result, selector},
         model::{Annotation, OrcaPath, Pod, PodJob, PodResult},
         orchestrator::{
-            Status,
+            PodRun, Status,
             agent::{Agent, AgentClient},
             docker::LocalDockerOrchestrator,
         },
@@ -40,7 +40,7 @@ use std::{
 };
 use tokio::{
     join,
-    sync::{Mutex, MutexGuard},
+    sync::{Mutex, MutexGuard, broadcast, watch},
     task::spawn,
 };
 
@@ -105,14 +105,22 @@ fn docker_listener() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
 
     let service_handle = ASYNC_RUNTIME.spawn(async move {
+        let mut counter = 0;
+        println!("Started");
         let subscriber = agent
             .client
             .session
             .declare_subscriber("request")
+            // .callback(|sample| {
+            //     counter += 1;
+            //     let _pod_results = concurrent(pod_jobs.clone(), &agent).await?;
+            //     if counter == 2 {
+            //         println!("Received 2 messages, exiting listener.");
+            //         // break;
+            //     }
+            // })
             .await
             .context(selector::AgentFailure {})?;
-        let mut counter = 0;
-        println!("Started");
         while let Ok(sample) = subscriber.recv_async().await {
             counter += 1;
             println!("Received");
@@ -346,21 +354,8 @@ async fn concurrent_with_limit(
     pod_results
 }
 
-// struct AgentMetrics {
-//     memory_usage: u64,
-//     cpu_usage: f32,
-//     overflow: Arc<Mutex<()>>,
-// }
-
-// impl AgentMetrics {
-//     async fn first(&self) -> &MutexGuard<()> {
-//         &self.overflow.lock().await
-//     }
-// }
-
-// WIP
-#[expect(clippy::shadow_unrelated, reason = "debug")]
-async fn concurrent_with_limit_via_callbacks(
+#[expect(clippy::shadow_unrelated, clippy::unwrap_used, reason = "debug")]
+async fn concurrent_with_limit_via_channel(
     pod_jobs: Vec<PodJob>,
     agent: &Agent,
     memory_limit: u64,
@@ -372,27 +367,34 @@ async fn concurrent_with_limit_via_callbacks(
         .as_secs();
 
     let resource = Arc::new(Mutex::new((0_u64, 0_f32)));
-    let lock1 = Arc::new(Mutex::new(()));
-    let lock2 = Arc::new(Mutex::new(lock1.lock().await));
-
+    // let (root_tx, _) = broadcast::channel(10);
+    let (root_tx, _) = watch::channel(());
     let pod_job_handles = pod_jobs.into_iter().map(|pod_job| {
         let resource_usage = Arc::clone(&resource);
-        let inner_lock2 = Arc::clone(&lock2);
+        let tx = root_tx.clone();
+        let mut rx = root_tx.subscribe();
         async move {
-            // figure out how to use a lock to manage once tasks have maxed out resources...
-            let mut max_flag = inner_lock2.lock().await;
+            let pod_run: PodRun;
+            loop {
+                let mut loaded_resource = resource_usage.lock().await;
+                if memory_limit >= loaded_resource.0 + pod_job.memory_limit
+                    && cpu_limit >= loaded_resource.1 + pod_job.cpu_limit
+                {
+                    (loaded_resource.0, loaded_resource.1) = (
+                        loaded_resource.0 + pod_job.memory_limit,
+                        loaded_resource.1 + pod_job.cpu_limit,
+                    );
+                    pod_run = agent
+                        .orchestrator
+                        .start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job)
+                        .await?;
+                    break;
+                }
+                drop(loaded_resource);
+                rx.changed().await.unwrap();
+                // rx.recv().await.unwrap();
+            }
 
-            let mut loaded_resource = resource_usage.lock().await;
-            (loaded_resource.0, loaded_resource.1) = (
-                loaded_resource.0 + pod_job.memory_limit,
-                loaded_resource.1 + pod_job.cpu_limit,
-            );
-            drop(loaded_resource);
-
-            let pod_run = agent
-                .orchestrator
-                .start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job)
-                .await?;
             let pod_result = agent.orchestrator.get_result(&pod_run).await;
 
             let mut unloaded_resource = resource_usage.lock().await;
@@ -401,6 +403,7 @@ async fn concurrent_with_limit_via_callbacks(
                 unloaded_resource.1 - pod_job.cpu_limit,
             );
             drop(unloaded_resource);
+            tx.send(()).unwrap();
 
             pod_result
         }
@@ -491,11 +494,19 @@ fn docker_starter() -> Result<()> {
     // let pod_results = procedural(&pod_jobs, &agent)?;
 
     // concurrent, 5 * 20 ~= 7s
-    let pod_results = ASYNC_RUNTIME.block_on(concurrent(pod_jobs, &agent))?;
+    // let pod_results = ASYNC_RUNTIME.block_on(concurrent(pod_jobs, &agent))?;
 
-    // concurrent with limits, 5 * 20 ~= 29s
+    // concurrent with limits, 5 * 20 ~= 34s
     // let pod_results =
     //     ASYNC_RUNTIME.block_on(concurrent_with_limit(pod_jobs, &agent, 8_u64 << 30, 0.5))?;
+
+    // concurrent with limits, 5 * 20 ~= 26s
+    let pod_results = ASYNC_RUNTIME.block_on(concurrent_with_limit_via_channel(
+        pod_jobs,
+        &agent,
+        8_u64 << 30,
+        0.5,
+    ))?;
 
     Ok(())
 }
