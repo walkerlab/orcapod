@@ -47,12 +47,12 @@ pub struct Pod {
     pub command: String,
     /// Exposed, internal input streams.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_stream: HashMap<String, StreamInfo>,
+    pub input_spec: HashMap<String, PathInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
     /// Exposed, internal output streams.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub output_stream: HashMap<String, StreamInfo>,
+    pub output_spec: HashMap<String, PathInfo>,
     /// Link to source associated with image binary.
     pub source_commit_url: String,
     /// Recommendation for CPU in fractional cores.
@@ -75,9 +75,9 @@ impl Pod {
         annotation: Option<Annotation>,
         image: String,
         command: String,
-        input_stream: HashMap<String, StreamInfo>,
+        input_spec: HashMap<String, PathInfo>,
         output_dir: PathBuf,
-        output_stream: HashMap<String, StreamInfo>,
+        output_spec: HashMap<String, PathInfo>,
         source_commit_url: String,
         recommended_cpus: f32,
         recommended_memory: u64,
@@ -88,9 +88,9 @@ impl Pod {
             hash: String::new(),
             image,
             command,
-            input_stream,
+            input_spec,
             output_dir,
-            output_stream,
+            output_spec,
             source_commit_url,
             recommended_cpus,
             recommended_memory,
@@ -122,7 +122,7 @@ pub struct PodJob {
     pub pod: Arc<Pod>,
     /// Attached, external input streams.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_stream: HashMap<String, Input>,
+    pub input_packet: HashMap<String, PathSet>,
     /// Attached, external output directory.
     pub output_dir: OrcaPath,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -145,23 +145,23 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_stream: HashMap<String, Input>,
+        mut input_packet: HashMap<String, PathSet>,
         output_dir: OrcaPath,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
-        input_stream = input_stream
+        input_packet = input_packet
             .into_iter()
             .map(|(stream_name, stream_input)| match stream_input {
-                Input::Unary(blob) => Ok((
+                PathSet::Unary(blob) => Ok((
                     stream_name,
-                    Input::Unary(hash_blob(namespace_lookup, blob)?),
+                    PathSet::Unary(hash_blob(namespace_lookup, blob)?),
                 )),
-                Input::Collection(blobs) => Ok((
+                PathSet::Collection(blobs) => Ok((
                     stream_name,
-                    Input::Collection(
+                    PathSet::Collection(
                         blobs
                             .into_iter()
                             .map(|blob| hash_blob(namespace_lookup, blob))
@@ -174,7 +174,7 @@ impl PodJob {
             annotation,
             hash: String::new(),
             pod,
-            input_stream,
+            input_packet,
             output_dir,
             cpu_limit,
             memory_limit,
@@ -275,7 +275,7 @@ pub enum GPUModel {
 /// Streams are named and represent an abstraction for the file(s) that represent some particular
 /// data.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct StreamInfo {
+pub struct PathInfo {
     /// Path to stream file or directory.
     pub path: PathBuf,
     /// Naming pattern for the stream.
@@ -284,7 +284,7 @@ pub struct StreamInfo {
 /// Input options.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
-pub enum Input {
+pub enum PathSet {
     /// A single BLOB.
     Unary(Blob),
     /// A series of BLOBs.

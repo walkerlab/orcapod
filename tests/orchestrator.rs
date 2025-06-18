@@ -108,9 +108,9 @@ fn remote_container_image_basic() -> Result<()> {
         let mut pod = pod_job.pod.deref().clone();
         pod.image = "alpine:3.14".to_owned();
         pod.command = "sleep 5".to_owned();
-        pod.input_stream = HashMap::new();
+        pod.input_spec = HashMap::new();
         pod_job.pod = Arc::new(pod);
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_packet = HashMap::new();
         Ok((
             orchestrator.start_blocking(namespace_lookup, &pod_job)?,
             pod_job.pod.command.clone(),
