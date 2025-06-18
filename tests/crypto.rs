@@ -12,7 +12,7 @@ use orcapod::{
     core::crypto::{hash_buffer, hash_dir, hash_file},
     uniffi::{
         error::Result,
-        model::{Annotation, Blob, BlobKind, Input, OrcaPath, PodJob},
+        model::{Annotation, Blob, BlobKind, OrcaPath, PathSet, PodJob},
     },
 };
 use std::{collections::HashMap, fs::read, path::PathBuf};
@@ -52,7 +52,7 @@ fn nested_dir_hash() -> Result<()> {
         pod_style()?.into(),
         HashMap::from([(
             "nested_dir".to_owned(),
-            Input::Unary(Blob {
+            PathSet::Unary(Blob {
                 kind: BlobKind::Directory,
                 location: OrcaPath {
                     namespace: "default".to_owned(),
@@ -74,15 +74,15 @@ fn nested_dir_hash() -> Result<()> {
         &namespace_lookup,
     )?;
 
-    match &pod_job.input_stream["nested_dir"] {
-        Input::Unary(blob) => {
+    match &pod_job.input_packet["nested_dir"] {
+        PathSet::Unary(blob) => {
             assert_eq!(
                 blob.checksum,
                 hash_dir("./tests/extra")?,
                 "Checksum didn't match."
             );
         }
-        Input::Collection(_) => panic!("Expected a Unary input."),
+        PathSet::Collection(_) => panic!("Expected a Unary input."),
     }
 
     Ok(())

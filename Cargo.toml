@@ -125,6 +125,7 @@ print_stdout = { level = "allow", priority = 127 }                     # stdout 
 pub_use = { level = "allow", priority = 127 }                          # ok to structure source into many files but clean up import
 pub_with_shorthand = { level = "allow", priority = 127 }               # allow use of pub(super)
 pub_without_shorthand = { level = "allow", priority = 127 }            # allow use of pub(in super)
+result_large_err = { level = "allow", priority = 127 }                 # allow large error types in Result
 question_mark_used = { level = "allow", priority = 127 }               # allow question operator
 self_named_module_files = { level = "allow", priority = 127 }          # mod files ok
 semicolon_inside_block = { level = "allow", priority = 127 }           # ok to keep inside block

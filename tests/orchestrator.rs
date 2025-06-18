@@ -153,10 +153,10 @@ fn command_parse() -> Result<()> {
         let mut pod = pod_job.pod.deref().clone();
         pod.image = "alpine:3.14".to_owned();
         pod.command = r#"echo 'hi 1' && echo "hi 2""#.to_owned();
-        pod.input_stream = HashMap::new();
+        pod.input_spec = HashMap::new();
         pod_job.pod = pod.into();
 
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_packet = HashMap::new();
 
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
@@ -253,9 +253,9 @@ fn fail_during_execution() -> Result<()> {
 
         pod.image = "alpine:3.14".to_owned();
         pod.command = r#"bin/sh -c 'echo "hi" && bad_command'"#.to_owned();
-        pod.input_stream = HashMap::new();
+        pod.input_spec = HashMap::new();
         pod_job.pod = pod.into();
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_packet = HashMap::new();
 
         // Start job and wait for completion
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
@@ -292,9 +292,9 @@ fn test_queued_status_container() -> Result<()> {
 
         pod.image = "alpine:3.14".to_owned();
         pod.command = "python file_does_not_exist.py".to_owned();
-        pod.input_stream = HashMap::new();
+        pod.input_spec = HashMap::new();
         pod_job.pod = pod.into();
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_packet = HashMap::new();
 
         let runtime = Runtime::new()?;
 
