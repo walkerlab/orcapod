@@ -10,7 +10,7 @@
 use names::{Generator, Name};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Blob, BlobKind, Input, OrcaPath, Pod, PodJob, PodResult, StreamInfo},
+    model::{Annotation, Blob, BlobKind, OrcaPath, PathInfo, PathSet, Pod, PodJob, PodResult},
     orchestrator::Status,
     store::{ModelID, ModelInfo, Store},
 };
@@ -41,14 +41,14 @@ pub fn pod_style() -> Result<Pod> {
         HashMap::from([
             (
                 "extra-style".to_owned(),
-                StreamInfo {
+                PathInfo {
                     path: PathBuf::from("/extra_styles/style2.t7"),
                     match_pattern: r".*\.t7".to_owned(),
                 },
             ),
             (
                 "base-input".to_owned(),
-                StreamInfo {
+                PathInfo {
                     path: PathBuf::from("/input"),
                     match_pattern: "input/.*".to_owned(),
                 },
@@ -57,7 +57,7 @@ pub fn pod_style() -> Result<Pod> {
         PathBuf::from("/output"),
         HashMap::from([(
             "result".to_owned(),
-            StreamInfo {
+            PathInfo {
                 path: PathBuf::from("./result.jpeg"),
                 match_pattern: r".*\.jpeg".to_owned(),
             },
@@ -80,7 +80,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
         HashMap::from([
             (
                 "extra-style".to_owned(),
-                Input::Unary(Blob {
+                PathSet::Unary(Blob {
                     kind: BlobKind::File,
                     location: OrcaPath {
                         namespace: "default".to_owned(),
@@ -91,7 +91,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
             ),
             (
                 "base-input".to_owned(),
-                Input::Collection(vec![
+                PathSet::Collection(vec![
                     Blob {
                         kind: BlobKind::File,
                         location: OrcaPath {
