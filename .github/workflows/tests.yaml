@@ -21,11 +21,11 @@ jobs:
           components: rustfmt,clippy
       - name: Install Rust code coverage
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: Run syntax and style tests
+      - name: Run Rust syntax and style tests
         run: cargo clippy --all-targets -- -D warnings
-      - name: Run format test
+      - name: Run Rust format test
         run: cargo fmt --check
-      - name: Run integration tests w/ coverage report
+      - name: Run Rust integration tests w/ coverage report
         env:
           RUST_BACKTRACE: full
         run: |
@@ -36,6 +36,13 @@ jobs:
             --output-path target/llvm-cov-target/cobertura.xml \
             -- \
               --nocapture
+      - name: Run Python integration tests
+        env:
+          RUST_BACKTRACE: full
+        run: |
+          . ~/.local/share/base/bin/activate
+          maturin develop --uv
+          python tests/extra/python/smoke_test.py -- tests/.tmp
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v5
         with:
