@@ -2,9 +2,10 @@ use crate::uniffi::{
     error::Result,
     model::{ModelType, Pod, PodJob, PodResult},
 };
+use serde::{Deserialize, Serialize};
 use uniffi;
 /// Options for identifying a model.
-#[derive(uniffi::Enum, Debug, Clone)]
+#[derive(uniffi::Enum, Debug, Clone, Serialize, Deserialize)]
 pub enum ModelID {
     /// Identifying by the hash value of a model as a string.
     Hash(String),

@@ -521,8 +521,8 @@ fn start() -> Result<()> {
     )?;
     let agent_client = Arc::clone(&agent.client);
 
-    let start_handle =
-        ASYNC_RUNTIME.spawn(async move { agent.start(&NAMESPACE_LOOKUP_READ_ONLY, &None).await });
+    let start_handle = ASYNC_RUNTIME
+        .spawn(async move { agent.start_old(&NAMESPACE_LOOKUP_READ_ONLY, &None).await });
 
     sleep(Duration::from_secs(5));
 

@@ -2,7 +2,7 @@
 #![expect(missing_docs, reason = "debug")]
 
 use futures_util::future::{join_all, try_join_all};
-use serde::de::value;
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     fs,
@@ -21,7 +21,7 @@ use tokio::{
     task::{self, JoinSet},
     time::sleep as async_sleep,
 };
-use zenoh;
+// use zenoh;
 
 #[derive(Error, Debug)]
 enum Kind {
@@ -166,9 +166,6 @@ fn concurrent_indefinite(files: &Vec<String>) -> Result<()> {
 // fn concurrent_indefinite_zenoh(files: &Vec<String>) -> Result<()> {
 //     let runtime = Runtime::new()?;
 //     runtime.block_on(async {
-//         // let (request_tx, mut request_rx) = mpsc::channel(10);
-//         // let (response_tx, mut response_rx) = mpsc::channel(10);
-
 //         let client = zenoh::open(zenoh::Config::default()).await.unwrap();
 
 //         let mut set = JoinSet::new();
@@ -190,21 +187,29 @@ fn concurrent_indefinite(files: &Vec<String>) -> Result<()> {
 //                         println!("processing: {file_path}");
 //                         let content = fs::read_to_string(&file_path).map_err(CustomError::from);
 //                         async_sleep(Duration::from_secs(5)).await;
-//                         inner_response_tx.send(content).await
+//                         client.put("result", content).await.unwrap()
 //                     }
 //                 });
 //             }
 //             Ok(())
 //         });
 //         set.spawn(async move {
-//             while let Some(content) = response_rx.recv().await {
+//             while let Ok(sample) = client
+//                 .declare_subscriber("result")
+//                 .await
+//                 .unwrap()
+//                 .recv_async()
+//                 .await
+//             {
+//                 let content =
+//                     serde_json::from_slice::<Result<String>>(&sample.payload().to_bytes()).unwrap();
 //                 println!("{}", content?);
 //             }
 //             Ok(())
 //         });
 
 //         for file in files {
-//             request_tx.send(file.to_owned()).await?;
+//             client.put("request", file.to_owned()).await.unwrap();
 //         }
 
 //         // sync_sleep(Duration::from_secs(10));

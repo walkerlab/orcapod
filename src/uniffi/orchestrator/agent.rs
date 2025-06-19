@@ -9,9 +9,11 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use derive_more::Display;
+use futures::{FutureExt as _, TryFutureExt as _};
 use futures_util::future::try_join_all;
 use getset::CloneGetters;
-use regex::Regex;
+use regex::{Captures, Regex};
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt as _;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -20,9 +22,9 @@ use std::{
     thread::sleep,
     time::Duration,
 };
-use tokio::spawn;
+use tokio::{spawn, sync::mpsc, task::JoinSet};
 use uniffi;
-use zenoh::{self, bytes::ZBytes};
+use zenoh::{self, bytes::ZBytes, sample::Sample};
 
 #[expect(clippy::expect_used, reason = "Valid static regex")]
 static RE_PODJOB_ACTION: LazyLock<Regex> = LazyLock::new(|| {
@@ -40,7 +42,7 @@ static RE_PODJOB_ACTION: LazyLock<Regex> = LazyLock::new(|| {
     .expect("Invalid PodJob action regex.")
 });
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 enum EventPayload {
     Request(PodJob),
     Reservation(ModelID),
@@ -195,7 +197,7 @@ impl Agent {
     /// # Errors
     /// # Panics
     #[expect(clippy::unwrap_used, clippy::excessive_nesting, reason = "debug")]
-    pub async fn start(
+    pub async fn start_old(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
         store: &Option<Arc<dyn Store>>,
@@ -299,5 +301,181 @@ impl Agent {
 
         try_join_all(tasks).await?;
         Ok(())
+    }
+
+    // /// # Errors
+    // /// # Panics
+    // #[expect(
+    //     clippy::excessive_nesting,
+    //     clippy::unused_async,
+    //     clippy::unwrap_used,
+    //     reason = "debug"
+    // )]
+    // pub async fn start(
+    //     &self,
+    //     namespace_lookup: &HashMap<String, PathBuf>,
+    //     store: &Option<Arc<dyn Store>>,
+    // ) -> Result<()> {
+    //     println!("Agent started...");
+
+    //     let mut set = JoinSet::new();
+    //     set.spawn(start_service(
+    //         self.client.clone(),
+    //         self.history.clone(),
+    //         "".to_string(),
+    //         process_pod_job_request,
+    //         Some("".to_string()),
+    //     ));
+    //     set.join_next().await.unwrap()?
+    // }
+}
+
+#[expect(
+    clippy::excessive_nesting,
+    clippy::let_underscore_must_use,
+    clippy::unwrap_used,
+    reason = "debug"
+)]
+async fn start_service<OrcaTask, OrcaTaskFuture>(
+    client: Arc<AgentClient>,
+    history_option: Option<Arc<Mutex<History>>>,
+    request_topic: String,
+    task: OrcaTask,
+    response_topic_option: Option<String>,
+) -> Result<()>
+where
+    // OrcaInput: for<'serde> Deserialize<'serde>,
+    // OrcaOutput: Serialize + Sync + Send + 'static,
+    // ZBytes: for<'payload> From<&'payload Vec<u8>>,
+    OrcaTask: Fn(
+            Arc<AgentClient>,
+            &EventPayload,
+            Option<Arc<Mutex<History>>>,
+            &Captures,
+        ) -> OrcaTaskFuture
+        + Send
+        + 'static,
+    OrcaTaskFuture: Future<Output = Result<EventPayload>> + Send + 'static,
+{
+    let (response_tx, mut response_rx) = mpsc::channel(10);
+
+    let mut set = JoinSet::new();
+    set.spawn({
+        let inner_client = Arc::clone(&client);
+        async move {
+            let subscriber = inner_client
+                .session
+                .declare_subscriber(format!("group/{}/{}", inner_client.group, request_topic))
+                .await
+                .context(selector::AgentFailure {})?;
+            while let Ok(sample) = subscriber.recv_async().await {
+                if let (Ok(input), Some(metadata)) = (
+                    serde_json::from_slice::<EventPayload>(&sample.payload().to_bytes()),
+                    RE_PODJOB_ACTION.captures(sample.key_expr().as_str()),
+                ) {
+                    if let Some(history) = &history_option {
+                        history.lock().unwrap().insert(
+                            DateTime::parse_from_rfc3339(&metadata["timestamp"])?.into(),
+                            Event {
+                                group: metadata["group"].to_string(),
+                                host: metadata["host"].to_string(),
+                                subgroup: metadata["pod_job_hash"].to_string(),
+                                payload: input.clone(),
+                            },
+                        );
+                        inner_client.log(&format!("History: {history:#?}")).await?;
+                    }
+                    let inner_response_tx = response_tx.clone();
+                    spawn(
+                        task(
+                            Arc::clone(&inner_client),
+                            &input,
+                            history_option.clone(),
+                            &metadata,
+                        )
+                        .then(move |response| async move {
+                            let _: Result<(), mpsc::error::SendError<Result<EventPayload>>> =
+                                inner_response_tx.send(response).await; // result can't be captured anyway
+                            Ok::<_, OrcaError>(())
+                        }),
+                    );
+                }
+            }
+            Ok(())
+        }
+    });
+    set.spawn(async move {
+        while let Some(content) = response_rx.recv().await {
+            let payload = &content?;
+            if let Some(response_topic) = &response_topic_option {
+                client
+                    .publish(response_topic, &serde_json::to_vec(payload)?)
+                    .await?;
+            }
+        }
+        Ok(())
+    });
+
+    set.join_next().await.unwrap()?
+}
+
+#[expect(
+    clippy::unused_async,
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "debug"
+)]
+async fn process_pod_job_request(
+    client: Arc<AgentClient>,
+    input: &EventPayload,
+    history_option: Option<Arc<Mutex<History>>>,
+    metadata: &Captures<'_>,
+) -> Result<EventPayload> {
+    // if let Some(history) = &history_option {
+    //     history.lock().unwrap().insert(
+    //         DateTime::parse_from_rfc3339(&metadata["timestamp"])?.into(),
+    //         Event {
+    //             group: metadata["group"].to_string(),
+    //             host: metadata["host"].to_string(),
+    //             subgroup: metadata["pod_job_hash"].to_string(),
+    //             payload: EventPayload::Request(input.clone()),
+    //         },
+    //     );
+    //     client.log(&format!("History: {history:#?}")).await?;
+    // }
+
+    // println!("Made it 1");
+    // let pod_jobs = serde_json::from_slice::<Vec<PodJob>>(
+    //     &client
+    //         .session
+    //         .get(format!("group/{}/request/pod_job/1123", client.group))
+    //         .await
+    //         .context(selector::AgentFailure {})?
+    //         .iter()
+    //         .next()
+    //         .unwrap()
+    //         .into_result()?
+    //         .payload()
+    //         .to_bytes(),
+    // )?;
+    // println!("Made it 3");
+
+    // for pj in pod_jobs {
+    //     let message = format!("pod_job command: {}", pj.pod.command);
+    //     println!("{}", &message);
+    //     client.log(&message).await?;
+    // }
+
+    match &input {
+        EventPayload::Request(pod_job) => {
+            let annotation = pod_job.annotation.as_ref().unwrap();
+            Ok(EventPayload::Reservation(ModelID::Annotation(
+                annotation.name.clone(),
+                annotation.version.clone(),
+            )))
+        }
+        EventPayload::Reservation(_) | EventPayload::Success(_) | EventPayload::Failure(_) => {
+            panic!("whoops")
+        }
     }
 }
