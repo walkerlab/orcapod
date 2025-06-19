@@ -16,6 +16,7 @@ from orcapod import (
     LocalFileStore,
     ModelId,
     ModelType,
+    OrcaError,
 )
 
 
@@ -131,8 +132,9 @@ def test(test_dir, steps):
             print(f"\n==================== {step.__name__} ====================\n")
             result, data = step(data, config)
             print(result)
-    except Exception as e:
-        raise e
+    except OrcaError as e:
+        if "No such file or directory (os error 2)" not in str(e):
+            raise e
     finally:
         shutil.rmtree(test_dir)
 
