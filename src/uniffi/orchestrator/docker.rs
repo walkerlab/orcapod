@@ -33,7 +33,7 @@ pub struct LocalDockerOrchestrator {
     async_driver: Runtime,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 #[async_trait::async_trait]
 impl Orchestrator for LocalDockerOrchestrator {
     fn start_with_altimage_blocking(
