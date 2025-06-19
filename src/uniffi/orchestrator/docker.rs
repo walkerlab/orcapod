@@ -2,7 +2,7 @@ use crate::{
     core::{orchestrator::docker::RE_IMAGE_TAG, util::get},
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{Pod, PodJob, PodResult},
+        model::{PodJob, PodResult},
         orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
     },
 };
@@ -156,19 +156,8 @@ impl Orchestrator for LocalDockerOrchestrator {
         )]))
         .await?
         .map(|(assigned_name, run_info)| {
-            let mut pod: Pod = serde_json::from_str(get(&run_info.labels, "org.orcapod.pod")?)?;
-            pod.annotation =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod.annotation")?)?;
-            pod.hash
-                .clone_from(get(&run_info.labels, "org.orcapod.pod.hash")?);
-            let mut pod_job: PodJob =
+            let pod_job: PodJob =
                 serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job")?)?;
-            pod_job.annotation =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job.annotation")?)?;
-            pod_job
-                .hash
-                .clone_from(get(&run_info.labels, "org.orcapod.pod_job.hash")?);
-            pod_job.pod = pod.into();
             Ok(PodRun::new::<Self>(&pod_job, assigned_name))
         })
         .collect()

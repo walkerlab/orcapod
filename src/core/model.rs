@@ -6,8 +6,9 @@ use crate::{
     },
 };
 use heck::ToSnakeCase as _;
+use indexmap::IndexMap;
 use serde::{Deserialize as _, Deserializer, Serialize, Serializer};
-use serde_yaml;
+use serde_yaml::{self, Value};
 use std::{
     collections::{BTreeMap, HashMap},
     result,
@@ -19,12 +20,21 @@ use std::{
 ///
 /// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
 pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
-    let mut yaml = serde_yaml::to_string(instance)?;
+    let mapping: IndexMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // cast to map
+    let mut yaml = serde_yaml::to_string(
+        &mapping
+            .iter()
+            .filter_map(|(k, v)| match &**k {
+                "annotation" | "hash" => None,
+                "pod" | "pod_job" => Some((k, v["hash"].clone())),
+                _ => Some((k, v.clone())),
+            })
+            .collect::<IndexMap<_, _>>(),
+    )?; // skip fields and convert refs to hash pointers
     yaml.insert_str(
         0,
         &format!("class: {}\n", get_type_name::<T>().to_snake_case()),
     ); // replace class at top
-
     Ok(yaml)
 }
 
@@ -53,41 +63,54 @@ where
     sorted.serialize(serializer)
 }
 
-pub(crate) fn serialize_pod<S>(pod: &Pod, serializer: S) -> result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&pod.hash)
-}
-
+#[expect(
+    clippy::expect_used,
+    reason = "Function signature required by serde API."
+)]
 pub(crate) fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Ok(Pod {
-        hash: String::deserialize(deserializer)?,
-        ..Pod::default()
-    }
-    .into())
+    let value = Value::deserialize(deserializer)?;
+    (value).as_str().map_or_else(
+        || {
+            Ok(serde_yaml::from_value(value.clone())
+                .expect("Failed to convert from serde value to specific type."))
+        },
+        |hash| {
+            Ok({
+                Pod {
+                    hash: hash.to_owned(),
+                    ..Pod::default()
+                }
+                .into()
+            })
+        },
+    )
 }
 
-pub(crate) fn serialize_pod_job<S>(
-    pod_job: &PodJob,
-    serializer: S,
-) -> result::Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&pod_job.hash)
-}
-
+#[expect(
+    clippy::expect_used,
+    reason = "Function signature required by serde API."
+)]
 pub(crate) fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<Arc<PodJob>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Ok(PodJob {
-        hash: String::deserialize(deserializer)?,
-        ..PodJob::default()
-    }
-    .into())
+    let value = Value::deserialize(deserializer)?;
+    (value).as_str().map_or_else(
+        || {
+            Ok(serde_yaml::from_value(value.clone())
+                .expect("Failed to convert from serde value to specific type."))
+        },
+        |hash| {
+            Ok({
+                PodJob {
+                    hash: hash.to_owned(),
+                    ..PodJob::default()
+                }
+                .into()
+            })
+        },
+    )
 }

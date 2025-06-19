@@ -3,7 +3,7 @@ use crate::{
         crypto::{hash_blob, hash_buffer},
         model::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
-            serialize_pod, serialize_pod_job, to_yaml,
+            to_yaml,
         },
     },
     uniffi::{error::Result, orchestrator::Status},
@@ -36,10 +36,9 @@ pub enum ModelType {
 #[uniffi::export(Display)]
 pub struct Pod {
     /// Metadata that doesn't affect reproducibility.
-    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
-    #[serde(skip)]
+    #[serde(default)]
     pub hash: String,
     /// Reproducible environment for compute.
     pub image: String,
@@ -112,13 +111,12 @@ impl Pod {
 #[uniffi::export(Display)]
 pub struct PodJob {
     /// Metadata that doesn't affect reproducibility.
-    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
-    #[serde(skip)]
+    #[serde(default)]
     pub hash: String,
     /// A pod to base the pod job on.
-    #[serde(serialize_with = "serialize_pod", deserialize_with = "deserialize_pod")]
+    #[serde(deserialize_with = "deserialize_pod")]
     pub pod: Arc<Pod>,
     /// Attached, external input streams.
     #[serde(serialize_with = "serialize_hashmap")]
@@ -191,16 +189,12 @@ impl PodJob {
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct PodResult {
     /// Metadata that doesn't affect reproducibility.
-    #[serde(skip)]
     pub annotation: Option<Annotation>,
     /// Unique id based on reproducibility.
-    #[serde(skip)]
+    #[serde(default)]
     pub hash: String,
     /// A pod job that originated the pod result.
-    #[serde(
-        serialize_with = "serialize_pod_job",
-        deserialize_with = "deserialize_pod_job"
-    )]
+    #[serde(deserialize_with = "deserialize_pod_job")]
     pub pod_job: Arc<PodJob>,
     /// Name given by orchestrator.
     pub assigned_name: String,
