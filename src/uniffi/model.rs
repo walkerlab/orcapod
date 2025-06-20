@@ -124,7 +124,7 @@ pub struct PodJob {
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_packet: HashMap<String, PathSet>,
     /// Attached, external output directory.
-    pub output_dir: OrcaPath,
+    pub output_dir: URI,
     /// Maximum allowable cores in fractional cores for the computation.
     pub cpu_limit: f32,
     /// Maximum allowable memory in bytes for the computation.
@@ -146,7 +146,7 @@ impl PodJob {
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
         mut input_packet: HashMap<String, PathSet>,
-        output_dir: OrcaPath,
+        output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
@@ -285,7 +285,8 @@ pub struct PathInfo {
     /// Naming pattern for the stream.
     pub match_pattern: String,
 }
-/// Input options.
+/// A set of BLOBs, either a single BLOB or a collection of BLOBs.
+/// Mainly use for input
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PathSet {
@@ -296,7 +297,7 @@ pub enum PathSet {
 }
 /// Location of BLOB data.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct OrcaPath {
+pub struct URI {
     /// Namespace alias.
     pub namespace: String,
     /// Path within namespace.
@@ -309,7 +310,7 @@ pub struct Blob {
     /// BLOB available options.
     pub kind: BlobKind,
     /// BLOB location.
-    pub location: OrcaPath,
+    pub location: URI,
     /// BLOB contents checksum.
     pub checksum: String,
 }

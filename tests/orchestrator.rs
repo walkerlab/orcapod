@@ -13,7 +13,7 @@ use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style
 use futures_util::StreamExt as _;
 use orcapod::uniffi::{
     error::Result,
-    model::OrcaPath,
+    model::URI,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
 use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
@@ -92,7 +92,7 @@ where
 fn offline_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
         let container_image_relative_location = "container_images/style-transfer/image.tar.gz";
-        let container_image_kind = ImageKind::Tarball(OrcaPath {
+        let container_image_kind = ImageKind::Tarball(URI {
             namespace: "default".to_owned(),
             path: PathBuf::from(container_image_relative_location),
         });
