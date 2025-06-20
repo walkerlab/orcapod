@@ -1,5 +1,8 @@
 use crate::{
-    core::{orchestrator::docker::RE_IMAGE_TAG, util::get},
+    core::{
+        orchestrator::{ASYNC_RUNTIME, docker::RE_IMAGE_TAG},
+        util::get,
+    },
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{PodJob, PodResult},
@@ -16,7 +19,7 @@ use derive_more::Display;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, futures::TryFutureExt as _};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::{fs::File, runtime::Runtime};
+use tokio::fs::File;
 use tokio_util::{
     bytes::{Bytes, BytesMut},
     codec::{BytesCodec, FramedRead},
@@ -30,7 +33,6 @@ use uniffi;
 pub struct LocalDockerOrchestrator {
     /// API to interact with Docker daemon.
     pub api: Docker,
-    async_driver: Runtime,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -42,28 +44,26 @@ impl Orchestrator for LocalDockerOrchestrator {
         pod_job: &PodJob,
         image: &ImageKind,
     ) -> Result<PodRun> {
-        self.async_driver
-            .block_on(self.start_with_altimage(namespace_lookup, pod_job, image))
+        ASYNC_RUNTIME.block_on(self.start_with_altimage(namespace_lookup, pod_job, image))
     }
     fn start_blocking(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
     ) -> Result<PodRun> {
-        self.async_driver
-            .block_on(self.start(namespace_lookup, pod_job))
+        ASYNC_RUNTIME.block_on(self.start(namespace_lookup, pod_job))
     }
     fn list_blocking(&self) -> Result<Vec<PodRun>> {
-        self.async_driver.block_on(self.list())
+        ASYNC_RUNTIME.block_on(self.list())
     }
     fn delete_blocking(&self, pod_run: &PodRun) -> Result<()> {
-        self.async_driver.block_on(self.delete(pod_run))
+        ASYNC_RUNTIME.block_on(self.delete(pod_run))
     }
     fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo> {
-        self.async_driver.block_on(self.get_info(pod_run))
+        ASYNC_RUNTIME.block_on(self.get_info(pod_run))
     }
     fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.async_driver.block_on(self.get_result(pod_run))
+        ASYNC_RUNTIME.block_on(self.get_result(pod_run))
     }
     #[expect(
         clippy::try_err,
@@ -225,7 +225,6 @@ impl LocalDockerOrchestrator {
     pub fn new() -> Result<Self> {
         Ok(Self {
             api: Docker::connect_with_local_defaults()?,
-            async_driver: Runtime::new()?,
         })
     }
 }
