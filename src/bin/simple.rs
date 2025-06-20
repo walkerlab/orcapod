@@ -1,9 +1,12 @@
 // cargo run --bin simple
 #![expect(missing_docs, reason = "debug")]
 
+use futures_util::future::select;
 use futures_util::future::{join_all, try_join_all};
+use orcapod::uniffi::error::OrcaError;
 use serde::{Deserialize, Serialize};
 use std::{
+    borrow::Cow,
     error::Error,
     fs,
     io,
@@ -108,22 +111,39 @@ fn concurrent_finite(files: &[String]) -> Result<Vec<String>> {
     })
 }
 
-fn concurrent_finite_spawner(files: &[String]) -> Result<()> {
+fn concurrent_finite_spawner_owned(files: &[String]) -> Result<()> {
     let runtime = Runtime::new()?;
 
     for file in files {
         runtime.spawn({
             let inner_file = file.clone();
             async move {
-                println!("processing: {inner_file}");
-                let content = fs::read_to_string(inner_file)?;
+                println!("processing: {}", &inner_file);
+                let content = fs::read_to_string(&inner_file)?;
                 async_sleep(Duration::from_secs(5)).await;
+                println!("finished: {}", &inner_file);
                 Ok::<(), CustomError>(())
             }
         });
     }
-    sync_sleep(Duration::from_secs(20));
+    // sync_sleep(Duration::from_secs(20));
     Ok(())
+}
+
+fn concurrent_finite_spawner_borrowed(runtime: &Runtime, files: &[String]) {
+    for file in files {
+        runtime.spawn({
+            let inner_file = file.clone();
+            async move {
+                println!("processing: {}", &inner_file);
+                let content = fs::read_to_string(&inner_file)?;
+                async_sleep(Duration::from_secs(5)).await;
+                println!("finished: {}", &inner_file);
+                Ok::<(), CustomError>(())
+            }
+        });
+    }
+    // sync_sleep(Duration::from_secs(20));
 }
 
 #[expect(clippy::excessive_nesting, clippy::unwrap_used, reason = "debug")]
@@ -161,6 +181,93 @@ fn concurrent_indefinite(files: &Vec<String>) -> Result<()> {
         set.join_next().await.unwrap()?
     })
 }
+
+enum Payload {
+    Request(String),
+    Response(Result<String>),
+}
+
+// #[expect(clippy::excessive_nesting, clippy::unwrap_used, reason = "debug")]
+// fn concurrent_indefinite2(files: &Vec<String>) -> Result<()> {
+//     let runtime = Runtime::new()?;
+//     runtime.block_on(async {
+//         let (request_tx, mut request_rx) = mpsc::channel(10);
+//         // let (response_tx, mut response_rx) = mpsc::channel(10);
+
+//         // for file in files {
+//         //     request_tx.send(file.to_owned()).await?;
+//         // }
+
+//         // let mut set = JoinSet::new();
+//         // // while let Some(file_path) = request_rx.recv().await || Ok(value) = set.try_join_next().await {
+
+//         // // }
+
+//         // let mut value1 = Some(1);
+//         // let mut value2 = Some(2);
+
+//         // while let Some(v1) = value1 || Some(v2) = value2 {
+
+//         // }
+
+//         // loop {
+//         //     if let Some(v1) = value1 || let Some(v2) = value2 {
+
+//         //     }
+//         // }
+
+//         let mut manager_set = JoinSet::new();
+//         let mut spawnner_set = JoinSet::new();
+
+//         // while let data = {
+//         //     manager_set.spawn(request_rx.recv());
+//         //     manager_set.spawn(spawnner_set.join_next());
+//         //     manager_set.join_next().await.unwrap()?
+//         // } {
+//         // while let data =
+//         //     futures::future::select_all(vec![async move { request_rx.recv().await }]).await
+//         // {
+//         while let (data, _, _) = select(request_rx.recv(), spawnner_set.join_next()).await {
+//             match data {
+//                 Payload::Request(file_path) => {
+//                     spawnner_set.spawn(async {
+//                         println!("processing: {}", &file_path);
+//                         async_sleep(Duration::from_secs(5)).await;
+//                         println!("finished: {}", &file_path);
+//                         Ok::<_, CustomError>(fs::read_to_string(&file_path)?)
+//                     });
+//                 }
+//                 Payload::Response(content) => {
+//                     println!("{}", content?);
+//                 }
+//             }
+//         }
+
+//         while let data = (request_rx.recv().await.unwrap() || set.join_next().await) {}
+
+//         set.spawn(async move {
+//             while let Some(file_path) = request_rx.recv().await {
+//                 spawn({
+//                     let inner_response_tx = response_tx.clone();
+//                     async move {
+//                         println!("processing: {file_path}");
+//                         let content = fs::read_to_string(&file_path).map_err(CustomError::from);
+//                         async_sleep(Duration::from_secs(5)).await;
+//                         inner_response_tx.send(content).await
+//                     }
+//                 });
+//             }
+//             Ok(())
+//         });
+//         set.spawn(async move {
+//             while let Some(content) = response_rx.recv().await {
+//                 println!("{}", content?);
+//             }
+//             Ok(())
+//         });
+//         set.join_next().await.unwrap()?
+//     })
+// }
 
 // #[expect(clippy::excessive_nesting, clippy::unwrap_used, reason = "debug")]
 // fn concurrent_indefinite_zenoh(files: &Vec<String>) -> Result<()> {
@@ -235,19 +342,27 @@ fn main() -> Result<()> {
 
     let files = vec![
         ".gitignore".to_owned(),
-        "security_notice.txt".to_owned(),
+        // "security_notice.txt".to_owned(),
         "LICENSE".to_owned(),
     ];
 
     // println!("contents: {:#?}", procedural_finite(&files)?);
     // println!("contents: {:#?}", concurrent_finite(&files)?);
-    // println!("contents: {:#?}", concurrent_finite_spawner(&files)?);
+    // println!("contents: {:#?}", concurrent_finite_spawner_owned(&files)?);
+    // let runtime = Runtime::new()?;
+    // println!(
+    //     "contents: {:#?}",
+    //     concurrent_finite_spawner_borrowed(&runtime, &files)
+    // );
     println!("contents: {:#?}", concurrent_indefinite(&files)?);
+    // println!("contents: {:#?}", concurrent_indefinite2(&files)?);
     // println!("contents: {:#?}", concurrent_indefinite_zenoh(&files)?);
 
     println!(
         "started: {started}, duration: {}",
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() - started
     );
+
+    sync_sleep(Duration::from_secs(20));
     Ok(())
 }
