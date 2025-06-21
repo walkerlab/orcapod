@@ -46,15 +46,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Python + components
+      - name: Install Python, dependencies, and orcapod
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh && \
-          uv venv -p 3.10 ~/.local/share/base && \
+          set -e
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv -p 3.10 ~/.local/share/base
           uv pip install cffi maturin -p ~/.local/share/base
-      - name: Run integration tests
+          . ~/.local/share/base/bin/activate
+          maturin develop --uv
+      - name: Run smoke test
         env:
           RUST_BACKTRACE: full
         run: |
           . ~/.local/share/base/bin/activate
-          maturin develop --uv
           python tests/extra/python/smoke_test.py -- tests/.tmp
+      - name: Run agent test
+        env:
+          RUST_BACKTRACE: full
+        run: |
+          . ~/.local/share/base/bin/activate
+          python tests/extra/python/agent_test.py

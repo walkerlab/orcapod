@@ -10,6 +10,7 @@ use serde_yaml;
 use snafu::prelude::Snafu;
 use std::{
     backtrace::Backtrace,
+    error::Error,
     io,
     path::{self, PathBuf},
     result,
@@ -22,6 +23,11 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
+    #[snafu(display("Agent encountered a communication error. Reason: {source}."))]
+    AgentCommunicationFailure {
+        source: Box<dyn Error + Send + Sync>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display(
         "Received an empty response when attempting to load the alternate container image file: {path:?}."
     ))]

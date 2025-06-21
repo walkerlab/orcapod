@@ -43,7 +43,7 @@ RUN \
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     uv venv -p 3.10 ~/.local/share/base && \
     # pip package based on C lib/client
-    uv pip install cffi maturin ipykernel -p ~/.local/share/base && \
+    uv pip install cffi maturin[patchelf] ipykernel -p ~/.local/share/base && \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
 ENV VIRTUAL_ENV=/home/vscode/.local/share/base
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]
