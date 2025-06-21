@@ -84,7 +84,7 @@ You can easily enforce resource limits by adding the following to `devcontainer.
   // ..
   "runArgs": [
     // ..
-    "--cpus=2",,
+    "--cpus=2",
     "--memory=8gb",
     // ..
   ],

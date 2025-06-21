@@ -1,11 +1,9 @@
-use crate::{
-    core::orchestrator::ASYNC_RUNTIME,
-    uniffi::{
-        error::{OrcaError, Result, selector},
-        orchestrator::{Orchestrator, docker::LocalDockerOrchestrator},
-    },
+use crate::uniffi::{
+    error::{OrcaError, Result, selector},
+    orchestrator::{Orchestrator, docker::LocalDockerOrchestrator},
 };
 use derive_more::Display;
+use futures_executor::block_on;
 use getset::CloneGetters;
 use snafu::ResultExt as _;
 use std::sync::Arc;
@@ -42,7 +40,7 @@ impl AgentClient {
         Ok(Self {
             group,
             host,
-            session: ASYNC_RUNTIME.block_on(async {
+            session: block_on(async {
                 Ok::<_, OrcaError>(
                     zenoh::open(zenoh::Config::default())
                         .await
