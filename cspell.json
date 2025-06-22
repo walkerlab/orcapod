@@ -16,7 +16,8 @@
         "graphviz",
         "uniffi",
         "cffi",
-        "zenoh"
+        "zenoh",
+        "PodJob",
     ],
     "ignoreWords": [
         "relpath",

@@ -1,12 +1,18 @@
-use crate::uniffi::{
-    error::{OrcaError, Result, selector},
-    orchestrator::{Orchestrator, docker::LocalDockerOrchestrator},
+use crate::{
+    core::orchestrator::agent::{EventPayload, start_service},
+    uniffi::{
+        error::{OrcaError, Result, selector},
+        model::PodJob,
+        orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
+    },
 };
 use derive_more::Display;
 use futures_executor::block_on;
+use futures_util::future::try_join_all;
 use getset::CloneGetters;
-use snafu::ResultExt as _;
-use std::sync::Arc;
+use snafu::{OptionExt as _, ResultExt as _};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::task::JoinSet;
 use uniffi;
 use zenoh;
 
@@ -49,6 +55,23 @@ impl AgentClient {
             })?,
         })
     }
+    ///  todo: should return Result<Vec<Result<()>>>, ordered would allow determining which ones failed to retry
+    /// Submit many pod jobs to be processed in parallel.
+    ///
+    /// # Errors
+    ///
+    /// Will fail immediately if there is an issue sending any single pod job request to be processed.
+    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Result<()> {
+        try_join_all(pod_jobs.iter().map(|pod_job| async {
+            self.publish(
+                &format!("request/pod_job/{}", pod_job.hash),
+                &serde_json::to_vec(pod_job)?,
+            )
+            .await
+        }))
+        .await?;
+        Ok(())
+    }
 }
 
 /// An execution agent.
@@ -81,5 +104,41 @@ impl Agent {
             client: AgentClient::new(group, host)?.into(),
             orchestrator,
         })
+    }
+    /// todo: replace `JoinSet` with `TaskTracker` because it frees memory as tasks finish automatically
+    /// Start orchestrator execution agent service.
+    ///
+    /// # Errors
+    ///
+    /// Will stop and return an error if encounters an error while processing any pod job request.
+    pub async fn start(&self, namespace_lookup: &HashMap<String, PathBuf>) -> Result<()> {
+        let mut services = JoinSet::new();
+        services.spawn(start_service(
+            Arc::new(self.clone()),
+            "request/pod_job".to_owned(),
+            namespace_lookup.clone(),
+            |input: &PodJob| EventPayload::Request(input.clone()),
+            async |agent, inner_namespace_lookup, _, pod_job| {
+                let pod_run = agent
+                    .orchestrator
+                    .start(&inner_namespace_lookup, &pod_job)
+                    .await?;
+                let pod_result = agent.orchestrator.get_result(&pod_run).await?;
+                Ok(pod_result)
+            },
+            async |client, pod_result| {
+                let response_topic = match &pod_result.status {
+                    Status::Completed => &format!("success/pod_job/{}", pod_result.hash),
+                    Status::Running | Status::Failed(_) | Status::Unset => {
+                        &format!("failure/pod_job/{}", pod_result.hash)
+                    }
+                };
+                client.publish(response_topic, &pod_result).await
+            },
+        ));
+        services
+            .join_next()
+            .await
+            .context(selector::NoRemainingServices {})??
     }
 }
