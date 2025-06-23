@@ -10,6 +10,7 @@ use derive_more::Display;
 use futures_executor::block_on;
 use futures_util::future::try_join_all;
 use getset::CloneGetters;
+use serde_json::Value;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::task::JoinSet;
@@ -63,13 +64,28 @@ impl AgentClient {
     /// Will fail immediately if there is an issue sending any single pod job request to be processed.
     pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Result<()> {
         try_join_all(pod_jobs.iter().map(|pod_job| async {
-            self.publish(
-                &format!("request/pod_job/{}", pod_job.hash),
-                &serde_json::to_vec(pod_job)?,
-            )
-            .await
+            self.publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
+                .await
         }))
         .await?;
+        Ok(())
+    }
+    /// Watch orchestration agent communication.
+    ///
+    /// # Errors
+    ///
+    /// Will fail immediately if there is an error while listening for messages.
+    pub async fn watch(&self, key_expr: String) -> Result<()> {
+        println!("Watching...");
+        let subscriber = self
+            .session
+            .declare_subscriber(&key_expr)
+            .await
+            .context(selector::AgentCommunicationFailure {})?;
+        while let Ok(sample) = subscriber.recv_async().await {
+            let value = serde_json::from_slice::<Value>(&sample.payload().to_bytes())?;
+            println!("{}: {value:#}", sample.key_expr().as_str());
+        }
         Ok(())
     }
 }
@@ -124,13 +140,14 @@ impl Agent {
                     .start(&inner_namespace_lookup, &pod_job)
                     .await?;
                 let pod_result = agent.orchestrator.get_result(&pod_run).await?;
+                agent.orchestrator.delete(&pod_run).await?;
                 Ok(pod_result)
             },
             async |client, pod_result| {
                 let response_topic = match &pod_result.status {
-                    Status::Completed => &format!("success/pod_job/{}", pod_result.hash),
+                    Status::Completed => &format!("success/pod_job/{}", pod_result.pod_job.hash),
                     Status::Running | Status::Failed(_) | Status::Unset => {
-                        &format!("failure/pod_job/{}", pod_result.hash)
+                        &format!("failure/pod_job/{}", pod_result.pod_job.hash)
                     }
                 };
                 client.publish(response_topic, &pod_result).await

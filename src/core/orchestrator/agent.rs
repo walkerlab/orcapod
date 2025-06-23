@@ -146,7 +146,7 @@ where
                 .client
                 .session
                 .declare_subscriber(format!(
-                    "group/{}/{}",
+                    "group/{}/{}/**",
                     inner_agent.client.group, request_topic
                 ))
                 .await
