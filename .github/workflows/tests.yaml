@@ -51,7 +51,8 @@ jobs:
           set -e
           curl -LsSf https://astral.sh/uv/install.sh | sh
           uv venv -p 3.10 ~/.local/share/base
-          uv pip install cffi maturin -p ~/.local/share/base
+          uv pip install cffi maturin[patchelf] -p ~/.local/share/base
+          uv pip install eclipse-zenoh -p ~/.local/share/base
           . ~/.local/share/base/bin/activate
           maturin develop --uv
       - name: Run smoke test
