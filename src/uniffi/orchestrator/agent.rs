@@ -102,7 +102,7 @@ pub struct Agent {
     pub orchestrator: Arc<dyn Orchestrator>,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Agent {
     /// Create an agent to serve requests for orchestrator processing.
     ///
