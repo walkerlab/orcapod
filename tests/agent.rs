@@ -5,7 +5,7 @@
     reason = "OK in tests."
 )]
 
-mod fixture;
+pub mod fixture;
 use fixture::NAMESPACE_LOOKUP_READ_ONLY;
 use orcapod::uniffi::{
     error::Result,
