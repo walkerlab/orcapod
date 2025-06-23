@@ -6,7 +6,7 @@
 )]
 
 pub mod fixture;
-use fixture::NAMESPACE_LOOKUP_READ_ONLY;
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pull_image};
 use orcapod::uniffi::{
     error::Result,
     model::{Annotation, OrcaPath, Pod, PodJob, PodResult},
@@ -41,6 +41,8 @@ fn simple() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn parallel_four_cores() -> Result<()> {
     // config
+    let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
+    pull_image(image_reference)?;
     let start_margin_millis = 2000;
     let run_duration_secs = 5;
     let service_readiness_delay_secs = 1;
@@ -48,6 +50,7 @@ async fn parallel_four_cores() -> Result<()> {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis();
+    println!("current_timestamp: {current_timestamp}");
     let (group, host) = ("test", "alpha");
     // api
     let client = AgentClient::new(group.to_owned(), host.to_owned())?;
@@ -117,8 +120,7 @@ async fn parallel_four_cores() -> Result<()> {
                         description: "This is an example pod.".to_owned(),
                         version: format!("{i}.0.0"),
                     }),
-                    "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40"
-                        .to_owned(),
+                    image_reference.into(),
                     format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"),
                     HashMap::new(),
                     PathBuf::from("/tmp/output"),

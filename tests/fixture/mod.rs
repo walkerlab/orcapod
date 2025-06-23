@@ -187,6 +187,16 @@ pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestCo
     })
 }
 
+pub fn pull_image(reference: &str) -> Result<()> {
+    Command::new("docker")
+        .arg("pull")
+        .arg(reference)
+        .stderr(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .output()?;
+    Ok(())
+}
+
 // --- util ---
 
 pub struct TestDirs(pub HashMap<String, TempDir>);
