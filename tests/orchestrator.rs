@@ -16,7 +16,9 @@ use orcapod::uniffi::{
     model::URI,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
-use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc, thread::sleep, time::Duration,
+};
 use tokio::runtime::Runtime;
 
 fn basic_test<T>(start: T) -> Result<()>
@@ -152,13 +154,14 @@ fn command_parse() -> Result<()> {
 
         let mut pod = pod_job.pod.deref().clone();
         pod.image = "alpine:3.14".to_owned();
-        pod.command = r#"echo 'hi 1' && echo "hi 2""#.to_owned();
+        pod.command = r#"sh -c "echo hi1 && echo 'hi2'"""#.to_owned();
         pod.input_spec = HashMap::new();
         pod_job.pod = pod.into();
 
         pod_job.input_packet = HashMap::new();
 
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
+        sleep(Duration::from_secs(1));
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
 
         assert_eq!(
@@ -248,6 +251,7 @@ fn fail_during_execution() -> Result<()> {
 
         // Start job and wait for completion
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
+        sleep(Duration::from_secs(1));
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
 
         assert_eq!(
