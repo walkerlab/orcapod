@@ -139,7 +139,6 @@ pub fn pod_result_style(
         Status::Completed,
         1_737_922_307,
         1_737_925_907,
-        String::from("Example logs"),
     )
 }
 

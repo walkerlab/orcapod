@@ -167,11 +167,6 @@ fn command_parse() -> Result<()> {
             "Pod status is not completed"
         );
 
-        assert_eq!(
-            pod_result.logs, "hi 1 && echo hi 2\n",
-            "Logs do not match error"
-        );
-
         orchestrator.delete_blocking(&pod_run)?;
 
         assert!(
@@ -224,12 +219,6 @@ fn fail_at_start() -> Result<()> {
             "Pod status is not failed"
         );
 
-        assert_eq!(
-            pod_result.logs,
-            "failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: \"python\": executable file not found in $PATH: unknown",
-            "Logs do not match"
-        );
-
         // Clean up the pod
         orchestrator.delete_blocking(pod_run)?;
 
@@ -265,11 +254,6 @@ fn fail_during_execution() -> Result<()> {
             pod_result.status,
             Status::Failed(127),
             "Should be in failed state"
-        );
-
-        assert_eq!(
-            pod_result.logs, "hi\n\nSTDERR:\nbin/sh: bad_command: not found\n",
-            "Logs do not match error"
         );
 
         // Clean up the pod

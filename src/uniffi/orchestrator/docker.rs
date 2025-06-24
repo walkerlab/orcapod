@@ -9,7 +9,7 @@ use crate::{
 use async_trait;
 use bollard::{
     Docker,
-    container::{LogOutput, LogsOptions, StartContainerOptions, WaitContainerOptions},
+    container::{StartContainerOptions, WaitContainerOptions},
     image::{CreateImageOptions, ImportImageOptions},
 };
 use colored::Colorize as _;
@@ -226,56 +226,6 @@ impl Orchestrator for LocalDockerOrchestrator {
         }
         let result_info = self.get_info(pod_run).await?;
 
-        let mut std_out = Vec::new();
-        let mut std_err = Vec::new();
-
-        self.api
-            .logs::<String>(
-                &pod_run.assigned_name,
-                Some(LogsOptions {
-                    stdout: true,
-                    stderr: true,
-                    ..Default::default()
-                }),
-            )
-            .try_collect::<Vec<_>>()
-            .await?
-            .iter()
-            .for_each(|log_output| match log_output {
-                LogOutput::StdOut { message } => {
-                    std_out.extend(message.to_vec());
-                }
-                LogOutput::StdErr { message } => {
-                    std_err.extend(message.to_vec());
-                }
-                LogOutput::StdIn { .. } => todo!(),
-                LogOutput::Console { .. } => todo!(),
-            });
-
-        let mut logs = String::from_utf8_lossy(&std_out).to_string();
-        if !std_err.is_empty() {
-            logs.push_str("\nSTDERR:\n");
-            logs.push_str(&String::from_utf8_lossy(&std_err));
-        }
-
-        // Check for errors, if exist, attach it to logs
-        let error = self
-            .api
-            .inspect_container(&pod_run.assigned_name, None)
-            .await?
-            .state
-            .context(selector::FailedToExtractRunInfo {
-                container_name: &pod_run.assigned_name,
-            })?
-            .error
-            .context(selector::FailedToExtractRunInfo {
-                container_name: &pod_run.assigned_name,
-            })?;
-
-        if !error.is_empty() {
-            logs.push_str(&error);
-        }
-
         PodResult::new(
             None,
             Arc::clone(&pod_run.pod_job),
@@ -287,7 +237,6 @@ impl Orchestrator for LocalDockerOrchestrator {
                 .context(selector::InvalidPodResultTerminatedDatetime {
                     pod_job_hash: pod_run.pod_job.hash.clone(),
                 })?,
-            logs,
         )
     }
 }

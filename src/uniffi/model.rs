@@ -210,8 +210,6 @@ pub struct PodResult {
     pub created: u64,
     /// Time in epoch when terminated in seconds.
     pub terminated: u64,
-    /// Output logs of container
-    pub logs: String,
 }
 
 impl PodResult {
@@ -227,7 +225,6 @@ impl PodResult {
         status: Status,
         created: u64,
         terminated: u64,
-        logs: String,
     ) -> Result<Self> {
         let pod_result_no_hash = Self {
             annotation,
@@ -237,7 +234,6 @@ impl PodResult {
             status,
             created,
             terminated,
-            logs,
         };
         Ok(Self {
             hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
