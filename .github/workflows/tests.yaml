@@ -66,4 +66,4 @@ jobs:
           RUST_BACKTRACE: full
         run: |
           . ~/.local/share/base/bin/activate
-          python tests/extra/python/agent_test.py
+          python tests/extra/python/agent_test.py -- tests/.tmp

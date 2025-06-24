@@ -56,7 +56,7 @@ impl AgentClient {
             })?,
         })
     }
-    ///  todo: should return Result<Vec<Result<()>>>, ordered would allow determining which ones failed to retry
+    ///  todo: should return Result<Vec<Result<()>>> as opposed of failing on first. ordered would allow determining which ones failed to retry
     /// Submit many pod jobs to be processed in parallel.
     ///
     /// # Errors
