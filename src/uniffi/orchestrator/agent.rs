@@ -56,7 +56,7 @@ impl AgentClient {
             })?,
         })
     }
-    ///  todo: should return Result<Vec<Result<()>>> as opposed of failing on first. ordered would allow determining which ones failed to retry
+    /// todo: should return Result<Vec<Result<()>>> as opposed of failing on first. ordered would allow determining which ones failed to retry
     /// Submit many pod jobs to be processed in parallel.
     ///
     /// # Errors
@@ -130,7 +130,7 @@ impl Agent {
         let mut services = JoinSet::new();
         services.spawn(start_service(
             Arc::new(self.clone()),
-            "request/pod_job".to_owned(),
+            "request/pod_job/**".to_owned(),
             namespace_lookup.clone(),
             |input: &PodJob| EventPayload::Request(input.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {

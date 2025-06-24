@@ -19,7 +19,7 @@ from orcapod import (
 )
 
 
-async def verify():
+async def verify(group, pod_job_count):
     counter = 0
 
     def count(sample):
@@ -36,14 +36,14 @@ async def verify():
         raise Exception(f"Unexpected successful pod job count: {counter}.")
 
 
-async def main(test_dir):
+async def main(client, agent, test_dir, namespace_lookup, pod_jobs):
     watcher = asyncio.create_task(client.watch(key_expr="**"))
     worker = asyncio.create_task(agent.start(namespace_lookup=namespace_lookup))
     await asyncio.sleep(5)  # ensure service ready
 
     try:
         await client.submit_pod_jobs(pod_jobs=pod_jobs)
-        await verify()
+        await verify(client.group(), len(pod_jobs))
     finally:
         shutil.rmtree(test_dir)
 
@@ -63,7 +63,6 @@ if __name__ == "__main__":
     client = AgentClient(group=group, host=host)
     agent = Agent(group=group, host=host, orchestrator=LocalDockerOrchestrator())
 
-    pod_job_count = 4
     namespace_lookup = {
         "default": f"{test_dir}/default",
     }
@@ -96,7 +95,7 @@ if __name__ == "__main__":
             env_vars=None,
             namespace_lookup=namespace_lookup,
         )
-        for i in range(1, pod_job_count + 1)
+        for i in range(1, 5)
     ]
 
-    asyncio.run(main(test_dir))
+    asyncio.run(main(client, agent, test_dir, namespace_lookup, pod_jobs))

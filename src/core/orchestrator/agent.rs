@@ -103,7 +103,7 @@ impl AgentClient {
 #[expect(
     clippy::excessive_nesting,
     clippy::let_underscore_must_use,
-    reason = "debug"
+    reason = "`result::Result<(), SendError<_>>` is the only uncaptured result since it would mean we can't transmit results over mpsc."
 )]
 pub async fn start_service<
     EventClassifierF,
@@ -115,7 +115,7 @@ pub async fn start_service<
     ResponseR,
 >(
     agent: Arc<Agent>,
-    request_topic: String,
+    request_key_expr: String,
     namespace_lookup: HashMap<String, PathBuf>,
     event_classifier: EventClassifierF,
     request_task: RequestF,
@@ -134,7 +134,7 @@ where
 {
     agent
         .client
-        .log(&format!("Started `{request_topic}` service."))
+        .log(&format!("Started `{request_key_expr}` service."))
         .await?;
     let (response_tx, mut response_rx) = mpsc::channel(100);
 
@@ -147,8 +147,8 @@ where
                 .client
                 .session
                 .declare_subscriber(format!(
-                    "group/{}/{}/**",
-                    inner_agent.client.group, request_topic
+                    "group/{}/{}",
+                    inner_agent.client.group, request_key_expr
                 ))
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
@@ -173,7 +173,7 @@ where
                         )
                         .then(move |response| async move {
                             let _: Result<(), SendError<Result<ResponseI>>> =
-                                inner_response_tx.send(response).await; // result can't be captured anyway
+                                inner_response_tx.send(response).await;
                             Ok::<_, OrcaError>(())
                         }),
                     );

@@ -2,6 +2,7 @@
     missing_docs,
     clippy::panic_in_result_fn,
     clippy::panic,
+    clippy::expect_used,
     reason = "OK in tests."
 )]
 
@@ -37,7 +38,7 @@ fn simple() -> Result<()> {
     Ok(())
 }
 
-#[expect(clippy::unwrap_used, clippy::excessive_nesting, reason = "debug")]
+#[expect(clippy::excessive_nesting, reason = "Nesting is manageable")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn parallel_four_cores() -> Result<()> {
     // config
@@ -48,7 +49,7 @@ async fn parallel_four_cores() -> Result<()> {
     let service_readiness_delay_secs = 1;
     let current_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("Current time is earlier than start of epoch (1970-01-01 00:00:00).")
         .as_millis();
     println!("current_timestamp: {current_timestamp}");
     let (group, host) = ("test", "alpha");
@@ -70,11 +71,13 @@ async fn parallel_four_cores() -> Result<()> {
         async move { inner_agent.start(&NAMESPACE_LOOKUP_READ_ONLY).await }
     });
     services.spawn(async move {
-        let session = zenoh::open(zenoh::Config::default()).await.unwrap();
+        let session = zenoh::open(zenoh::Config::default())
+            .await
+            .expect("Unable to create a zenoh session.");
         let subscriber = session
             .declare_subscriber(&format!("group/{group}/success/pod_job/**"))
             .await
-            .unwrap();
+            .expect("Unable to create subscriber.");
         let mut counter = 0;
         while let Ok(sample) = subscriber.recv_async().await {
             counter += 1;
@@ -143,5 +146,8 @@ async fn parallel_four_cores() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     client.submit_pod_jobs(pod_jobs).await?;
 
-    services.join_next().await.unwrap()?
+    services
+        .join_next()
+        .await
+        .expect("Services unexpectedly empty")?
 }
