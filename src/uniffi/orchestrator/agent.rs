@@ -121,7 +121,6 @@ impl Agent {
             orchestrator,
         })
     }
-    /// todo: replace `JoinSet` with `TaskTracker` because it frees memory as tasks finish automatically
     /// Start orchestrator execution agent service.
     ///
     /// # Errors

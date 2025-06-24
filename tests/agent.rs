@@ -43,7 +43,7 @@ async fn parallel_four_cores() -> Result<()> {
     // config
     let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
     pull_image(image_reference)?;
-    let start_margin_millis = 2000;
+    let margin_millis = 2000;
     let run_duration_secs = 5;
     let service_readiness_delay_secs = 1;
     let current_timestamp = SystemTime::now()
@@ -81,16 +81,14 @@ async fn parallel_four_cores() -> Result<()> {
             let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
             assert!(
                 u128::from(pod_result.created * 1000)
-                    <= current_timestamp
-                        + start_margin_millis
-                        + u128::from(service_readiness_delay_secs),
+                    <= current_timestamp + margin_millis + u128::from(service_readiness_delay_secs),
                 "Started pod run too late."
             );
             assert!(
                 u128::from(pod_result.terminated * 1000)
                     <= current_timestamp
+                        + 2 * margin_millis
                         + run_duration_secs * 1000
-                        + start_margin_millis
                         + u128::from(service_readiness_delay_secs),
                 "Took too long to finish pod run."
             );

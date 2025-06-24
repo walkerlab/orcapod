@@ -18,6 +18,7 @@ use tokio::{
     sync::mpsc::{self, error::SendError},
     task::JoinSet,
 };
+use tokio_util::task::TaskTracker;
 
 #[expect(clippy::expect_used, reason = "Valid static regex")]
 static RE_PODJOB_ACTION: LazyLock<Regex> = LazyLock::new(|| {
@@ -141,7 +142,7 @@ where
     services.spawn({
         let inner_agent = Arc::clone(&agent);
         async move {
-            let mut tasks = JoinSet::new();
+            let tasks = TaskTracker::new();
             let subscriber = inner_agent
                 .client
                 .session
