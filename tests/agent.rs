@@ -10,7 +10,7 @@ pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pull_image};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, OrcaPath, Pod, PodJob, PodResult},
+    model::{Annotation, Pod, PodJob, PodResult, URI},
     orchestrator::{
         agent::{Agent, AgentClient},
         docker::LocalDockerOrchestrator,
@@ -133,7 +133,7 @@ async fn parallel_four_cores() -> Result<()> {
                 )?
                 .into(),
                 HashMap::new(),
-                OrcaPath {
+                URI {
                     namespace: "default".to_owned(),
                     path: PathBuf::from("."),
                 },
