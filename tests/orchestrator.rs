@@ -4,7 +4,7 @@ pub mod fixture;
 use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style};
 use orcapod::uniffi::{
     error::Result,
-    model::OrcaPath,
+    model::URI,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
 use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
@@ -80,7 +80,7 @@ where
 fn offline_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
         let container_image_relative_location = "container_images/style-transfer/image.tar.gz";
-        let container_image_kind = ImageKind::Tarball(OrcaPath {
+        let container_image_kind = ImageKind::Tarball(URI {
             namespace: "default".to_owned(),
             path: PathBuf::from(container_image_relative_location),
         });
@@ -108,9 +108,9 @@ fn remote_container_image_basic() -> Result<()> {
         let mut pod = pod_job.pod.deref().clone();
         pod.image = "alpine:3.14".to_owned();
         pod.command = "sleep 5".to_owned();
-        pod.input_stream = HashMap::new();
+        pod.input_spec = HashMap::new();
         pod_job.pod = Arc::new(pod);
-        pod_job.input_stream = HashMap::new();
+        pod_job.input_packet = HashMap::new();
         Ok((
             orchestrator.start_blocking(namespace_lookup, &pod_job)?,
             pod_job.pod.command.clone(),

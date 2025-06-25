@@ -2,7 +2,7 @@ use crate::{
     core::util::get,
     uniffi::{
         error::{Result, selector},
-        model::{Input, PodJob},
+        model::{PathSet, PodJob},
         orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
     },
 };
@@ -50,52 +50,48 @@ impl LocalDockerOrchestrator {
             host_output_directory.to_string_lossy(),
             pod_job.pod.output_dir.to_string_lossy(),
         )];
-        let input_binds = pod_job
-            .pod
-            .input_stream
-            .iter()
-            .try_fold::<_, _, Result<_>>(
-                vec![],
-                |mut flattened_binds, (stream_name, stream_info)| {
-                    flattened_binds.extend(match get(&pod_job.input_stream, stream_name)? {
-                        Input::Unary(blob) => {
-                            vec![format!(
+        let input_binds = pod_job.pod.input_spec.iter().try_fold::<_, _, Result<_>>(
+            vec![],
+            |mut flattened_binds, (stream_name, stream_info)| {
+                flattened_binds.extend(match get(&pod_job.input_packet, stream_name)? {
+                    PathSet::Unary(blob) => {
+                        vec![format!(
+                            "{}:{}:{}",
+                            path::absolute(
+                                get(namespace_lookup, &blob.location.namespace)?
+                                    .join(&blob.location.path)
+                            )?
+                            .to_string_lossy(),
+                            stream_info.path.to_string_lossy(),
+                            "ro"
+                        )]
+                    }
+                    PathSet::Collection(blobs) => blobs
+                        .iter()
+                        .map(|blob| {
+                            Ok(format!(
                                 "{}:{}:{}",
                                 path::absolute(
                                     get(namespace_lookup, &blob.location.namespace)?
                                         .join(&blob.location.path)
                                 )?
                                 .to_string_lossy(),
-                                stream_info.path.to_string_lossy(),
-                                "ro"
-                            )]
-                        }
-                        Input::Collection(blobs) => blobs
-                            .iter()
-                            .map(|blob| {
-                                Ok(format!(
-                                    "{}:{}:{}",
-                                    path::absolute(
-                                        get(namespace_lookup, &blob.location.namespace)?
-                                            .join(&blob.location.path)
-                                    )?
+                                stream_info
+                                    .path
+                                    .join(blob.location.path.file_name().context(
+                                        selector::NoFileName {
+                                            path: blob.location.path.clone()
+                                        }
+                                    )?)
                                     .to_string_lossy(),
-                                    stream_info
-                                        .path
-                                        .join(blob.location.path.file_name().context(
-                                            selector::NoFileName {
-                                                path: blob.location.path.clone()
-                                            }
-                                        )?)
-                                        .to_string_lossy(),
-                                    "ro"
-                                ))
-                            })
-                            .collect::<Result<_>>()?,
-                    });
-                    Ok(flattened_binds)
-                },
-            )?;
+                                "ro"
+                            ))
+                        })
+                        .collect::<Result<_>>()?,
+                });
+                Ok(flattened_binds)
+            },
+        )?;
         Ok((input_binds, output_bind))
     }
     #[expect(
