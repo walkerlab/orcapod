@@ -8,7 +8,7 @@ use crate::{
 };
 use derive_more::Display;
 use futures_executor::block_on;
-use futures_util::future::try_join_all;
+use futures_util::future::join_all;
 use getset::CloneGetters;
 use serde_json::Value;
 use snafu::{OptionExt as _, ResultExt as _};
@@ -56,19 +56,19 @@ impl AgentClient {
             })?,
         })
     }
-    /// todo: should return Result<Vec<Result<()>>> as opposed of failing on first. ordered would allow determining which ones failed to retry
     /// Submit many pod jobs to be processed in parallel.
-    ///
-    /// # Errors
-    ///
-    /// Will fail immediately if there is an issue sending any single pod job request to be processed.
-    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Result<()> {
-        try_join_all(pod_jobs.iter().map(|pod_job| async {
-            self.publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
+    /// Return order will match inputs, casting outputs to `String` (since `uniffi` doesn't support sending unwrapped `Result`s).
+    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<String> {
+        join_all(pod_jobs.iter().map(|pod_job| async {
+            match self
+                .publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
                 .await
+            {
+                Ok(()) => "ok".into(),
+                Err(error) => error.to_string(),
+            }
         }))
-        .await?;
-        Ok(())
+        .await
     }
     /// Watch orchestration agent communication.
     ///

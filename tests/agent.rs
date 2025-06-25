@@ -144,7 +144,7 @@ async fn parallel_four_cores() -> Result<()> {
             )?))
         })
         .collect::<Result<Vec<_>>>()?;
-    client.submit_pod_jobs(pod_jobs).await?;
+    client.submit_pod_jobs(pod_jobs).await;
 
     services
         .join_next()
