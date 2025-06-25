@@ -113,6 +113,7 @@ missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing
 missing_inline_in_public_items = { level = "allow", priority = 127 }   # let rust compiler determine best inline logic
 missing_trait_methods = { level = "allow", priority = 127 }            # allow in favor of rustc `implement the missing item`
 module_name_repetitions = { level = "allow", priority = 127 }          # allow use of module name in type names
+multiple_crate_versions = { level = "allow", priority = 127 }          # allow since list of exceptions changes frequently from external
 multiple_inherent_impl = { level = "allow", priority = 127 }           # required in best practice to limit exposure over UniFFI
 must_use_candidate = { level = "allow", priority = 127 }               # omitting #[must_use] ok
 mod_module_files = { level = "allow", priority = 127 }                 # mod directories ok
