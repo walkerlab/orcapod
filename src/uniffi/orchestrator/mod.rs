@@ -1,6 +1,6 @@
 use crate::uniffi::{
     error::Result,
-    model::{OrcaPath, PodJob, PodResult},
+    model::{PodJob, PodResult, URI},
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
@@ -12,7 +12,7 @@ pub enum ImageKind {
     /// `{server.com/}{name}:{tag}`. Server is optional e.g. (`alpine:latest`).
     Published(String),
     /// A packaged compute environment of image+tag as a tarball.
-    Tarball(OrcaPath),
+    Tarball(URI),
 }
 /// Status of a particular compute run.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
