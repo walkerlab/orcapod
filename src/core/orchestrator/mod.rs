@@ -5,6 +5,15 @@ use crate::{
         orchestrator::{Orchestrator, PodRun},
     },
 };
+use std::sync::LazyLock;
+use tokio::runtime::Runtime;
+
+#[expect(
+    clippy::expect_used,
+    reason = "Should be able to create Tokio runtime."
+)]
+pub static ASYNC_RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("Unable to create Tokio runtime."));
 
 impl PodRun {
     pub(crate) fn new<O: Orchestrator>(pod_job: &PodJob, assigned_name: String) -> Self {

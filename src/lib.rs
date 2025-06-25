@@ -26,4 +26,6 @@ pub mod core;
 ///    1. require exporting constructor methods
 ///    1. require exporting getter methods (e.g. for each field on a `struct`) since the underlying
 ///       values are owned by Rust
+/// 1. No default trait implementations
+/// 1. (Rust limitation) No associated functions in traits e.g. class methods in Python
 pub mod uniffi;
