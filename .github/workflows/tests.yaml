@@ -8,7 +8,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build Diagram
         uses: ./.github/actions/build-diagram
-  syntax-style-format-and-integration:
+  rust-syntax-style-format-and-integration:
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
@@ -17,9 +17,9 @@ jobs:
       - name: Install Rust + components
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: 1.86
+          toolchain: 1.87
           components: rustfmt,clippy
-      - name: Install Rust code coverage
+      - name: Install code coverage
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run syntax and style tests
         run: cargo clippy --all-targets -- -D warnings
@@ -42,3 +42,19 @@ jobs:
           fail_ci_if_error: true
           files: target/llvm-cov-target/cobertura.xml
           verbose: true
+  python-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python + components
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh && \
+          uv venv -p 3.10 ~/.local/share/base && \
+          uv pip install cffi maturin -p ~/.local/share/base
+      - name: Run integration tests
+        env:
+          RUST_BACKTRACE: full
+        run: |
+          . ~/.local/share/base/bin/activate
+          maturin develop --uv
+          python tests/extra/python/smoke_test.py -- tests/.tmp

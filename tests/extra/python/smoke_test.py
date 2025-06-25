@@ -6,6 +6,7 @@
 import shutil
 from pathlib import Path
 import argparse
+import asyncio
 from orcapod import (
     Pod,
     PodJob,
@@ -15,6 +16,7 @@ from orcapod import (
     LocalFileStore,
     ModelId,
     ModelType,
+    OrcaError,
 )
 
 
@@ -72,7 +74,7 @@ def start_pod_job(data, config):
 
 
 def wait_for_pod_result(data, _):
-    print([str(p) for p in data["orch"].list_blocking()])
+    print([str(p) for p in asyncio.run(data["orch"].list())])
     print("waiting to finish...")
     data["pod_result"] = data["orch"].get_result_blocking(pod_run=data["pod_run"])
     return data["pod_result"], data
@@ -130,8 +132,9 @@ def test(test_dir, steps):
             print(f"\n==================== {step.__name__} ====================\n")
             result, data = step(data, config)
             print(result)
-    except Exception as e:
-        raise e
+    except OrcaError as e:
+        if "No such file or directory (os error 2)" not in str(e):
+            raise e
     finally:
         shutil.rmtree(test_dir)
 

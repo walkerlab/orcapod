@@ -1,5 +1,5 @@
 # DevContainer image
-FROM rust:1.86-slim
+FROM rust:1.87-slim
 RUN \
     adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
     # install docker
@@ -41,7 +41,7 @@ RUN \
 RUN \
     # install python manager
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    uv venv -p 3.9 ~/.local/share/base && \
+    uv venv -p 3.10 ~/.local/share/base && \
     # pip package based on C lib/client
     uv pip install cffi maturin ipykernel -p ~/.local/share/base && \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
