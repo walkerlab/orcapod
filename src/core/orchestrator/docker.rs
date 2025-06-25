@@ -131,23 +131,14 @@ impl LocalDockerOrchestrator {
         let labels = HashMap::from([
             ("org.orcapod".to_owned(), "true".to_owned()),
             (
-                "org.orcapod.pod.annotation".to_owned(),
-                serde_json::to_string(&pod_job.pod.annotation)?,
-            ),
-            ("org.orcapod.pod.hash".to_owned(), pod_job.pod.hash.clone()),
-            (
-                "org.orcapod.pod".to_owned(),
-                serde_json::to_string(&*pod_job.pod)?,
+                "org.orcapod.pod_job".to_owned(),
+                serde_json::to_string(&pod_job)?,
             ),
             (
                 "org.orcapod.pod_job.annotation".to_owned(),
                 serde_json::to_string(&pod_job.annotation)?,
             ),
             ("org.orcapod.pod_job.hash".to_owned(), pod_job.hash.clone()),
-            (
-                "org.orcapod.pod_job".to_owned(),
-                serde_json::to_string(&pod_job)?,
-            ),
         ]);
         let command = RE_FOR_CMD
             .captures_iter(&pod_job.pod.command)

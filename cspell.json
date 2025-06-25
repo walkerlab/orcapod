@@ -74,5 +74,12 @@
         "strsim",
         "getrandom",
         "wasi"
+    ],
+    "useGitignore": false,
+    "ignorePaths": [
+        "Cargo.lock",
+        "target",
+        "*.dot",
+        "tests/.tmp"
     ]
 }

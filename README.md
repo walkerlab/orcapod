@@ -11,12 +11,13 @@
 ```bash
 #!/bin/bash
 set -e  # fail early on non-zero exit
-cargo clippy --all-targets -- -D warnings  # syntax and style tests
-cargo fmt --check  # formatting test
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" -- --nocapture  # integration tests w/ stdout coverage summary
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --html -- --nocapture  # integration tests w/ HTML coverage report (target/llvm-cov/html/index.html)
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture  # integration tests w/ codecov coverage report
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --cobertura --output-path target/llvm-cov-target/cobertura.xml -- --nocapture  # integration tests w/ cobertura coverage report
+cargo clippy --all-targets -- -D warnings  # Rust syntax and style tests
+cargo fmt --check  # Rust formatting test
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" -- --nocapture  # Rust integration tests w/ stdout coverage summary
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --html -- --nocapture  # Rust integration tests w/ HTML coverage report (target/llvm-cov/html/index.html)
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture  # Rust integration tests w/ codecov coverage report
+cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --cobertura --output-path target/llvm-cov-target/cobertura.xml -- --nocapture  # Rust integration tests w/ cobertura coverage report
+. ~/.local/share/base/bin/activate && maturin develop --uv && RUST_BACKTRACE=1 python tests/extra/python/smoke_test.py -- tests/.tmp # Python integration tests
 ```
 
 ## Docs
