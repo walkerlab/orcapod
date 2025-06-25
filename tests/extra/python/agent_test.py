@@ -13,7 +13,7 @@ from orcapod import (
     AgentClient,
     LocalDockerOrchestrator,
     PodJob,
-    OrcaPath,
+    Uri,
     Pod,
     Annotation,
 )
@@ -86,7 +86,7 @@ if __name__ == "__main__":
                 required_gpu=None,
             ),
             input_stream={},
-            output_dir=OrcaPath(
+            output_dir=Uri(
                 namespace="default",
                 path=".",
             ),
