@@ -3,11 +3,12 @@
     clippy::panic_in_result_fn,
     clippy::panic,
     clippy::expect_used,
+    clippy::indexing_slicing,
     reason = "OK in tests."
 )]
 
 pub mod fixture;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pull_image};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pull_image};
 use orcapod::uniffi::{
     error::Result,
     model::{Annotation, Pod, PodJob, PodResult, URI},
@@ -15,6 +16,7 @@ use orcapod::uniffi::{
         agent::{Agent, AgentClient},
         docker::LocalDockerOrchestrator,
     },
+    store::{ModelID, Store as _, filestore::LocalFileStore},
 };
 use std::{
     collections::HashMap,
@@ -41,6 +43,8 @@ fn simple() -> Result<()> {
 #[expect(clippy::excessive_nesting, reason = "Nesting is manageable")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn parallel_four_cores() -> Result<()> {
+    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     // config
     let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
     pull_image(image_reference)?;
@@ -68,7 +72,12 @@ async fn parallel_four_cores() -> Result<()> {
     });
     services.spawn({
         let inner_agent = agent.clone();
-        async move { inner_agent.start(&NAMESPACE_LOOKUP_READ_ONLY).await }
+        let inner_store = store.clone();
+        async move {
+            inner_agent
+                .start(&NAMESPACE_LOOKUP_READ_ONLY, Some(inner_store.into()))
+                .await
+        }
     });
     services.spawn(async move {
         let session = zenoh::open(zenoh::Config::default())
@@ -94,6 +103,10 @@ async fn parallel_four_cores() -> Result<()> {
                         + run_duration_secs * 1000
                         + u128::from(service_readiness_delay_secs),
                 "Took too long to finish pod run."
+            );
+            assert!(
+                pod_result == store.load_pod_result(&ModelID::Hash(pod_result.hash.clone()))?,
+                "Stored pod result does not match."
             );
             if counter == 4 {
                 break;

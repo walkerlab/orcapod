@@ -123,8 +123,9 @@ pub async fn start_service<
 ) -> Result<()>
 where
     EventClassifierF: Fn(&RequestI) -> EventPayload + Send + 'static,
-    RequestI: for<'serde> Deserialize<'serde>,
-    RequestF: Fn(Arc<Agent>, HashMap<String, PathBuf>, EventMetadata, RequestI) -> RequestR
+    RequestI: for<'serde> Deserialize<'serde> + Send + 'static,
+    RequestF: FnOnce(Arc<Agent>, HashMap<String, PathBuf>, EventMetadata, RequestI) -> RequestR
+        + Clone
         + Send
         + 'static,
     RequestR: Future<Output = Result<ResponseI>> + Send + 'static,
@@ -164,19 +165,25 @@ where
                         subgroup: metadata["pod_job_hash"].to_string(),
                     };
                     let _event_payload = event_classifier(&input);
-                    tasks.spawn(
-                        request_task(
-                            Arc::clone(&inner_agent),
-                            namespace_lookup.clone(),
-                            event_metadata,
-                            input,
-                        )
-                        .then(move |response| async move {
-                            let _: Result<(), SendError<Result<ResponseI>>> =
-                                inner_response_tx.send(response).await;
-                            Ok::<_, OrcaError>(())
-                        }),
-                    );
+                    tasks.spawn({
+                        let inner_request_task = request_task.clone();
+                        let inner_inner_agent = Arc::clone(&inner_agent);
+                        let inner_namespace_lookup = namespace_lookup.clone();
+                        async move {
+                            inner_request_task(
+                                inner_inner_agent,
+                                inner_namespace_lookup,
+                                event_metadata,
+                                input,
+                            )
+                            .then(move |response| async move {
+                                let _: Result<(), SendError<Result<ResponseI>>> =
+                                    inner_response_tx.send(response).await;
+                                Ok::<_, OrcaError>(())
+                            })
+                            .await
+                        }
+                    });
                 }
             }
             Ok(())

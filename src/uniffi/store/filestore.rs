@@ -8,7 +8,7 @@ use getset::CloneGetters;
 use std::{fs, path::PathBuf};
 use uniffi;
 /// Support for a storage backend on a local filesystem directory.
-#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]

@@ -2,8 +2,9 @@ use crate::{
     core::orchestrator::agent::{EventPayload, start_service},
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::PodJob,
+        model::{PodJob, PodResult},
         orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
+        store::{Store as _, filestore::LocalFileStore},
     },
 };
 use derive_more::Display;
@@ -126,13 +127,17 @@ impl Agent {
     /// # Errors
     ///
     /// Will stop and return an error if encounters an error while processing any pod job request.
-    pub async fn start(&self, namespace_lookup: &HashMap<String, PathBuf>) -> Result<()> {
+    pub async fn start(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        available_store: Option<Arc<LocalFileStore>>,
+    ) -> Result<()> {
         let mut services = JoinSet::new();
         services.spawn(start_service(
             Arc::new(self.clone()),
             "request/pod_job/**".to_owned(),
             namespace_lookup.clone(),
-            |input: &PodJob| EventPayload::Request(input.clone()),
+            |pod_job: &PodJob| EventPayload::Request(pod_job.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {
                 let pod_run = agent
                     .orchestrator
@@ -152,6 +157,24 @@ impl Agent {
                 client.publish(response_topic, &pod_result).await
             },
         ));
+        if let Some(store) = available_store {
+            services.spawn(start_service(
+                Arc::new(self.clone()),
+                "{success,failure}/pod_job/**".to_owned(),
+                namespace_lookup.clone(),
+                |pod_result: &PodResult| match pod_result.status {
+                    Status::Completed => EventPayload::Success(pod_result.clone()),
+                    Status::Running | Status::Failed(_) | Status::Unset => {
+                        EventPayload::Failure(pod_result.clone())
+                    }
+                },
+                async move |_, _, _, pod_result| {
+                    store.save_pod_result(&pod_result)?;
+                    Ok(())
+                },
+                async |_, ()| Ok(()),
+            ));
+        }
         services
             .join_next()
             .await
