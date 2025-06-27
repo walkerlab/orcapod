@@ -1,9 +1,13 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 pub mod fixture;
-use fixture::{TestContainerImage, TestDirs, container_image_style, pod_job_style};
+use fixture::{
+    NAMESPACE_LOOKUP_READ_ONLY, TestContainerImage, TestDirs, container_image_style, pod_job_style,
+    pod_jobs_stresser,
+};
+use futures_util::future::join_all;
 use orcapod::uniffi::{
-    error::Result,
+    error::{OrcaError, Result},
     model::URI,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
@@ -117,4 +121,37 @@ fn remote_container_image_basic() -> Result<()> {
             None,
         ))
     })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn verify_pod_result_not_running() -> Result<()> {
+    let results = join_all(
+        pod_jobs_stresser(
+            "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40",
+            5,
+            16,
+        )?
+        .iter()
+        .map(|pod_job| async move {
+            let orch = LocalDockerOrchestrator::new()?;
+            let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, pod_job).await?;
+            let pod_result = orch.get_result(&pod_run).await?;
+            orch.delete(&pod_run).await?;
+            Ok::<_, OrcaError>(pod_result)
+        }),
+    )
+    .await;
+
+    let statuses = results
+        .into_iter()
+        .map(|result| Ok(result?.status))
+        .filter(|status| !matches!(status, Ok(Status::Completed)))
+        .collect::<Result<Vec<_>>>()?;
+
+    println!("statuses: {statuses:?}");
+    assert!(
+        statuses.is_empty(),
+        "Some pod results returned in a status other than `Completed`."
+    );
+    Ok(())
 }

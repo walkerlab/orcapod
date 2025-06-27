@@ -170,6 +170,7 @@ impl LocalDockerOrchestrator {
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::indexing_slicing,
+        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
@@ -210,13 +211,13 @@ impl LocalDockerOrchestrator {
             let terminated_timestamp =
                 DateTime::parse_from_rfc3339(container_spec.state.as_ref()?.finished_at.as_ref()?)
                     .ok()?
-                    .timestamp() as u64;
+                    .timestamp();
             Some((
                 container_name,
                 RunInfo {
                     image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
                     created: container_summary.created? as u64,
-                    terminated: (terminated_timestamp > 0).then_some(terminated_timestamp),
+                    terminated: (terminated_timestamp > 0).then_some(terminated_timestamp as u64),
                     env_vars: container_spec
                         .config
                         .as_ref()?
@@ -243,9 +244,20 @@ impl LocalDockerOrchestrator {
                         container_spec.state.as_ref()?.exit_code? as i16,
                     ) {
                         (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
-                        (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
-                        (ContainerStateStatusEnum::EXITED, code) => Status::Failed(code),
-                        _ => todo!(),
+                        (
+                            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
+                            0,
+                        ) => Status::Completed,
+                        (
+                            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
+                            code,
+                        ) => Status::Failed(code),
+                        (_, code) => {
+                            todo!(
+                                "Unhandled container state: {}, exit code: {code}.",
+                                container_spec.state.as_ref()?.status.as_ref()?
+                            )
+                        }
                     },
                     mounts: container_spec
                         .mounts

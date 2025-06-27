@@ -18,9 +18,10 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     hash::RandomState,
+    iter::repeat_with,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
 };
 use tempfile::TempDir;
 
@@ -140,6 +141,44 @@ pub fn pod_result_style(
         1_737_922_307,
         1_737_925_907,
     )
+}
+
+pub fn pod_jobs_stresser(
+    image_reference: &str,
+    run_duration_secs: u16,
+    count: usize,
+) -> Result<Vec<Arc<PodJob>>> {
+    repeat_with(|| {
+        Ok(Arc::new(PodJob::new(
+            None,
+            Pod::new(
+                None,
+                image_reference.into(),
+                format!(
+                    "stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"
+                ),
+                HashMap::new(),
+                PathBuf::from("/tmp/output"),
+                HashMap::new(),
+                "https://github.com/user/simple".to_owned(),
+                0.1,          // 100 millicores as frac cores
+                10_u64 << 20, // 10 MiB in bytes
+                None,
+            )?
+            .into(),
+            HashMap::new(),
+            URI {
+                namespace: "default".to_owned(),
+                path: PathBuf::from("."),
+            },
+            1.0,          // 1000 millicores as frac cores
+            10_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
+            None,
+            &NAMESPACE_LOOKUP_READ_ONLY,
+        )?))
+    })
+    .take(count)
+    .collect::<Result<Vec<_>>>()
 }
 
 pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
