@@ -12,7 +12,11 @@ use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
-        orchestrator::{Orchestrator as _, agent::AgentClient, docker::LocalDockerOrchestrator},
+        orchestrator::{
+            Orchestrator as _,
+            agent::{AgentClient, Response},
+            docker::LocalDockerOrchestrator,
+        },
     },
 };
 use serde_json;
@@ -131,7 +135,10 @@ async fn submit_pod_jobs() -> Result<()> {
         "Client received an unexpected number of pod job request responses."
     );
     assert!(
-        responses[0].contains("Agent encountered a communication error."),
+        match &responses[0] {
+            Response::Ok => false,
+            Response::Err(message) => message.contains("Agent encountered a communication error."),
+        },
         "Client did not experience expected publish error."
     );
     Ok(())

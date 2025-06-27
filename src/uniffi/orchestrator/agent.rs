@@ -18,6 +18,19 @@ use tokio::task::JoinSet;
 use uniffi;
 use zenoh;
 
+/// A response, similar to Rust's `Result` but casting error to `String`.
+///
+/// This is a workaround due to `UniFFI` limitations when trying to send a collection of `Result`
+/// over the CFFI boundary e.g. concurrent calls where it is necessary to know the status of each
+/// request to determine what to retry.
+#[derive(uniffi::Enum)]
+pub enum Response {
+    /// Success
+    Ok,
+    /// Error cast to `String`
+    Err(String),
+}
+
 /// Client to connect to an execution agent within a coordinated fleet. Connection optimized/rerouted by Zenoh.
 #[expect(
     clippy::field_scoped_visibility_modifiers,
@@ -59,14 +72,14 @@ impl AgentClient {
     }
     /// Submit many pod jobs to be processed in parallel.
     /// Return order will match inputs, casting outputs to `String` (since `uniffi` doesn't support sending unwrapped `Result`s).
-    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<String> {
+    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<Response> {
         join_all(pod_jobs.iter().map(|pod_job| async {
             match self
                 .publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
                 .await
             {
-                Ok(()) => "ok".into(),
-                Err(error) => error.to_string(),
+                Ok(()) => Response::Ok,
+                Err(error) => Response::Err(error.to_string()),
             }
         }))
         .await
