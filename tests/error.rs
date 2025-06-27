@@ -1,13 +1,18 @@
-#![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
+#![expect(
+    missing_docs,
+    clippy::panic_in_result_fn,
+    clippy::indexing_slicing,
+    reason = "OK in tests."
+)]
 
 pub mod fixture;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_custom, pod_job_style};
 use glob::glob;
 use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
-        orchestrator::{Orchestrator as _, docker::LocalDockerOrchestrator},
+        orchestrator::{Orchestrator as _, agent::AgentClient, docker::LocalDockerOrchestrator},
     },
 };
 use serde_json;
@@ -86,6 +91,19 @@ async fn external_tokio_task() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn internal_agent_communication_failure() -> Result<()> {
+    let client = AgentClient::new("error".into(), "host".into())?;
+    assert!(
+        client
+            .watch("oh?no".into())
+            .await
+            .is_err_and(contains_debug),
+        "Did not raise an agent communication failure error."
+    );
+    Ok(())
+}
+
 #[test]
 fn internal_invalid_filepath() {
     assert!(
@@ -100,4 +118,21 @@ fn internal_key_missing() {
         pod_job_style(&HashMap::new()).is_err_and(contains_debug),
         "Did not raise a key missing error."
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn submit_pod_jobs() -> Result<()> {
+    let client = AgentClient::new("error".into(), "host".into())?;
+    let mut pod_job = pod_job_custom("alpine:3.14", "sleep 5", &NAMESPACE_LOOKUP_READ_ONLY)?;
+    pod_job.hash = "bad?hash".into();
+    let responses = client.submit_pod_jobs(vec![pod_job.into()]).await;
+    assert!(
+        responses.len() == 1,
+        "Client received an unexpected number of pod job request responses."
+    );
+    assert!(
+        responses[0].contains("Agent encountered a communication error."),
+        "Client did not experience expected publish error."
+    );
+    Ok(())
 }
