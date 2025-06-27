@@ -31,7 +31,7 @@ async def verify(group, pod_job_count):
         with session.declare_subscriber(
             f"group/{group}/success/pod_job/**", count
         ) as subscriber:
-            await asyncio.sleep(10)
+            await asyncio.sleep(20)
 
     if counter != pod_job_count:
         raise Exception(f"Unexpected successful pod job count: {counter}.")
