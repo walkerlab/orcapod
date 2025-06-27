@@ -36,6 +36,7 @@ where
         orchestrator
             .list_blocking()?
             .iter()
+            .filter(|container| container.pod_job == pod_run.pod_job)
             .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command.clone()],
@@ -52,6 +53,7 @@ where
         orchestrator
             .list_blocking()?
             .iter()
+            .filter(|container| container.pod_job == pod_run.pod_job)
             .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command],
@@ -67,7 +69,10 @@ where
     // test delete
     orchestrator.delete_blocking(&pod_run)?;
     assert!(
-        orchestrator.list_blocking()?.is_empty(),
+        !orchestrator
+            .list_blocking()?
+            .iter()
+            .any(|container| container.pod_job == pod_run.pod_job),
         "Unexpected container remains."
     );
     // try getting info of a purged pod run

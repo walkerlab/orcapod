@@ -8,10 +8,10 @@
 )]
 
 pub mod fixture;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pull_image};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Pod, PodJob, PodResult, URI},
+    model::PodResult,
     orchestrator::{
         agent::{Agent, AgentClient},
         docker::LocalDockerOrchestrator,
@@ -20,7 +20,6 @@ use orcapod::uniffi::{
 };
 use std::{
     collections::HashMap,
-    path::PathBuf,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -41,10 +40,10 @@ fn simple() -> Result<()> {
 }
 
 #[expect(clippy::excessive_nesting, reason = "Nesting is manageable")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn parallel_four_cores() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let store = LocalFileStore::new(test_dirs.0["default"].path().into());
     // config
     let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
     pull_image(image_reference)?;
@@ -100,12 +99,14 @@ async fn parallel_four_cores() -> Result<()> {
                 u128::from(pod_result.terminated * 1000)
                     <= current_timestamp
                         + 2 * margin_millis
-                        + run_duration_secs * 1000
+                        + u128::from(run_duration_secs) * 1000
                         + u128::from(service_readiness_delay_secs),
                 "Took too long to finish pod run."
             );
-            assert!(
-                pod_result == store.load_pod_result(&ModelID::Hash(pod_result.hash.clone()))?,
+            async_sleep(Duration::from_secs(1)).await; // give agent a chance to save pod result first
+            assert_eq!(
+                store.load_pod_result(&ModelID::Hash(pod_result.hash.clone()))?,
+                pod_result,
                 "Stored pod result does not match."
             );
             if counter == 4 {
@@ -120,44 +121,9 @@ async fn parallel_four_cores() -> Result<()> {
     });
     async_sleep(Duration::from_secs(service_readiness_delay_secs)).await;
     // submit requests
-    let pod_jobs = (1..5)
-        .map(|i| {
-            Ok(Arc::new(PodJob::new(
-                Some(Annotation {
-                    name: "simple".to_owned(),
-                    description: "This is an example pod job.".to_owned(),
-                    version: format!("0.{i}.0"),
-                }),
-                Pod::new(
-                    Some(Annotation {
-                        name: "simple".to_owned(),
-                        description: "This is an example pod.".to_owned(),
-                        version: format!("{i}.0.0"),
-                    }),
-                    image_reference.into(),
-                    format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"),
-                    HashMap::new(),
-                    PathBuf::from("/tmp/output"),
-                    HashMap::new(),
-                    "https://github.com/user/simple".to_owned(),
-                    0.1,          // 100 millicores as frac cores
-                    10_u64 << 20, // 10 MiB in bytes
-                    None,
-                )?
-                .into(),
-                HashMap::new(),
-                URI {
-                    namespace: "default".to_owned(),
-                    path: PathBuf::from("."),
-                },
-                1.0,          // 1000 millicores as frac cores
-                10_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
-                None,
-                &NAMESPACE_LOOKUP_READ_ONLY,
-            )?))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    client.submit_pod_jobs(pod_jobs).await;
+    client
+        .submit_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 4)?)
+        .await;
 
     services
         .join_next()
