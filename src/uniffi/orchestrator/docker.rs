@@ -13,6 +13,7 @@ use async_trait;
 use bollard::{
     Docker,
     container::{RemoveContainerOptions, StartContainerOptions, WaitContainerOptions},
+    errors::Error::DockerContainerWaitError,
     image::{CreateImageOptions, ImportImageOptions},
 };
 use derive_more::Display;
@@ -192,11 +193,23 @@ impl Orchestrator for LocalDockerOrchestrator {
             })?;
         Ok(run_info)
     }
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "Favor readability due to complexity in external dependency."
+    )]
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api
+        match self
+            .api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()
-            .await?;
+            .await
+        {
+            Ok(_) => (),
+            Err(err) => match err {
+                DockerContainerWaitError { .. } => (),
+                _ => return Err(OrcaError::from(err)),
+            },
+        }
 
         let mut result_info: RunInfo;
         while {

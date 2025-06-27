@@ -83,34 +83,44 @@ async fn parallel_four_cores() -> Result<()> {
             .await
             .expect("Unable to create a zenoh session.");
         let subscriber = session
-            .declare_subscriber(&format!("group/{group}/success/pod_job/**"))
+            .declare_subscriber(&format!("group/{group}/*/pod_job/**"))
             .await
             .expect("Unable to create subscriber.");
-        let mut counter = 0;
+        let mut success_counter = 0;
+        let mut failure_counter = 0;
         while let Ok(sample) = subscriber.recv_async().await {
-            counter += 1;
-            let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
-            assert!(
-                u128::from(pod_result.created * 1000)
-                    <= current_timestamp + margin_millis + u128::from(service_readiness_delay_secs),
-                "Started pod run too late."
-            );
-            assert!(
-                u128::from(pod_result.terminated * 1000)
-                    <= current_timestamp
-                        + 2 * margin_millis
-                        + u128::from(run_duration_secs) * 1000
-                        + u128::from(service_readiness_delay_secs),
-                "Took too long to finish pod run."
-            );
-            async_sleep(Duration::from_secs(1)).await; // give agent a chance to save pod result first
-            assert_eq!(
-                store.load_pod_result(&ModelID::Hash(pod_result.hash.clone()))?,
-                pod_result,
-                "Stored pod result does not match."
-            );
-            if counter == 4 {
-                break;
+            let topic_kind = sample.key_expr().as_str().split('/').collect::<Vec<_>>()[2];
+            if ["success", "failure"].contains(&topic_kind) {
+                let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
+                assert!(
+                    u128::from(pod_result.created * 1000)
+                        <= current_timestamp
+                            + margin_millis
+                            + u128::from(service_readiness_delay_secs),
+                    "Started pod run too late."
+                );
+                assert!(
+                    u128::from(pod_result.terminated * 1000)
+                        <= current_timestamp
+                            + 2 * margin_millis
+                            + u128::from(run_duration_secs) * 1000
+                            + u128::from(service_readiness_delay_secs),
+                    "Took too long to finish pod run."
+                );
+                async_sleep(Duration::from_secs(1)).await; // give agent a chance to save pod result first
+                assert_eq!(
+                    store.load_pod_result(&ModelID::Hash(pod_result.hash.clone()))?,
+                    pod_result,
+                    "Stored pod result does not match."
+                );
+                if topic_kind == "success" {
+                    success_counter += 1;
+                } else {
+                    failure_counter += 1;
+                }
+                if success_counter == 3 && failure_counter == 1 {
+                    break;
+                }
             }
         }
         Ok(())
@@ -122,7 +132,7 @@ async fn parallel_four_cores() -> Result<()> {
     async_sleep(Duration::from_secs(service_readiness_delay_secs)).await;
     // submit requests
     client
-        .submit_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 4)?)
+        .submit_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 3, 1)?)
         .await;
 
     services

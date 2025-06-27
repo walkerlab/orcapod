@@ -18,7 +18,6 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     hash::RandomState,
-    iter::repeat_with,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Arc, LazyLock},
@@ -143,42 +142,57 @@ pub fn pod_result_style(
     )
 }
 
+pub fn pod_job_custom(
+    image_reference: &str,
+    command: &str,
+    namespace_lookup: &HashMap<String, PathBuf, RandomState>,
+) -> Result<PodJob> {
+    PodJob::new(
+        None,
+        Pod::new(
+            None,
+            image_reference.into(),
+            command.into(),
+            HashMap::new(),
+            PathBuf::from("/tmp/output"),
+            HashMap::new(),
+            "https://github.com/place/holder".to_owned(),
+            0.1,          // 100 millicores as frac cores
+            10_u64 << 20, // 10 MiB in bytes
+            None,
+        )?
+        .into(),
+        HashMap::new(),
+        URI {
+            namespace: "default".to_owned(),
+            path: PathBuf::from("."),
+        },
+        1.0,          // 1000 millicores as frac cores
+        10_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
+        None,
+        namespace_lookup,
+    )
+}
+
 pub fn pod_jobs_stresser(
     image_reference: &str,
     run_duration_secs: u16,
-    count: usize,
+    success_count: usize,
+    error_count: usize,
 ) -> Result<Vec<Arc<PodJob>>> {
-    repeat_with(|| {
-        Ok(Arc::new(PodJob::new(
-            None,
-            Pod::new(
-                None,
-                image_reference.into(),
-                format!(
-                    "stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"
-                ),
-                HashMap::new(),
-                PathBuf::from("/tmp/output"),
-                HashMap::new(),
-                "https://github.com/user/simple".to_owned(),
-                0.1,          // 100 millicores as frac cores
-                10_u64 << 20, // 10 MiB in bytes
-                None,
-            )?
-            .into(),
-            HashMap::new(),
-            URI {
-                namespace: "default".to_owned(),
-                path: PathBuf::from("."),
-            },
-            1.0,          // 1000 millicores as frac cores
-            10_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
-            None,
-            &NAMESPACE_LOOKUP_READ_ONLY,
-        )?))
-    })
-    .take(count)
-    .collect::<Result<Vec<_>>>()
+    (1..=(success_count + error_count))
+        .map(|i| {
+            if i <= success_count {
+                return Ok(pod_job_custom(
+                    image_reference,
+                    &format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"),
+                    &NAMESPACE_LOOKUP_READ_ONLY,
+                )?
+                .into());
+            }
+            Ok(pod_job_custom(image_reference, "sleep crash", &NAMESPACE_LOOKUP_READ_ONLY)?.into())
+        })
+        .collect::<Result<Vec<_>>>()
 }
 
 pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
