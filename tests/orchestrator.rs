@@ -129,6 +129,7 @@ fn remote_container_image_basic() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[expect(clippy::use_debug, reason = "Useful in debugging from CI.")]
 async fn verify_pod_result_not_running() -> Result<()> {
     let results = join_all(
         pod_jobs_stresser(
