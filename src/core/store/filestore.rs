@@ -110,7 +110,7 @@ impl LocalFileStore {
         Ok(model_info.hash)
     }
 
-    fn save_file(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<()> {
+    pub(crate) fn save_file(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<()> {
         if let Some(parent) = file.as_ref().parent() {
             fs::create_dir_all(parent)?;
         }

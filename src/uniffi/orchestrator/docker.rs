@@ -6,20 +6,22 @@ use crate::{
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{PodJob, PodResult},
-        orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
+        orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
     },
 };
 use async_trait;
 use bollard::{
     Docker,
-    container::{RemoveContainerOptions, StartContainerOptions, WaitContainerOptions},
+    container::{
+        LogOutput, LogsOptions, RemoveContainerOptions, StartContainerOptions, WaitContainerOptions,
+    },
     image::{CreateImageOptions, ImportImageOptions},
 };
 use derive_more::Display;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, futures::TryFutureExt as _};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::fs::File;
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{fs::File, time::sleep};
 use tokio_util::{
     bytes::{Bytes, BytesMut},
     codec::{BytesCodec, FramedRead},
@@ -64,6 +66,9 @@ impl Orchestrator for LocalDockerOrchestrator {
     }
     fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult> {
         ASYNC_RUNTIME.block_on(self.get_result(pod_run))
+    }
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String> {
+        ASYNC_RUNTIME.block_on(self.get_logs(pod_run))
     }
     #[expect(
         clippy::try_err,
@@ -193,11 +198,27 @@ impl Orchestrator for LocalDockerOrchestrator {
         Ok(run_info)
     }
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api
+        match self
+            .api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()
-            .await?;
-        let result_info = self.get_info(pod_run).await?;
+            .await
+        {
+            Ok(_) => (),
+            Err(err) => match err {
+                DockerContainerWaitError { .. } => (),
+                _ => return Err(OrcaError::from(err)),
+            },
+        }
+
+        let mut result_info: RunInfo;
+        while {
+            result_info = self.get_info(pod_run).await?;
+            matches!(&result_info.status, Status::Running)
+        } {
+            sleep(Duration::from_millis(100)).await;
+        }
+
         PodResult::new(
             None,
             Arc::clone(&pod_run.pod_job),
@@ -209,7 +230,63 @@ impl Orchestrator for LocalDockerOrchestrator {
                 .context(selector::InvalidPodResultTerminatedDatetime {
                     pod_job_hash: pod_run.pod_job.hash.clone(),
                 })?,
+            self.get_logs(pod_run).await?,
         )
+    }
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String> {
+        let mut std_out = Vec::new();
+        let mut std_err = Vec::new();
+
+        self.api
+            .logs::<String>(
+                &pod_run.assigned_name,
+                Some(LogsOptions {
+                    stdout: true,
+                    stderr: true,
+                    ..Default::default()
+                }),
+            )
+            .try_collect::<Vec<_>>()
+            .await?
+            .iter()
+            .for_each(|log_output| match log_output {
+                LogOutput::StdOut { message } => {
+                    std_out.extend(message.to_vec());
+                }
+                LogOutput::StdErr { message } => {
+                    std_err.extend(message.to_vec());
+                }
+                LogOutput::StdIn { .. } | LogOutput::Console { .. } => {
+                    // Ignore stdin logs, as they are not relevant for our use case
+                }
+            });
+
+        let mut logs = String::from_utf8_lossy(&std_out).to_string();
+        if !std_err.is_empty() {
+            logs.push_str("\nSTDERR:\n");
+            logs.push_str(&String::from_utf8_lossy(&std_err));
+        }
+
+        // Check for errors in the docker state, if exist, attach it to logs
+        // This is for when the container exits immediately due to a bad command or similar
+        let error = self
+            .api
+            .inspect_container(&pod_run.assigned_name, None)
+            .await?
+            .state
+            .context(selector::FailedToExtractRunInfo {
+                container_name: &pod_run.assigned_name,
+            })?
+            .error
+            .context(selector::FailedToExtractRunInfo {
+                container_name: &pod_run.assigned_name,
+            })?;
+
+        if !error.is_empty() {
+            logs.push_str(&error);
+        }
+
+        Ok(logs)
     }
 }
 

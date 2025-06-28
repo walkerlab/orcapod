@@ -17,6 +17,8 @@ pub enum ImageKind {
 /// Status of a particular compute run.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
 pub enum Status {
+    /// Container is created and is pending execution
+    Queued,
     /// Run is ongoing.
     Running,
     /// Run has completed successfully.
@@ -52,7 +54,7 @@ pub struct RunInfo {
     pub memory_limit: u64,
 }
 /// Current computation managed by orchestrator.
-#[derive(uniffi::Record, Debug)]
+#[derive(uniffi::Record, Debug, PartialEq)]
 pub struct PodRun {
     /// Original compute request.
     pub pod_job: Arc<PodJob>,
@@ -111,6 +113,10 @@ pub trait Orchestrator: Send + Sync {
     ///
     /// Will return `Err` if there is an issue creating a pod result.
     fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// Get the logs for a specific pod run.
+    /// # Errors
+    /// Will return `Err` if there is an issue getting logs.
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String>;
     /// How to asynchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -156,6 +162,8 @@ pub trait Orchestrator: Send + Sync {
     ///
     /// Will return `Err` if there is an issue creating a pod result.
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
+    /// Get the logs for a specific pod run.
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String>;
 }
 
 /// Orchestration implementation for Docker backend.

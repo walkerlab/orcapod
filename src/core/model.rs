@@ -25,7 +25,7 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
         &mapping
             .iter()
             .filter_map(|(k, v)| match &**k {
-                "annotation" | "hash" => None,
+                "annotation" | "hash" | "logs" => None,
                 "pod" | "pod_job" => Some((k, v["hash"].clone())),
                 _ => Some((k, v.clone())),
             })

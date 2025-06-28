@@ -204,6 +204,9 @@ pub struct PodResult {
     pub created: u64,
     /// Time in epoch when terminated in seconds.
     pub terminated: u64,
+    /// Output logs of container
+    #[serde(default)]
+    pub logs: String,
 }
 
 impl PodResult {
@@ -215,10 +218,11 @@ impl PodResult {
     pub fn new(
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
-        assigned_name: String,
+        assigned_name: String, // Skip
         status: Status,
-        created: u64,
-        terminated: u64,
+        created: u64,    // skip
+        terminated: u64, // skip
+        logs: String,
     ) -> Result<Self> {
         let pod_result_no_hash = Self {
             annotation,
@@ -228,7 +232,9 @@ impl PodResult {
             status,
             created,
             terminated,
+            logs,
         };
+
         Ok(Self {
             hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
             ..pod_result_no_hash
