@@ -82,6 +82,8 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("Pipeline is not a DAG."))]
+    PipelineCyclic { backtrace: Option<Backtrace> },
     #[snafu(transparent)]
     BollardError {
         source: BollardError,
@@ -95,6 +97,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     IoError {
         source: io::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("{message}"))]
+    LayoutError {
+        message: String,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

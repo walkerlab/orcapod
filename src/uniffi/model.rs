@@ -1,6 +1,7 @@
 use crate::{
     core::{
         crypto::{hash_blob, hash_buffer},
+        graph::{make_dot, make_graph, make_svg},
         model::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
@@ -10,6 +11,7 @@ use crate::{
 };
 use derive_more::Display;
 use getset::CloneGetters;
+use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
@@ -17,11 +19,11 @@ use uniffi;
 /// Available models.
 #[derive(uniffi::Enum, Debug)]
 pub enum ModelType {
-    /// A reusable, containerized computational unit.
+    /// See [`Pod`].
     Pod,
-    /// A compute job that specifies resource requests and input/output targets.
+    /// See [`PodJob`].
     PodJob,
-    /// Result from a compute job run.
+    /// See [`PodResult`].
     PodResult,
 }
 
@@ -236,6 +238,45 @@ impl PodResult {
     }
 }
 
+/// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
+#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct Pipeline {
+    /// Computational DAG in-memory.
+    #[getset(skip)]
+    pub graph: DiGraph<String, String>,
+    /// Metadata for each kernel referenced in the DAG.
+    pub metadata: HashMap<String, Kernel>,
+}
+
+#[uniffi::export]
+impl Pipeline {
+    /// Construct a new pipeline instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `Pipeline` instance.
+    #[uniffi::constructor]
+    pub fn new(input_dot: &str, input_metadata: &HashMap<String, Kernel>) -> Result<Self> {
+        let (graph, metadata) = make_graph(input_dot, input_metadata)?;
+        Ok(Self { graph, metadata })
+    }
+    /// Cast the graph into [DOT](https://graphviz.org/doc/info/lang.html).
+    pub fn make_dot(&self) -> String {
+        make_dot(&self.graph)
+    }
+    /// Render the graph into SVG.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue parsing the graph.
+    pub fn make_svg(&self) -> Result<String> {
+        make_svg(&self.graph)
+    }
+}
+
 // --- util types ---
 
 /// Standard metadata structure for all model instances.
@@ -311,6 +352,12 @@ pub enum BlobKind {
     File,
     /// A single directory.
     Directory,
+}
+/// A node in a computational pipeline.
+#[derive(uniffi::Enum, Debug, Clone)]
+pub enum Kernel {
+    /// See [`Pod`].
+    Pod(Arc<Pod>),
 }
 
 // --- utils ----

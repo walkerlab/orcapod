@@ -112,9 +112,11 @@ impl fmt::Debug for OrcaError {
             | Kind::NoMatchingPodRun { backtrace, .. }
             | Kind::NoRemainingServices { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
+            | Kind::PipelineCyclic { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
+            | Kind::LayoutError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
             | Kind::SerdeYamlError { backtrace, .. }
