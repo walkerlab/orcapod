@@ -31,6 +31,13 @@ pub(crate) enum Kind {
     },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
+    #[snafu(display(
+        "Failed to extract run info from the container image file: {container_name}."
+    ))]
+    FailedToExtractRunInfo {
+        container_name: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("{source} ({path:?})."))]
     InvalidFilepath {
         path: PathBuf,

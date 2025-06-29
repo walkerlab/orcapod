@@ -55,6 +55,11 @@ impl Store for LocalFileStore {
     }
     fn save_pod_result(&self, pod_result: &PodResult) -> Result<()> {
         self.save_pod_job(&pod_result.pod_job)?;
+        // Save the logs into a separate file.
+        Self::save_file(
+            self.make_path(pod_result, &pod_result.hash, "logs.txt"),
+            &pod_result.logs,
+        )?;
         self.save_model(pod_result, &pod_result.hash, pod_result.annotation.as_ref())
     }
     fn load_pod_result(&self, model_id: &ModelID) -> Result<PodResult> {
@@ -64,6 +69,8 @@ impl Store for LocalFileStore {
         pod_result.pod_job = self
             .load_pod_job(&ModelID::Hash(pod_result.pod_job.hash.clone()))?
             .into();
+        pod_result.logs =
+            fs::read_to_string(self.make_path(&pod_result, &pod_result.hash, "logs.txt"))?;
         Ok(pod_result)
     }
     fn list_pod_result(&self) -> Result<Vec<ModelInfo>> {

@@ -15,6 +15,7 @@ use bollard::{
     container::{
         LogOutput, LogsOptions, RemoveContainerOptions, StartContainerOptions, WaitContainerOptions,
     },
+    errors::Error::DockerContainerWaitError,
     image::{CreateImageOptions, ImportImageOptions},
 };
 use derive_more::Display;
@@ -197,6 +198,10 @@ impl Orchestrator for LocalDockerOrchestrator {
             })?;
         Ok(run_info)
     }
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "Favor readability due to complexity in external dependency."
+    )]
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
         match self
             .api

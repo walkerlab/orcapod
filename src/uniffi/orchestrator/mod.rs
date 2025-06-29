@@ -25,6 +25,8 @@ pub enum Status {
     Completed,
     /// Run failed with the provided error code.
     Failed(i16),
+    /// Deal with docker return status of restarting, removing, paused, and dead
+    Undefined,
     /// No status set.
     #[default]
     Unset,

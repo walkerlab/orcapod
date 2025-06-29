@@ -245,7 +245,7 @@ impl LocalDockerOrchestrator {
                         (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
                         (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
                         (ContainerStateStatusEnum::EXITED, code) => Status::Failed(code),
-                        _ => todo!(),
+                        _ => Status::Undefined,
                     },
                     mounts: container_spec
                         .mounts
