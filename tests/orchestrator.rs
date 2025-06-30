@@ -2,10 +2,13 @@
 
 pub mod fixture;
 use fixture::{TestDirs, container_image_style, pod_job_style};
-use orcapod::uniffi::{
-    error::Result,
-    model::URI,
-    orchestrator::{ImageKind, Orchestrator, PodRun, Status, docker::LocalDockerOrchestrator},
+use orcapod::{
+    core::{crypto::hash_buffer, model::to_yaml},
+    uniffi::{
+        error::Result,
+        model::URI,
+        orchestrator::{ImageKind, Orchestrator, PodRun, Status, docker::LocalDockerOrchestrator},
+    },
 };
 use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
 fn execute_wrapper<T>(test_fn: T) -> Result<()>
@@ -134,13 +137,21 @@ fn logs() -> Result<()> {
     execute_wrapper(|namespace_lookup, orchestrator| {
         let mut pod_job = pod_job_style(namespace_lookup)?;
 
+        // Update pod
         let mut pod = pod_job.pod.deref().clone();
         pod.image = "alpine:3.14".to_owned();
         pod.command = "echo hi1".to_owned();
         pod.input_spec = HashMap::new();
-        pod_job.pod = pod.into();
+        // Update the hash
+        pod.hash = String::new();
+        pod.hash = hash_buffer(to_yaml(&pod)?);
 
+        // Update pod job
+        pod_job.pod = pod.into();
         pod_job.input_packet = HashMap::new();
+        // Update the hash
+        pod_job.hash = String::new();
+        pod_job.hash = hash_buffer(to_yaml(&pod_job)?);
 
         let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
         let pod_result = orchestrator.get_result_blocking(&pod_run)?;
