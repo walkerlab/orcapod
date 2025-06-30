@@ -32,7 +32,7 @@ pub(crate) enum Kind {
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
     #[snafu(display("{source} ({path:?})."))]
-    InvalidFilepath {
+    InvalidFileOrDirPath {
         path: PathBuf,
         source: io::Error,
         backtrace: Option<Backtrace>,
