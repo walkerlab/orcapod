@@ -23,6 +23,10 @@ pub enum Status {
     Completed,
     /// Run failed with the provided error code.
     Failed(i16),
+    /// For created or restarting container
+    Starting,
+    /// For other container states that are not listed.
+    Undefined,
     /// No status set.
     #[default]
     Unset,
@@ -52,7 +56,7 @@ pub struct RunInfo {
     pub memory_limit: u64,
 }
 /// Current computation managed by orchestrator.
-#[derive(uniffi::Record, Debug)]
+#[derive(uniffi::Record, Debug, PartialEq)]
 pub struct PodRun {
     /// Original compute request.
     pub pod_job: Arc<PodJob>,

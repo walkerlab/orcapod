@@ -29,6 +29,14 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display(
+        "Fail to start pod with container_name: {container_name} with error: {reason}"
+    ))]
+    FailedToStartPod {
+        container_name: String,
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
     #[snafu(display("{source} ({path:?})."))]
@@ -121,5 +129,17 @@ impl OrcaError {
     /// Returns `true` if the error was caused by querying a purged pod run.
     pub const fn is_purged_pod_run(&self) -> bool {
         matches!(self.kind, Kind::NoMatchingPodRun { .. })
+    }
+    /// Returns `true` if the error was caused by an invalid file or directory path.
+    pub const fn is_failed_to_start_pod(&self) -> bool {
+        matches!(self.kind, Kind::FailedToStartPod { .. })
+    }
+    /// Returns container name if the
+    pub fn get_container_name(&self) -> Option<String> {
+        if let Kind::FailedToStartPod { container_name, .. } = &self.kind {
+            Some(container_name.clone())
+        } else {
+            None
+        }
     }
 }
