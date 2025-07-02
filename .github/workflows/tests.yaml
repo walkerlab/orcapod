@@ -31,8 +31,8 @@ jobs:
         run: |
           mkdir -p tests/.tmp
           cargo llvm-cov \
-            --no-default-features
-            --features=test
+            --no-default-features \
+            --features=test \
             --ignore-filename-regex "bin/.*|lib\.rs" \
             --cobertura \
             --output-path target/llvm-cov-target/cobertura.xml \
