@@ -22,7 +22,7 @@ jobs:
       - name: Install code coverage
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run syntax and style tests
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --no-default-features --features=test --all-targets -- -D warnings
       - name: Run format test
         run: cargo fmt --check
       - name: Run integration tests w/ coverage report
@@ -31,6 +31,8 @@ jobs:
         run: |
           mkdir -p tests/.tmp
           cargo llvm-cov \
+            --no-default-features
+            --features=test
             --ignore-filename-regex "bin/.*|lib\.rs" \
             --cobertura \
             --output-path target/llvm-cov-target/cobertura.xml \
