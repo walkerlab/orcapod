@@ -23,6 +23,10 @@ categories = [
 license = "MIT license"
 edition = "2024"
 
+[features]
+default = []
+test = []
+
 [lib]
 crate-type = ["rlib", "cdylib"]
 
@@ -49,6 +53,8 @@ glob = "0.3.1"
 heck = "0.5.0"
 # hashmaps that preserve insertion order
 indexmap = { version = "2.9.0", features = ["serde"] }
+# support for cartesian products
+itertools = "0.14.0"
 # render graphviz graphs
 layout-rs = "0.1.3"
 # random name generator

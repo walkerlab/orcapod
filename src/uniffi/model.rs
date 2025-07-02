@@ -358,6 +358,10 @@ pub enum BlobKind {
 pub enum Kernel {
     /// See [`Pod`].
     Pod(Arc<Pod>),
+    /// placeholder
+    JoinOperator,
+    /// placeholder
+    Source, // Input?
 }
 
 // --- utils ----

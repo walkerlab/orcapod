@@ -8,6 +8,8 @@
             "cargo": {
                 "args": [
                     "test",
+                    "--no-default-features",
+                    "--features=test",
                     "--no-run",
                     "--package=orcapod",
                     "--test",
@@ -31,6 +33,8 @@
             "cargo": {
                 "args": [
                     "test",
+                    "--no-default-features",
+                    "--features=test",
                     "--no-run",
                     "--package=orcapod",
                     "--test",
@@ -53,6 +57,8 @@
             "cargo": {
                 "args": [
                     "test",
+                    "--no-default-features",
+                    "--features=test",
                     "--no-run",
                     "--lib",
                     "--package=orcapod"
@@ -86,6 +92,8 @@
             "cargo": {
                 "args": [
                     "test",
+                    "--no-default-features",
+                    "--features=test",
                     "--no-run",
                     "--package=orcapod",
                     "--bin=exe_file_stem"
