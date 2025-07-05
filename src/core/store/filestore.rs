@@ -188,16 +188,16 @@ impl LocalFileStore {
         model_id: &ModelID,
     ) -> Result<(T, Option<Annotation>, String)> {
         match model_id {
-            ModelID::Hash(hash) => Ok((
+            ModelID::Hash { r#ref } => Ok((
                 serde_yaml::from_str(&fs::read_to_string(self.make_path(
                     &T::default(),
-                    hash,
+                    r#ref,
                     Self::SPEC_RELPATH,
                 ))?)?,
                 None,
-                hash.to_owned(),
+                r#ref.to_owned(),
             )),
-            ModelID::Annotation(name, version) => {
+            ModelID::Annotation { name, version } => {
                 let hash = self.lookup_hash(&T::default(), name, version)?;
                 Ok((
                     serde_yaml::from_str(&fs::read_to_string(self.make_path(
@@ -232,8 +232,8 @@ impl LocalFileStore {
     pub(crate) fn delete_model<T: Default + fmt::Debug>(&self, model_id: &ModelID) -> Result<()> {
         // assumes propagate = false
         let hash = match model_id {
-            ModelID::Hash(hash) => hash,
-            ModelID::Annotation(name, version) => {
+            ModelID::Hash { r#ref: hash } => hash,
+            ModelID::Annotation { name, version } => {
                 &self.lookup_hash(&T::default(), name, version)?
             }
         };

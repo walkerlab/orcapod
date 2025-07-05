@@ -45,7 +45,7 @@ pub struct Pod {
     /// Reproducible environment for compute.
     pub image: String,
     /// Space-delimited shell command to begin computation.
-    pub command: String,
+    pub command: Vec<String>,
     /// Exposed, internal input streams.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_spec: HashMap<String, PathInfo>,
@@ -75,7 +75,7 @@ impl Pod {
     pub fn new(
         annotation: Option<Annotation>,
         image: String,
-        command: String,
+        command: Vec<String>,
         input_spec: HashMap<String, PathInfo>,
         output_dir: PathBuf,
         output_spec: HashMap<String, PathInfo>,
@@ -155,18 +155,20 @@ impl PodJob {
         input_packet = input_packet
             .into_iter()
             .map(|(stream_name, stream_input)| match stream_input {
-                PathSet::Unary(blob) => Ok((
+                PathSet::Unary { blob } => Ok((
                     stream_name,
-                    PathSet::Unary(hash_blob(namespace_lookup, blob)?),
+                    PathSet::Unary {
+                        blob: hash_blob(namespace_lookup, blob)?,
+                    },
                 )),
-                PathSet::Collection(blobs) => Ok((
+                PathSet::Collection { blobs } => Ok((
                     stream_name,
-                    PathSet::Collection(
-                        blobs
+                    PathSet::Collection {
+                        blobs: blobs
                             .into_iter()
                             .map(|blob| hash_blob(namespace_lookup, blob))
-                            .collect::<Result<Vec<_>>>()?,
-                    ),
+                            .collect::<Result<_>>()?,
+                    },
                 )),
             })
             .collect::<Result<_>>()?;
@@ -239,7 +241,7 @@ impl PodResult {
 }
 
 /// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
-#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
@@ -249,6 +251,10 @@ pub struct Pipeline {
     pub graph: DiGraph<String, String>,
     /// Metadata for each kernel referenced in the DAG.
     pub metadata: HashMap<String, Kernel>,
+    /// key -> N number of node name / input key i.e. provides a rename feature + forking
+    pub input_spec: HashMap<String, Vec<InputSpecURI>>,
+    /// if we omit, then they all have to be exposed using the same it currently has (however, this can create collisions, letting user manually do it ensures no collisions but the downside is they could make it less usable by underexposing...), key -> N number of node name / output key i.e. provides a rename feature
+    pub output_spec: HashMap<String, OutputSpecURI>,
 }
 
 #[uniffi::export]
@@ -259,13 +265,24 @@ impl Pipeline {
     ///
     /// Will return `Err` if there is an issue initializing a `Pipeline` instance.
     #[uniffi::constructor]
-    pub fn new(input_dot: &str, input_metadata: &HashMap<String, Kernel>) -> Result<Self> {
-        let (graph, metadata) = make_graph(input_dot, input_metadata)?;
-        Ok(Self { graph, metadata })
+    pub fn new(
+        graph_dot: &str,
+        metadata: &HashMap<String, Kernel>,
+        input_spec: &HashMap<String, Vec<InputSpecURI>>,
+        output_spec: &HashMap<String, OutputSpecURI>,
+    ) -> Result<Self> {
+        // todo: need to somehow create/save the join operator but don't want to expose manually creating it to python
+        let graph = make_graph(graph_dot)?;
+        Ok(Self {
+            graph,
+            metadata: metadata.clone(),
+            input_spec: input_spec.clone(),
+            output_spec: output_spec.clone(),
+        })
     }
     /// Cast the graph into [DOT](https://graphviz.org/doc/info/lang.html).
     pub fn make_dot(&self) -> String {
-        make_dot(&self.graph)
+        make_dot(&self.graph, &self.metadata)
     }
     /// Render the graph into SVG.
     ///
@@ -273,7 +290,67 @@ impl Pipeline {
     ///
     /// Will return `Err` if there is an issue parsing the graph.
     pub fn make_svg(&self) -> Result<String> {
-        make_svg(&self.graph)
+        make_svg(&self.graph, &self.metadata)
+    }
+}
+
+/// A compute pipeline job that supplies input/output targets.
+#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct PipelineJob {
+    /// A pipeline to base the pipeline job on.
+    pub pipeline: Arc<Pipeline>,
+    /// Attached, external input streams. Applies cartesian product by default.
+    pub input_packet: HashMap<String, Vec<PathSet>>,
+    /// Attached, external output directory.
+    pub output_dir: URI,
+}
+
+#[uniffi::export]
+impl PipelineJob {
+    /// Construct a new pipeline job instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `PipelineJob` instance.
+    #[uniffi::constructor]
+    pub fn new(
+        pipeline: Arc<Pipeline>,
+        input_packet: &HashMap<String, Vec<PathSet>>,
+        output_dir: &URI,
+        namespace_lookup: &HashMap<String, PathBuf>,
+    ) -> Result<Self> {
+        let input_packet_with_checksum = input_packet
+            .iter()
+            .map(|(path_set_key, path_sets)| {
+                Ok((
+                    path_set_key.clone(),
+                    path_sets
+                        .iter()
+                        .map(|path_set| {
+                            Ok(match path_set {
+                                PathSet::Unary { blob } => PathSet::Unary {
+                                    blob: hash_blob(namespace_lookup, blob.clone())?,
+                                },
+                                PathSet::Collection { blobs } => PathSet::Collection {
+                                    blobs: blobs
+                                        .iter()
+                                        .map(|blob| hash_blob(namespace_lookup, blob.clone()))
+                                        .collect::<Result<_>>()?,
+                                },
+                            })
+                        })
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        Ok(Self {
+            pipeline,
+            input_packet: input_packet_with_checksum,
+            output_dir: output_dir.clone(),
+        })
     }
 }
 
@@ -302,10 +379,16 @@ pub struct GPURequirement {
 /// GPU model specification.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
-    /// NVIDIA-manufactured card where `String` is the specific model e.g. ???
-    NVIDIA(String),
-    /// AMD-manufactured card where `String` is the specific model e.g. ???
-    AMD(String),
+    /// NVIDIA-manufactured card
+    NVIDIA {
+        /// Model ID
+        id: String,
+    },
+    /// AMD-manufactured card
+    AMD {
+        /// Model ID
+        id: String,
+    },
 }
 /// Streams are named and represent an abstraction for the file(s) that represent some particular
 /// data.
@@ -320,10 +403,16 @@ pub struct PathInfo {
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PathSet {
-    /// A single BLOB.
-    Unary(Blob),
-    /// A series of BLOBs.
-    Collection(Vec<Blob>),
+    /// A singleton.
+    Unary {
+        /// Blob info.
+        blob: Blob,
+    },
+    /// A collection.
+    Collection {
+        /// Blob info for a series of blobs.
+        blobs: Vec<Blob>,
+    },
 }
 /// Location of BLOB data.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -356,12 +445,36 @@ pub enum BlobKind {
 /// A node in a computational pipeline.
 #[derive(uniffi::Enum, Debug, Clone)]
 pub enum Kernel {
-    /// See [`Pod`].
-    Pod(Arc<Pod>),
-    /// placeholder
+    /// Pod reference.
+    Pod {
+        /// See [`Pod`].
+        r#ref: Arc<Pod>,
+    },
+    /// Cartesian product operation. See [`crate::core::operator::JoinOperator`].
     JoinOperator,
-    /// placeholder
-    Source, // Input?
+    /// Rename a path set key operation.
+    MapOperator {
+        /// See [`crate::core::operator::MapOperator`].
+        map: HashMap<String, String>,
+    },
+}
+
+/// Index from pipeline node into input specification.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct InputSpecURI {
+    /// Node reference name in pipeline.
+    pub node_id: String,
+    /// Specification key.
+    pub key: String,
+}
+
+/// Index from pipeline node into output specification.
+#[derive(uniffi::Record, Debug, Clone)]
+pub struct OutputSpecURI {
+    /// Node reference name in pipeline.
+    pub node_id: String,
+    /// Specification key.
+    pub key: String,
 }
 
 // --- utils ----

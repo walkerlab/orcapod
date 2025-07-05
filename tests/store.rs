@@ -118,10 +118,10 @@ fn pod_files() -> Result<()> {
     assert!(spec_file.exists(), "Spec file missing.");
     assert!(annotation_file.exists(), "Annotation file missing.");
 
-    store.delete_pod(&ModelID::Annotation(
-        annotation.name.clone(),
-        annotation.version.clone(),
-    ))?;
+    store.delete_pod(&ModelID::Annotation {
+        name: annotation.name.clone(),
+        version: annotation.version.clone(),
+    })?;
     assert!(!spec_file.exists(), "Spec file wasn't cleaned up.");
     assert!(
         !annotation_file.exists(),
@@ -152,7 +152,9 @@ fn pod_load_from_hash() -> Result<()> {
     store.save_pod(&pod)?;
     pod.annotation = None;
     assert_eq!(
-        store.load_pod(&ModelID::Hash(pod.hash.clone()))?,
+        store.load_pod(&ModelID::Hash {
+            r#ref: pod.hash.clone()
+        })?,
         pod,
         "Loaded model from hash doesn't match."
     );
@@ -277,10 +279,10 @@ fn pod_annotation_unique() -> Result<()> {
     );
     assert_eq!(
         store
-            .load_pod(&ModelID::Annotation(
-                original_annotation.name.clone(),
-                original_annotation.version.clone()
-            ))?
+            .load_pod(&ModelID::Annotation {
+                name: original_annotation.name.clone(),
+                version: original_annotation.version.clone()
+            })?
             .annotation,
         Some(original_annotation.clone()),
         "Pod annotation unexpected."
@@ -313,10 +315,10 @@ fn pod_annotation_unique() -> Result<()> {
     );
     assert_eq!(
         store
-            .load_pod(&ModelID::Annotation(
-                original_annotation.name.clone(),
-                original_annotation.version.clone()
-            ))?
+            .load_pod(&ModelID::Annotation {
+                name: original_annotation.name.clone(),
+                version: original_annotation.version.clone()
+            })?
             .annotation,
         Some(original_annotation),
         "Pod annotation unexpected."

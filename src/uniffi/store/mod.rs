@@ -6,10 +6,18 @@ use uniffi;
 /// Options for identifying a model.
 #[derive(uniffi::Enum, Debug, Clone)]
 pub enum ModelID {
-    /// Identifying by the hash value of a model as a string.
-    Hash(String),
-    /// Identifying by the `(name, version)` of an annotation for a model as strings.
-    Annotation(String, String),
+    /// Identifying by the hash value of a model.
+    Hash {
+        /// Model hash.
+        r#ref: String,
+    },
+    /// Identifying by annotation.
+    Annotation {
+        /// Model name.
+        name: String,
+        /// Model version.
+        version: String,
+    },
 }
 
 /// Metadata for a model.

@@ -11,6 +11,7 @@ use serde::{Deserialize as _, Deserializer, Serialize, Serializer};
 use serde_yaml::{self, Value};
 use std::{
     collections::{BTreeMap, HashMap},
+    hash::BuildHasher,
     result,
     sync::Arc,
 };
@@ -38,8 +39,8 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     Ok(yaml)
 }
 
-pub(crate) fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize>(
-    map: &HashMap<K, V>,
+pub fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
+    map: &HashMap<K, V, BH>,
     serializer: S,
 ) -> result::Result<S::Ok, S::Error>
 where
@@ -49,9 +50,8 @@ where
     sorted.serialize(serializer)
 }
 
-#[expect(clippy::ref_option, reason = "Serde requires this signature.")]
-pub(crate) fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize>(
-    map_option: &Option<HashMap<K, V>>,
+pub fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
+    map_option: &Option<HashMap<K, V, BH>>,
     serializer: S,
 ) -> result::Result<S::Ok, S::Error>
 where
@@ -67,7 +67,7 @@ where
     clippy::expect_used,
     reason = "Function signature required by serde API."
 )]
-pub(crate) fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
+pub fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -93,7 +93,7 @@ where
     clippy::expect_used,
     reason = "Function signature required by serde API."
 )]
-pub(crate) fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<Arc<PodJob>, D::Error>
+pub fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<Arc<PodJob>, D::Error>
 where
     D: Deserializer<'de>,
 {

@@ -109,7 +109,9 @@ async fn parallel_four_cores() -> Result<()> {
                 );
                 async_sleep(Duration::from_secs(1)).await; // give agent a chance to save pod result first
                 assert_eq!(
-                    store.load_pod_result(&ModelID::Hash(pod_result.hash.clone()))?,
+                    store.load_pod_result(&ModelID::Hash {
+                        r#ref: pod_result.hash.clone()
+                    })?,
                     pod_result,
                     "Stored pod result does not match."
                 );

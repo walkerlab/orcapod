@@ -24,7 +24,7 @@ use std::{
     clippy::indexing_slicing,
     reason = "Reading less than 0 is impossible."
 )]
-pub(crate) fn hash_stream(stream: &mut impl Read) -> Result<String> {
+pub fn hash_stream(stream: &mut impl Read) -> Result<String> {
     const BUFFER_SIZE: usize = 8 << 10; // 8KB chunks to match with page size typically found
     let mut hash = Sha256::new();
 
@@ -86,7 +86,7 @@ pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
 /// # Errors
 ///
 /// Will return error if hashing fails on file or directory.
-pub(crate) fn hash_blob(
+pub fn hash_blob(
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
     blob: Blob,
 ) -> Result<Blob> {

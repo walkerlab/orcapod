@@ -8,11 +8,16 @@ use uniffi;
 /// Options for sourcing compute environment images.
 #[derive(uniffi::Enum)]
 pub enum ImageKind {
-    /// A published compute environment image in a container registry. Argument formatted as
-    /// `{server.com/}{name}:{tag}`. Server is optional e.g. (`alpine:latest`).
-    Published(String),
+    /// A published compute environment image in a container registry.
+    Published {
+        /// Formatted as `{server.com/}{name}:{tag}`. Server is optional e.g. (`alpine:latest`).
+        image_ref: String,
+    },
     /// A packaged compute environment of image+tag as a tarball.
-    Tarball(URI),
+    Tarball {
+        /// Where tarball is located.
+        image_uri: URI,
+    },
 }
 /// Status of a particular compute run.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
@@ -21,8 +26,11 @@ pub enum Status {
     Running,
     /// Run has completed successfully.
     Completed,
-    /// Run failed with the provided error code.
-    Failed(i16),
+    /// Run failed.
+    Failed {
+        /// Exit code.
+        exit_code: i16,
+    },
     /// No status set.
     #[default]
     Unset,
@@ -39,7 +47,7 @@ pub struct RunInfo {
     /// Environment variables set in environment.
     pub env_vars: HashMap<String, String>,
     /// Command used to start run.
-    pub command: String,
+    pub command: Vec<String>,
     /// Current run status.
     pub status: Status,
     /// Mounted volume binds to the environment.

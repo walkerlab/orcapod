@@ -81,13 +81,11 @@ impl Orchestrator for LocalDockerOrchestrator {
         image: &ImageKind,
     ) -> Result<PodRun> {
         let (assigned_name, container_options, container_config) = match image {
-            ImageKind::Published(remote_image) => Self::prepare_container_start_inputs(
-                namespace_lookup,
-                pod_job,
-                remote_image.clone(),
-            )?,
-            ImageKind::Tarball(image_info) => {
-                let location = namespace_lookup[&image_info.namespace].join(&image_info.path);
+            ImageKind::Published { image_ref } => {
+                Self::prepare_container_start_inputs(namespace_lookup, pod_job, image_ref.clone())?
+            }
+            ImageKind::Tarball { image_uri } => {
+                let location = namespace_lookup[&image_uri.namespace].join(&image_uri.path);
                 let byte_stream = FramedRead::new(
                     File::open(&location)
                         .context(selector::InvalidFilepath { path: &location })
@@ -146,7 +144,9 @@ impl Orchestrator for LocalDockerOrchestrator {
         self.start_with_altimage(
             namespace_lookup,
             pod_job,
-            &ImageKind::Published(pod_job.pod.image.clone()),
+            &ImageKind::Published {
+                image_ref: pod_job.pod.image.clone(),
+            },
         )
         .await
     }

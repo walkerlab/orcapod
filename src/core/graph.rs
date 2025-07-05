@@ -82,30 +82,39 @@ fn make_svg_from_dot(dot: &str) -> Result<String> {
     Ok(svg.finalize())
 }
 // todo: checks that metadata only contains referenced nodes
-pub fn make_graph(
-    input_dot: &str,
-    input_metadata: &HashMap<String, Kernel>,
-) -> Result<(DiGraph<String, String>, HashMap<String, Kernel>)> {
+pub fn make_graph(input_dot: &str) -> Result<DiGraph<String, String>> {
     let graph = make_graph_from_dot(input_dot)?;
     if is_cyclic_directed(&graph) {
         return Err(selector::PipelineCyclic.fail()?);
     }
-    Ok((graph, input_metadata.clone()))
+    Ok(graph)
 }
 // todo: should always be topologically sorted, need to contribute to petgraph...
-pub fn make_dot(graph: &DiGraph<String, String>) -> String {
+/// # Panics
+#[expect(clippy::indexing_slicing, reason = "debug")]
+pub fn make_dot(graph: &DiGraph<String, String>, metadata: &HashMap<String, Kernel>) -> String {
     format!(
         "{}",
         Dot::with_attr_getters(
             graph,
             &[Config::NodeNoLabel, Config::EdgeNoLabel],
             &|_graph, _edge| String::new(),
-            &|_graph, node| format!("label = \"{}\"", node.1),
+            &|_graph, node| format!(
+                r#"label = "{}" shape = {}"#,
+                node.1,
+                match metadata[node.1] {
+                    Kernel::Pod { .. } => "box",
+                    Kernel::MapOperator { .. } | Kernel::JoinOperator => "circle",
+                }
+            )
         )
     )
 }
 
-pub fn make_svg(graph: &DiGraph<String, String>) -> Result<String> {
-    let dot = make_dot(graph);
+pub fn make_svg(
+    graph: &DiGraph<String, String>,
+    metadata: &HashMap<String, Kernel>,
+) -> Result<String> {
+    let dot = make_dot(graph, metadata);
     make_svg_from_dot(&dot)
 }

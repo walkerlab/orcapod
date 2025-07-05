@@ -1,6 +1,6 @@
 use crate::uniffi::{error::Result, model::PathSet};
 use itertools::Itertools as _;
-use std::collections::HashMap;
+use std::{clone::Clone, collections::HashMap};
 
 type Packet = HashMap<String, PathSet>;
 
@@ -43,7 +43,7 @@ impl Operator for JoinOperator {
                                 new.extend(right.clone());
                                 new
                             })
-                            .collect::<Vec<_>>()
+                            .collect()
                     });
                 next_packets.append(&mut current_packets);
             }
@@ -54,5 +54,36 @@ impl Operator for JoinOperator {
             }
         }
         Ok(next_packets)
+    }
+}
+
+pub struct MapOperator {
+    map: HashMap<String, String>,
+}
+
+impl MapOperator {
+    pub fn new(map: &HashMap<String, String>) -> Self {
+        Self { map: map.clone() }
+    }
+}
+
+impl Operator for MapOperator {
+    fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
+        Ok(packets
+            .iter()
+            .map(|(_, packet)| {
+                packet
+                    .iter()
+                    .map(|(packet_key, path_set)| {
+                        (
+                            self.map
+                                .get(packet_key)
+                                .map_or_else(|| packet_key.clone(), Clone::clone),
+                            path_set.clone(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect())
     }
 }

@@ -12,14 +12,16 @@ use std::{collections::HashMap, path::PathBuf};
 fn make_packet_key(key_name: String, filepath: String) -> (String, PathSet) {
     (
         key_name,
-        PathSet::Unary(Blob {
-            kind: BlobKind::File,
-            location: URI {
-                namespace: "default".into(),
-                path: PathBuf::from(filepath),
+        PathSet::Unary {
+            blob: Blob {
+                kind: BlobKind::File,
+                location: URI {
+                    namespace: "default".into(),
+                    path: PathBuf::from(filepath),
+                },
+                checksum: String::new(),
             },
-            checksum: String::new(),
-        }),
+        },
     )
 }
 

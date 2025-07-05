@@ -54,7 +54,7 @@ impl LocalDockerOrchestrator {
             vec![],
             |mut flattened_binds, (stream_name, stream_info)| {
                 flattened_binds.extend(match get(&pod_job.input_packet, stream_name)? {
-                    PathSet::Unary(blob) => {
+                    PathSet::Unary { blob } => {
                         vec![format!(
                             "{}:{}:{}",
                             path::absolute(
@@ -66,7 +66,7 @@ impl LocalDockerOrchestrator {
                             "ro"
                         )]
                     }
-                    PathSet::Collection(blobs) => blobs
+                    PathSet::Collection { blobs } => blobs
                         .iter()
                         .map(|blob| {
                             Ok(format!(
@@ -130,12 +130,6 @@ impl LocalDockerOrchestrator {
             ),
             ("org.orcapod.pod_job.hash".to_owned(), pod_job.hash.clone()),
         ]);
-        let command = pod_job
-            .pod
-            .command
-            .split_whitespace()
-            .map(String::from)
-            .collect::<Vec<_>>();
 
         Ok((
             container_name.clone(),
@@ -145,8 +139,8 @@ impl LocalDockerOrchestrator {
             }),
             Config {
                 image: Some(image),
-                entrypoint: Some(command[..1].to_vec()),
-                cmd: Some(command[1..].to_vec()),
+                entrypoint: Some(pod_job.pod.command[..1].to_vec()),
+                cmd: Some(pod_job.pod.command[1..].to_vec()),
                 env: pod_job.env_vars.as_ref().map(|provided_env_vars| {
                     provided_env_vars
                         .iter()
@@ -170,7 +164,6 @@ impl LocalDockerOrchestrator {
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::indexing_slicing,
-        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
@@ -229,16 +222,11 @@ impl LocalDockerOrchestrator {
                                 .map(|(key, value)| (key.to_owned(), value.to_owned()))
                         })
                         .collect(),
-                    command: format!(
-                        "{} {}",
-                        container_spec
-                            .config
-                            .as_ref()?
-                            .entrypoint
-                            .as_ref()?
-                            .join(" "),
-                        container_spec.config.as_ref()?.cmd.as_ref()?.join(" ")
-                    ),
+                    command: [
+                        container_spec.config.as_ref()?.entrypoint.as_ref()?.clone(),
+                        container_spec.config.as_ref()?.cmd.as_ref()?.clone(),
+                    ]
+                    .concat(),
                     status: match (
                         container_spec.state.as_ref()?.status.as_ref()?,
                         container_spec.state.as_ref()?.exit_code? as i16,
@@ -250,11 +238,11 @@ impl LocalDockerOrchestrator {
                         ) => Status::Completed,
                         (
                             ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
-                            code,
-                        ) => Status::Failed(code),
-                        (_, code) => {
+                            exit_code,
+                        ) => Status::Failed { exit_code },
+                        (_, exit_code) => {
                             todo!(
-                                "Unhandled container state: {}, exit code: {code}.",
+                                "Unhandled container state: {}, exit code: {exit_code}.",
                                 container_spec.state.as_ref()?.status.as_ref()?
                             )
                         }
@@ -274,7 +262,7 @@ impl LocalDockerOrchestrator {
                                     .map_or_else(String::new, |mode| format!(":{mode}"))
                             ))
                         })
-                        .collect::<Option<Vec<_>>>()?,
+                        .collect::<Option<_>>()?,
                     labels: container_spec.config.as_ref()?.labels.as_ref()?.clone(),
                     cpu_limit: container_spec.host_config.as_ref()?.nano_cpus? as f32
                         / 10_f32.powi(9), // ncpu, ucores=3, mcores=6, cores=9

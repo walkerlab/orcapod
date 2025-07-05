@@ -37,7 +37,7 @@ pub fn pod_style() -> Result<Pod> {
             version: "1.0.0".to_owned(),
         }),
         "example.server.com/user/style-transfer:1.0.0".to_owned(),
-        "python /run.py".to_owned(),
+        str_to_vec("python /run.py"),
         HashMap::from([
             (
                 "extra-style".to_owned(),
@@ -80,35 +80,39 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
         HashMap::from([
             (
                 "extra-style".to_owned(),
-                PathSet::Unary(Blob {
-                    kind: BlobKind::File,
-                    location: URI {
-                        namespace: "default".to_owned(),
-                        path: PathBuf::from("styles/mosaic.t7"),
+                PathSet::Unary {
+                    blob: Blob {
+                        kind: BlobKind::File,
+                        location: URI {
+                            namespace: "default".to_owned(),
+                            path: PathBuf::from("styles/mosaic.t7"),
+                        },
+                        checksum: String::new(),
                     },
-                    checksum: String::new(),
-                }),
+                },
             ),
             (
                 "base-input".to_owned(),
-                PathSet::Collection(vec![
-                    Blob {
-                        kind: BlobKind::File,
-                        location: URI {
-                            namespace: "default".to_owned(),
-                            path: PathBuf::from("styles/style1.t7"),
+                PathSet::Collection {
+                    blobs: vec![
+                        Blob {
+                            kind: BlobKind::File,
+                            location: URI {
+                                namespace: "default".to_owned(),
+                                path: PathBuf::from("styles/style1.t7"),
+                            },
+                            checksum: String::new(),
                         },
-                        checksum: String::new(),
-                    },
-                    Blob {
-                        kind: BlobKind::File,
-                        location: URI {
-                            namespace: "default".to_owned(),
-                            path: PathBuf::from("images/subject.jpeg"),
+                        Blob {
+                            kind: BlobKind::File,
+                            location: URI {
+                                namespace: "default".to_owned(),
+                                path: PathBuf::from("images/subject.jpeg"),
+                            },
+                            checksum: String::new(),
                         },
-                        checksum: String::new(),
-                    },
-                ]),
+                    ],
+                },
             ),
         ]),
         URI {
@@ -144,7 +148,7 @@ pub fn pod_result_style(
 
 pub fn pod_job_custom(
     image_reference: &str,
-    command: &str,
+    command: &[String],
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(
@@ -152,7 +156,7 @@ pub fn pod_job_custom(
         Pod::new(
             None,
             image_reference.into(),
-            command.into(),
+            command.to_owned(),
             HashMap::new(),
             PathBuf::from("/tmp/output"),
             HashMap::new(),
@@ -185,12 +189,12 @@ pub fn pod_jobs_stresser(
             if i <= success_count {
                 return Ok(pod_job_custom(
                     image_reference,
-                    &format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"),
+                    &str_to_vec(&format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief")),
                     &NAMESPACE_LOOKUP_READ_ONLY,
                 )?
                 .into());
             }
-            Ok(pod_job_custom(image_reference, "sleep crash", &NAMESPACE_LOOKUP_READ_ONLY)?.into())
+            Ok(pod_job_custom(image_reference, &str_to_vec("sleep crash"), &NAMESPACE_LOOKUP_READ_ONLY)?.into())
         })
         .collect::<Result<Vec<_>>>()
 }
@@ -251,6 +255,10 @@ pub fn pull_image(reference: &str) -> Result<()> {
 }
 
 // --- util ---
+
+pub fn str_to_vec(v: &str) -> Vec<String> {
+    v.split_whitespace().map(String::from).collect()
+}
 
 pub struct TestDirs(pub HashMap<String, TempDir>);
 
@@ -314,14 +322,16 @@ impl TestSetup for Pod {
         store.save_pod(self)
     }
     fn delete(&self, store: &impl Store) -> Result<()> {
-        store.delete_pod(&ModelID::Hash(self.hash.clone()))
+        store.delete_pod(&ModelID::Hash {
+            r#ref: self.hash.clone(),
+        })
     }
     fn load(&self, store: &impl Store) -> Result<Self> {
         let annotation = self.annotation.as_ref().expect("Annotation missing.");
-        store.load_pod(&ModelID::Annotation(
-            annotation.name.clone(),
-            annotation.version.clone(),
-        ))
+        store.load_pod(&ModelID::Annotation {
+            name: annotation.name.clone(),
+            version: annotation.version.clone(),
+        })
     }
     fn get_annotation(&self) -> Option<&Annotation> {
         self.annotation.as_ref()
@@ -339,14 +349,16 @@ impl TestSetup for PodJob {
         store.save_pod_job(self)
     }
     fn delete(&self, store: &impl Store) -> Result<()> {
-        store.delete_pod_job(&ModelID::Hash(self.hash.clone()))
+        store.delete_pod_job(&ModelID::Hash {
+            r#ref: self.hash.clone(),
+        })
     }
     fn load(&self, store: &impl Store) -> Result<Self> {
         let annotation = self.annotation.as_ref().expect("Annotation missing.");
-        store.load_pod_job(&ModelID::Annotation(
-            annotation.name.clone(),
-            annotation.version.clone(),
-        ))
+        store.load_pod_job(&ModelID::Annotation {
+            name: annotation.name.clone(),
+            version: annotation.version.clone(),
+        })
     }
     fn get_annotation(&self) -> Option<&Annotation> {
         self.annotation.as_ref()
@@ -364,14 +376,16 @@ impl TestSetup for PodResult {
         store.save_pod_result(self)
     }
     fn delete(&self, store: &impl Store) -> Result<()> {
-        store.delete_pod_result(&ModelID::Hash(self.hash.clone()))
+        store.delete_pod_result(&ModelID::Hash {
+            r#ref: self.hash.clone(),
+        })
     }
     fn load(&self, store: &impl Store) -> Result<Self> {
         let annotation = self.annotation.as_ref().expect("Annotation missing.");
-        store.load_pod_result(&ModelID::Annotation(
-            annotation.name.clone(),
-            annotation.version.clone(),
-        ))
+        store.load_pod_result(&ModelID::Annotation {
+            name: annotation.name.clone(),
+            version: annotation.version.clone(),
+        })
     }
     fn get_annotation(&self) -> Option<&Annotation> {
         self.annotation.as_ref()

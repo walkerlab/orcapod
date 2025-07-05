@@ -43,7 +43,9 @@ impl Store for LocalFileStore {
         pod_job.annotation = annotation;
         pod_job.hash = hash;
         pod_job.pod = self
-            .load_pod(&ModelID::Hash(pod_job.pod.hash.clone()))?
+            .load_pod(&ModelID::Hash {
+                r#ref: pod_job.pod.hash.clone(),
+            })?
             .into();
         Ok(pod_job)
     }
@@ -62,7 +64,9 @@ impl Store for LocalFileStore {
         pod_result.annotation = annotation;
         pod_result.hash = hash;
         pod_result.pod_job = self
-            .load_pod_job(&ModelID::Hash(pod_result.pod_job.hash.clone()))?
+            .load_pod_job(&ModelID::Hash {
+                r#ref: pod_result.pod_job.hash.clone(),
+            })?
             .into();
         Ok(pod_result)
     }

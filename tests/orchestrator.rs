@@ -3,7 +3,7 @@
 pub mod fixture;
 use fixture::{
     NAMESPACE_LOOKUP_READ_ONLY, TestContainerImage, TestDirs, container_image_style,
-    pod_job_custom, pod_job_style, pod_jobs_stresser,
+    pod_job_custom, pod_job_style, pod_jobs_stresser, str_to_vec,
 };
 use futures_util::future::join_all;
 use orcapod::uniffi::{
@@ -18,7 +18,7 @@ where
     T: Fn(
         &HashMap<String, PathBuf>,
         &LocalDockerOrchestrator,
-    ) -> Result<(PodRun, String, Option<TestContainerImage>)>,
+    ) -> Result<(PodRun, Vec<String>, Option<TestContainerImage>)>,
 {
     let test_dirs = TestDirs::new(&HashMap::from([(
         "default".to_owned(),
@@ -89,10 +89,12 @@ where
 fn offline_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
         let container_image_relative_location = "container_images/style-transfer/image.tar.gz";
-        let container_image_kind = ImageKind::Tarball(URI {
-            namespace: "default".to_owned(),
-            path: PathBuf::from(container_image_relative_location),
-        });
+        let container_image_kind = ImageKind::Tarball {
+            image_uri: URI {
+                namespace: "default".to_owned(),
+                path: PathBuf::from(container_image_relative_location),
+            },
+        };
         let container_image = container_image_style(
             namespace_lookup["default"].join(container_image_relative_location),
         )?;
@@ -113,7 +115,7 @@ fn offline_container_image_basic() -> Result<()> {
 #[test]
 fn remote_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
-        let pod_job = pod_job_custom("alpine:3.14", "sleep 5", namespace_lookup)?;
+        let pod_job = pod_job_custom("alpine:3.14", &str_to_vec("sleep 5"), namespace_lookup)?;
         Ok((
             orchestrator.start_blocking(namespace_lookup, &pod_job)?,
             pod_job.pod.command.clone(),
@@ -125,13 +127,17 @@ fn remote_container_image_basic() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn remote_container_image_failed() -> Result<()> {
     let orch = LocalDockerOrchestrator::new()?;
-    let pod_job = pod_job_custom("alpine:3.14", "sleep crash", &NAMESPACE_LOOKUP_READ_ONLY)?;
+    let pod_job = pod_job_custom(
+        "alpine:3.14",
+        &str_to_vec("sleep crash"),
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    )?;
     let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job).await?;
     let pod_result = orch.get_result(&pod_run).await?;
     orch.delete(&pod_run).await?;
 
     assert!(
-        matches!(pod_result.status, Status::Failed(1)),
+        matches!(pod_result.status, Status::Failed { exit_code: 1 }),
         "Expected to fail but did not."
     );
     Ok(())

@@ -27,8 +27,11 @@ use zenoh;
 pub enum Response {
     /// Success
     Ok,
-    /// Error cast to `String`
-    Err(String),
+    /// Error
+    Err {
+        /// Error cast to `String`
+        message: String,
+    },
 }
 
 /// Client to connect to an execution agent within a coordinated fleet. Connection optimized/rerouted by Zenoh.
@@ -79,7 +82,9 @@ impl AgentClient {
                 .await
             {
                 Ok(()) => Response::Ok,
-                Err(error) => Response::Err(error.to_string()),
+                Err(error) => Response::Err {
+                    message: error.to_string(),
+                },
             }
         }))
         .await
@@ -164,7 +169,7 @@ impl Agent {
             async |client, pod_result| {
                 let response_topic = match &pod_result.status {
                     Status::Completed => &format!("success/pod_job/{}", pod_result.pod_job.hash),
-                    Status::Running | Status::Failed(_) | Status::Unset => {
+                    Status::Running | Status::Failed { .. } | Status::Unset => {
                         &format!("failure/pod_job/{}", pod_result.pod_job.hash)
                     }
                 };
