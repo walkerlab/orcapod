@@ -90,8 +90,7 @@ pub fn make_graph(input_dot: &str) -> Result<DiGraph<String, String>> {
     Ok(graph)
 }
 // todo: should always be topologically sorted, need to contribute to petgraph...
-/// # Panics
-#[expect(clippy::indexing_slicing, reason = "debug")]
+// todo: remove hashmap index since it can cause panic...
 pub fn make_dot(graph: &DiGraph<String, String>, metadata: &HashMap<String, Kernel>) -> String {
     format!(
         "{}",
