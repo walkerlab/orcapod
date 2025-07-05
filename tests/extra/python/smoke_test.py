@@ -28,7 +28,7 @@ def create_pod(data, _):
             version="1.0.0",
         ),
         image="alpine:3.14",
-        command="sleep 1",
+        command="sleep 1".split(" "),
         input_spec={},
         output_dir="/tmp/output",
         output_spec={},
@@ -99,7 +99,7 @@ def save_pod(data, _):
 def load_pod(data, _):
     data["loaded_pod"] = data["store"].load_pod(
         model_id=ModelId.ANNOTATION(
-            data["pod"].annotation().name, data["pod"].annotation().version
+            name=data["pod"].annotation().name, version=data["pod"].annotation().version
         )
     )
     return data["loaded_pod"], data
@@ -115,7 +115,7 @@ def delete_annotation(data, _):
 
 
 def delete_pod(data, _):
-    data["store"].delete_pod(model_id=ModelId.HASH(data["pod"].hash()))
+    data["store"].delete_pod(model_id=ModelId.HASH(ref=data["pod"].hash()))
     return [str(p) for p in data["store"].list_pod()], data
 
 

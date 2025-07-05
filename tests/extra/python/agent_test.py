@@ -82,7 +82,9 @@ if __name__ == "__main__":
             pod=Pod(
                 annotation=None,
                 image="ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40",
-                command="stress-ng --cpu 1 --cpu-load 100 --timeout 5 --metrics-brief",
+                command="stress-ng --cpu 1 --cpu-load 100 --timeout 5 --metrics-brief".split(
+                    " "
+                ),
                 input_spec={},
                 output_dir="/tmp/output",
                 output_spec={},
