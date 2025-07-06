@@ -24,9 +24,10 @@ cargo llvm-cov --no-default-features --features=test --ignore-filename-regex "bi
 
 ```bash
 cargo doc --no-deps                       # gen api docs (target/doc/orcapod/index.html)
-cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot > docs/images/orcapod_diagram.dot # orcapod diagram as DOT
-cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot | dot -T png > docs/images/orcapod_diagram.png # orcapod diagram as PNG
-cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot | dot -T svg > docs/images/orcapod_diagram.svg # orcapod diagram as SVG
+DIAGRAM_SCOPE="orcapod::uniffi::{model::{Pod,PodJob,PodResult,Pipeline,PipelineJob},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator,agent::{AgentClient,Agent}}}"
+cargo modules dependencies --lib --max-depth 0 --no-uses --no-fns --focus-on $DIAGRAM_SCOPE --layout dot > docs/images/orcapod_diagram.dot # orcapod diagram as DOT
+cargo modules dependencies --lib --max-depth 0 --no-uses --no-fns --focus-on $DIAGRAM_SCOPE --layout dot | dot -T png > docs/images/orcapod_diagram.png # orcapod diagram as PNG
+cargo modules dependencies --lib --max-depth 0 --no-uses --no-fns --focus-on $DIAGRAM_SCOPE --layout dot | dot -T svg > docs/images/orcapod_diagram.svg # orcapod diagram as SVG
 ```
 
 ## Project Management

@@ -79,7 +79,8 @@
         "getrandom",
         "wasi",
         "patchelf",
-        "itertools"
+        "itertools",
+        "pipefail"
     ],
     "useGitignore": false,
     "ignorePaths": [

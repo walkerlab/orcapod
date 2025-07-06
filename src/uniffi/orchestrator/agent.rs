@@ -1,8 +1,8 @@
 use crate::{
-    core::orchestrator::agent::{EventPayload, start_service},
+    core::{orchestrator::agent::start_service, pipeline::process_pipeline_job},
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{PodJob, PodResult},
+        model::{PipelineJob, PodJob},
         orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
@@ -89,6 +89,18 @@ impl AgentClient {
         }))
         .await
     }
+    /// Submit a pipeline job to be processed asynchronously.
+    ///
+    /// # Errors
+    ///
+    /// Will fail if there is an issue publishing the pipeline job.
+    pub async fn submit_pipeline_job(&self, pipeline_job: Arc<PipelineJob>) -> Result<()> {
+        self.publish(
+            &format!("request/pipeline_job/{}", pipeline_job.hash),
+            &pipeline_job,
+        )
+        .await
+    }
     /// Watch orchestration agent communication.
     ///
     /// # Errors
@@ -156,7 +168,6 @@ impl Agent {
             Arc::new(self.clone()),
             "request/pod_job/**".to_owned(),
             namespace_lookup.clone(),
-            |pod_job: &PodJob| EventPayload::Request(pod_job.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {
                 let pod_run = agent
                     .orchestrator
@@ -176,12 +187,26 @@ impl Agent {
                 client.publish(response_topic, &pod_result).await
             },
         ));
+        services.spawn(start_service(
+            Arc::new(self.clone()),
+            "request/pipeline_job/**".to_owned(),
+            namespace_lookup.clone(),
+            async |agent, inner_namespace_lookup, _, pipeline_job: PipelineJob| {
+                Ok(process_pipeline_job(
+                    Arc::clone(&agent.client),
+                    format!("status/pipeline_job/{}/", pipeline_job.hash),
+                    "request/pod_job/",
+                    pipeline_job,
+                    inner_namespace_lookup,
+                ))
+            },
+            async |_, _| Ok(()),
+        ));
         if let Some(store) = available_store {
             services.spawn(start_service(
                 Arc::new(self.clone()),
                 "success/pod_job/**".to_owned(),
                 namespace_lookup.clone(),
-                |pod_result: &PodResult| EventPayload::Success(pod_result.clone()),
                 {
                     let inner_store = Arc::clone(&store);
                     async move |_, _, _, pod_result| {
@@ -195,7 +220,6 @@ impl Agent {
                 Arc::new(self.clone()),
                 "failure/pod_job/**".to_owned(),
                 namespace_lookup.clone(),
-                |pod_result: &PodResult| EventPayload::Failure(pod_result.clone()),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;
                     Ok(())

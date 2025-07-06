@@ -11,7 +11,9 @@ use crate::{
 };
 use derive_more::Display;
 use getset::CloneGetters;
+use hex;
 use petgraph::graph::DiGraph;
+use rand::{self, RngCore as _};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
@@ -241,7 +243,7 @@ impl PodResult {
 }
 
 /// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
-#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize, Serialize)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
@@ -295,11 +297,18 @@ impl Pipeline {
 }
 
 /// A compute pipeline job that supplies input/output targets.
-#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[expect(
+    clippy::field_scoped_visibility_modifiers,
+    reason = "Temporary until we add hash to PipelineJob."
+)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct PipelineJob {
+    /// todo: replace this with a consistent hash
+    #[getset(skip)]
+    pub(crate) hash: String,
     /// A pipeline to base the pipeline job on.
     pub pipeline: Arc<Pipeline>,
     /// Attached, external input streams. Applies cartesian product by default.
@@ -346,7 +355,12 @@ impl PipelineJob {
                 ))
             })
             .collect::<Result<_>>()?;
+
+        let mut bytes = [0; 32];
+        rand::rng().fill_bytes(&mut bytes);
+
         Ok(Self {
+            hash: hex::encode(bytes),
             pipeline,
             input_packet: input_packet_with_checksum,
             output_dir: output_dir.clone(),
@@ -443,7 +457,7 @@ pub enum BlobKind {
     Directory,
 }
 /// A node in a computational pipeline.
-#[derive(uniffi::Enum, Debug, Clone)]
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize)]
 pub enum Kernel {
     /// Pod reference.
     Pod {
@@ -460,7 +474,7 @@ pub enum Kernel {
 }
 
 /// Index from pipeline node into input specification.
-#[derive(uniffi::Record, Debug, Clone)]
+#[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize)]
 pub struct InputSpecURI {
     /// Node reference name in pipeline.
     pub node_id: String,
@@ -469,7 +483,7 @@ pub struct InputSpecURI {
 }
 
 /// Index from pipeline node into output specification.
-#[derive(uniffi::Record, Debug, Clone)]
+#[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize)]
 pub struct OutputSpecURI {
     /// Node reference name in pipeline.
     pub node_id: String,

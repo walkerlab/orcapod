@@ -1,5 +1,6 @@
 use crate::uniffi::error::{Kind, OrcaError};
 use bollard::errors::Error as BollardError;
+use chrono;
 use glob;
 use serde_json;
 use serde_yaml;
@@ -15,6 +16,16 @@ impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<chrono::ParseError> for OrcaError {
+    fn from(error: chrono::ParseError) -> Self {
+        Self {
+            kind: Kind::ChronoParseError {
                 source: error,
                 backtrace: Some(Backtrace::capture()),
             },
@@ -114,6 +125,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::PipelineCyclic { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
+            | Kind::ChronoParseError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::LayoutError { backtrace, .. }

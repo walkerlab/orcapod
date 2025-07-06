@@ -9,20 +9,24 @@ runs:
         sudo apt-get install graphviz -y
         cargo install cargo-modules
     - shell: bash
+      env:
+        DIAGRAM_SCOPE: |
+          orcapod::uniffi::{
+            model::{Pod, PodJob, PodResult, Pipeline, PipelineJob},
+            store::filestore::LocalFileStore,
+            orchestrator::{
+              PodRun,
+              docker::LocalDockerOrchestrator,
+              agent::{AgentClient, Agent},
+            },
+          }
       run: |
         : Generate crate diagram
         mkdir -p docs/images
         set -o pipefail
-        cargo modules dependencies --lib --max-depth 0 \
-          --no-uses --no-fns \
-          --focus-on "
-            orcapod::uniffi::{
-              model::{Pod,PodJob,PodResult},
-              store::filestore::LocalFileStore,
-              orchestrator::{PodRun,docker::LocalDockerOrchestrator},
-            }
-          " \
-          --layout dot | \
+        cargo modules dependencies --lib \
+          --max-depth 0 --no-uses --no-fns \
+          --focus-on $DIAGRAM_SCOPE --layout dot | \
           dot -T svg > docs/images/orcapod_diagram.svg
     - uses: actions/upload-artifact@v4
       with:

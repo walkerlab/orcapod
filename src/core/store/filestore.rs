@@ -28,12 +28,12 @@ static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
             ^
-                (?<store_directory>.*)\/
-                    (?<namespace>[a-z_]+)\/
-                        (?<class>[a-z_]+)\/
-                            (?<hash>[0-9a-f]+)\/
+                (?<store_directory>.*?)/
+                    (?<namespace>[a-z_]+)/
+                        (?<class>[a-z_]+)/
+                            (?<hash>[0-9a-f]+)/
                                 (
-                                    annotation\/
+                                    annotation/
                                         (?<name>[0-9a-zA-Z\-]+)
                                         -
                                         (?<version>[0-9]+\.[0-9]+\.[0-9]+)
