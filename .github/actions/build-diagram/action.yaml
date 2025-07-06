@@ -10,7 +10,7 @@ runs:
         cargo install cargo-modules
     - shell: bash
       env:
-        DIAGRAM_SCOPE: >-
+        DIAGRAM_SCOPE:
           orcapod::uniffi::{
             model::{Pod, PodJob, PodResult, Pipeline, PipelineJob},
             store::filestore::LocalFileStore,
