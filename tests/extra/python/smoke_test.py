@@ -73,7 +73,7 @@ def start_pod_job(data, config):
     return data["pod_run"], data
 
 
-def wait_for_pod_result(data, _):
+def wait_for_pod_result(data, config):
     print([str(p) for p in asyncio.run(data["orch"].list())])
     print("waiting to finish...")
     data["pod_result"] = data["orch"].get_result_blocking(
