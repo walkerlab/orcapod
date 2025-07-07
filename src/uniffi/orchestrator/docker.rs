@@ -157,7 +157,7 @@ impl Orchestrator for LocalDockerOrchestrator {
         .await?
         .map(|(assigned_name, run_info)| {
             let pod_job: PodJob =
-                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job")?)?;
+                serde_json::from_str(get(&run_info.labels, &"org.orcapod.pod_job".to_owned())?)?;
             Ok(PodRun::new::<Self>(&pod_job, assigned_name))
         })
         .collect()

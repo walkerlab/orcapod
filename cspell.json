@@ -73,7 +73,9 @@
         "getset",
         "strsim",
         "getrandom",
-        "wasi"
+        "wasi",
+        "petgraph",
+        "rfind"
     ],
     "useGitignore": false,
     "ignorePaths": [

@@ -37,6 +37,7 @@ chrono = "0.4.39"
 colored = "2.1.0"
 # derive utilities for new types
 derive_more = { version = "2.0.1", features = ["display"] }
+dot-parser = "0.5.1"
 # chaining async calls and processing stream data in local docker orchestrator
 futures-util = "0.3.31"
 # auto derive getter access methods on structs
@@ -47,8 +48,10 @@ glob = "0.3.1"
 heck = "0.5.0"
 # hashmaps that preserve insertion order
 indexmap = { version = "2.9.0", features = ["serde"] }
+layout-rs = "0.1.3"
 # random name generator
 names = "0.14.0"
+petgraph = "0.8.2"
 # complex pattern matching in strings
 regex = "1.11.0"
 # serialization/deserialization to/from filestore
@@ -109,6 +112,7 @@ impl_trait_in_params = { level = "allow", priority = 127 }             # impl in
 implicit_return = { level = "allow", priority = 127 }                  # missing return ok
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
+iter_over_hash_type = { level = "allow", priority = 127 }              # allow iterating over hash types
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
 missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing assert before indexing ok
 missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok

@@ -15,6 +15,7 @@ use std::{
     result,
 };
 use uniffi;
+
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -27,6 +28,12 @@ pub(crate) enum Kind {
     ))]
     EmptyResponseWhenLoadingContainerAltImage {
         path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Failed to parse DOT graph: {dot} with reason: {reason}."))]
+    FailedToParseDot {
+        dot: String,
+        reason: String,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("Out of generated random names."))]
@@ -58,6 +65,7 @@ pub(crate) enum Kind {
     },
     #[snafu(display("No known container names."))]
     NoContainerNames { backtrace: Option<Backtrace> },
+
     #[snafu(display("Missing file or directory name ({path:?})."))]
     NoFileName {
         path: PathBuf,
@@ -71,6 +79,11 @@ pub(crate) enum Kind {
     #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
     NoTagFoundInContainerAltImage {
         path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Input map missing required packet keys: {missing_keys:?}"))]
+    MissingStreamKey {
+        missing_keys: Vec<String>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

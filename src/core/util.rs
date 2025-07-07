@@ -1,6 +1,14 @@
-use crate::uniffi::error::{Result, selector};
+use crate::uniffi::{
+    error::{Result, selector},
+    model::PathSet,
+};
 use snafu::OptionExt as _;
-use std::{any::type_name, collections::HashMap, fmt};
+use std::{
+    any::type_name,
+    collections::HashMap,
+    fmt::{self, Debug},
+    hash::Hash,
+};
 
 #[expect(
     clippy::unwrap_used,
@@ -26,8 +34,27 @@ pub fn parse_debug_name<T: fmt::Debug>(instance: &T) -> String {
         .unwrap()
 }
 
-pub fn get<'map, T>(map: &'map HashMap<String, T>, key: &str) -> Result<&'map T> {
-    Ok(map.get(key).context(selector::KeyMissing {
-        key: key.to_owned(),
-    })?)
+pub fn get<'map, K, T>(map: &'map HashMap<K, T>, key: &K) -> Result<&'map T>
+where
+    K: Hash + Eq + ToOwned<Owned = K> + Debug,
+{
+    let temp = map.get(key).context(selector::KeyMissing {
+        key: format!("{key:?}"),
+    })?;
+    Ok(temp)
+}
+
+pub fn find_missing_keys<'a>(
+    input_map: &HashMap<String, PathSet>,
+    keys_to_check: impl Iterator<Item = &'a String>,
+) -> Vec<String> {
+    keys_to_check
+        .filter_map(|key| {
+            if input_map.contains_key(key) {
+                None
+            } else {
+                Some(key.clone())
+            }
+        })
+        .collect()
 }
