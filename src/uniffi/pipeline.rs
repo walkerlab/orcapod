@@ -1,12 +1,3 @@
-use dot_parser::{ast, canonical};
-use serde::Serialize;
-use std::{
-    backtrace::Backtrace,
-    collections::HashMap,
-    hash::{Hash, Hasher},
-    string::String,
-};
-
 use crate::{
     core::{
         crypto::hash_buffer,
@@ -18,12 +9,24 @@ use crate::{
         model::{Annotation, PathSet, Pod},
     },
 };
+use derive_more::Display;
+use dot_parser::{ast, canonical};
 use petgraph::Direction::{Incoming, Outgoing};
 use petgraph::{graph::DiGraph, prelude::NodeIndex};
+use serde::Serialize;
+use std::{
+    backtrace::Backtrace,
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    string::String,
+    sync::Arc,
+};
 
 /// Pipeline Components
 /// Mapper
-#[derive(Serialize, Debug, PartialEq, Eq, Clone)]
+#[derive(uniffi::Object, Display, Serialize, Debug, PartialEq, Eq, Clone)]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 pub struct Mapper {
     /// Hash of the Mapper
     pub hash: String,
@@ -50,13 +53,13 @@ impl Mapper {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(uniffi::Enum, Debug, Clone)]
 /// Enum to store different types of nodes explicitly
 pub enum Kernel {
     /// Pod node
-    Pod(Box<Pod>),
+    Pod(Arc<Pod>),
     /// Mapper node
-    Mapper(Mapper),
+    Mapper(Arc<Mapper>),
     /// Joiner node
     Joiner,
 }
@@ -109,16 +112,18 @@ impl Eq for Kernel {}
 
 impl From<Pod> for Kernel {
     fn from(pod: Pod) -> Self {
-        Self::Pod(Box::new(pod))
+        Self::Pod(Arc::new(pod))
     }
 }
 impl From<Mapper> for Kernel {
     fn from(mapper: Mapper) -> Self {
-        Self::Mapper(mapper)
+        Self::Mapper(Arc::new(mapper))
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(uniffi::Object, Display, Debug, Default, Clone, PartialEq, Eq)]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 /// Struct to represent a node in the pipeline graph
 pub struct Node {
     /// This is name for now till hashing feature get merged
@@ -152,7 +157,9 @@ impl Node {
 }
 
 /// Pipeline struct
-#[derive(Debug, Default, Clone)]
+#[derive(uniffi::Object, Debug, Default, Clone, Display)]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 pub struct Pipeline {
     /// Annotation for the pipeline
     pub annotation: Option<Annotation>,
@@ -332,7 +339,9 @@ impl Pipeline {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(uniffi::Object, Display, Debug, Clone)]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 /// `PipelineJob` struct
 /// This struct is used to store the pipeline and the input map
 pub struct PipelineJob {
