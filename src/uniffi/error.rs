@@ -82,7 +82,7 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("Input map missing required packet keys: {missing_keys:?}"))]
-    MissingStreamKey {
+    MissingInputSpecKey {
         missing_keys: Vec<String>,
         backtrace: Option<Backtrace>,
     },

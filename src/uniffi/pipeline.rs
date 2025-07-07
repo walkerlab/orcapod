@@ -370,7 +370,7 @@ impl PipelineJob {
 
         if !missing_keys.is_empty() {
             return Err(OrcaError {
-                kind: Kind::MissingStreamKey {
+                kind: Kind::MissingInputSpecKey {
                     missing_keys,
                     backtrace: Some(Backtrace::capture()),
                 },

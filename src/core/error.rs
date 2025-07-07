@@ -100,7 +100,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoFileName { backtrace, .. }
             | Kind::NoMatchingPodRun { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
-            | Kind::MissingStreamKey { backtrace, .. }
+            | Kind::MissingInputSpecKey { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
