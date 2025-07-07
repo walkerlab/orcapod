@@ -173,7 +173,10 @@ impl Agent {
                     .orchestrator
                     .start(&inner_namespace_lookup, &pod_job)
                     .await?;
-                let pod_result = agent.orchestrator.get_result(&pod_run).await?;
+                let pod_result = agent
+                    .orchestrator
+                    .get_result(&inner_namespace_lookup, &pod_run)
+                    .await?;
                 agent.orchestrator.delete(&pod_run).await?;
                 Ok(pod_result)
             },
@@ -196,6 +199,8 @@ impl Agent {
                     Arc::clone(&agent.client),
                     format!("status/pipeline_job/{}/", pipeline_job.hash),
                     "request/pod_job/",
+                    "success/pod_job/",
+                    "failure/pod_job/",
                     pipeline_job,
                     inner_namespace_lookup,
                 ))

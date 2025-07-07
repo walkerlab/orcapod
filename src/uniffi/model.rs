@@ -6,8 +6,12 @@ use crate::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
         },
+        util::get,
     },
-    uniffi::{error::Result, orchestrator::Status},
+    uniffi::{
+        error::{OrcaError, Result, selector},
+        orchestrator::Status,
+    },
 };
 use derive_more::Display;
 use getset::CloneGetters;
@@ -48,12 +52,12 @@ pub struct Pod {
     pub image: String,
     /// Space-delimited shell command to begin computation.
     pub command: Vec<String>,
-    /// Exposed, internal input streams.
+    /// Exposed, internal input specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_spec: HashMap<String, PathInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    /// Exposed, internal output streams.
+    /// Exposed, internal output specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub output_spec: HashMap<String, PathInfo>,
     /// Link to source associated with image binary.
@@ -122,7 +126,7 @@ pub struct PodJob {
     /// A pod to base the pod job on.
     #[serde(deserialize_with = "deserialize_pod")]
     pub pod: Arc<Pod>,
-    /// Attached, external input streams.
+    /// Attached, external input packet.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_packet: HashMap<String, PathSet>,
     /// Attached, external output directory.
@@ -202,6 +206,9 @@ pub struct PodResult {
     /// A pod job that originated the pod result.
     #[serde(deserialize_with = "deserialize_pod_job")]
     pub pod_job: Arc<PodJob>,
+    /// Produced, external output packet.
+    #[serde(default, serialize_with = "serialize_hashmap")]
+    pub output_packet: HashMap<String, PathSet>,
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
@@ -225,11 +232,68 @@ impl PodResult {
         status: Status,
         created: u64,
         terminated: u64,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        let skip_allowed = match status {
+            Status::Completed => false,
+            Status::Running | Status::Failed { .. } | Status::Unset => true,
+        };
+        let output_packet = pod_job
+            .pod
+            .output_spec
+            .iter()
+            .filter_map(|(packet_key, path_info)| {
+                let location = URI {
+                    namespace: pod_job.output_dir.namespace.clone(),
+                    path: pod_job.output_dir.path.join(&path_info.path),
+                };
+
+                let local_location = match get(namespace_lookup, &location.namespace) {
+                    Ok(root_path) => root_path.join(&location.path),
+                    Err(error) => return Some(Err(error)),
+                };
+
+                match (local_location.try_exists(), skip_allowed) {
+                    (Ok(false), true) => None,
+                    (Err(error), _) => Some(Err(OrcaError::from(error))),
+                    (Ok(false), false) => Some(
+                        selector::IncompleteOutputPacket {
+                            key: packet_key.clone(),
+                            namespace: location.namespace.clone(),
+                            path: location.path,
+                        }
+                        .fail()
+                        .map_err(OrcaError::from),
+                    ),
+                    (Ok(true), _) => Some(Ok((
+                        packet_key,
+                        Blob {
+                            kind: if local_location.is_file() {
+                                BlobKind::File
+                            } else {
+                                BlobKind::Directory
+                            },
+                            location,
+                            checksum: String::new(),
+                        },
+                    ))),
+                }
+            })
+            .map(|result| {
+                let (packet_key, blob) = result?;
+                Ok((
+                    packet_key.clone(),
+                    PathSet::Unary {
+                        blob: hash_blob(namespace_lookup, blob)?,
+                    },
+                ))
+            })
+            .collect::<Result<_>>()?;
         let pod_result_no_hash = Self {
             annotation,
             hash: String::new(),
             pod_job,
+            output_packet,
             assigned_name,
             status,
             created,

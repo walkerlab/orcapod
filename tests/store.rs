@@ -296,11 +296,6 @@ fn pod_annotation_unique() -> Result<()> {
         store.list_pod()?,
         vec![
             ModelInfo {
-                name: None,
-                version: None,
-                hash: new_hash,
-            },
-            ModelInfo {
                 name: Some(original_annotation.name.clone()),
                 version: Some(original_annotation.version.clone()),
                 hash: original_hash.clone(),
@@ -309,6 +304,11 @@ fn pod_annotation_unique() -> Result<()> {
                 name: None,
                 version: None,
                 hash: original_hash,
+            },
+            ModelInfo {
+                name: None,
+                version: None,
+                hash: new_hash,
             },
         ],
         "Pod list didn't return 3 expected entries."

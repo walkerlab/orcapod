@@ -9,7 +9,7 @@ use orcapod::{core::model::to_yaml, uniffi::error::Result};
 fn hash_pod() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "11fc4cb2cbfeb06cf37af60c966e67eebc992e23d41c831f59621fda0de51447",
+        "0e993f645fbb36f0635e2c9140975997cf4ca723d0b49cf4ee4963b76e6424d7",
         "Hash didn't match."
     );
     Ok(())
@@ -34,8 +34,11 @@ fn pod_to_yaml() -> Result<()> {
                 match_pattern: .*\.t7
             output_dir: /output
             output_spec:
-              result:
-                path: ./result.jpeg
+              result1:
+                path: result1.jpeg
+                match_pattern: .*\.jpeg
+              result2:
+                path: result2.jpeg
                 match_pattern: .*\.jpeg
             source_commit_url: https://github.com/user/style-transfer/tree/1.0.0
             recommended_cpus: 0.25
@@ -51,7 +54,7 @@ fn pod_to_yaml() -> Result<()> {
 fn hash_pod_job() -> Result<()> {
     assert_eq!(
         pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "eed462d0a85cd5844c58b2333e457dca327586806e86a750725a2695098b7092",
+        "e94bd190b35ff10cf0f3d808fe45101564860c0a701d60baf8528401e1206cf6",
         "Hash didn't match."
     );
     Ok(())
@@ -63,7 +66,7 @@ fn pod_job_to_yaml() -> Result<()> {
         to_yaml(&pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_job
-            pod: 11fc4cb2cbfeb06cf37af60c966e67eebc992e23d41c831f59621fda0de51447
+            pod: 0e993f645fbb36f0635e2c9140975997cf4ca723d0b49cf4ee4963b76e6424d7
             input_packet:
               base-input:
                 blobs:
@@ -102,7 +105,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "eba48533980e87a79f3d88d4b5a055a2e7e0010214014d5de93f86597a35acc1",
+        "12a482e8672fd5617b76c64408c2303c83af40bec5f7b06763e7ba24de4ae2e0",
         "Hash didn't match."
     );
     Ok(())
@@ -114,7 +117,22 @@ fn pod_result_to_yaml() -> Result<()> {
         to_yaml(&pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_result
-            pod_job: eed462d0a85cd5844c58b2333e457dca327586806e86a750725a2695098b7092
+            pod_job: e94bd190b35ff10cf0f3d808fe45101564860c0a701d60baf8528401e1206cf6
+            output_packet:
+              result1:
+                blob:
+                  kind: File
+                  location:
+                    namespace: default
+                    path: output/result1.jpeg
+                  checksum: 5898ca5bed67147680c6489056cbf2e90074bc51d8ca2645453742580ce74b7a
+              result2:
+                blob:
+                  kind: File
+                  location:
+                    namespace: default
+                    path: output/result2.jpeg
+                  checksum: da71a1b5f8ca6ebd1edfd11df4c83078fc50d0e6a4c9b3d642ba397d81d8e883
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307

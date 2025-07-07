@@ -5,7 +5,9 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 pub async fn process_pipeline_job(
     agent_client: Arc<AgentClient>,
     status_topic: String,
-    dispatch_topic: &str,
+    pod_job_request_topic: &str,
+    pod_job_success_topic: &str,
+    pod_job_failure_topic: &str,
     pipeline_job: PipelineJob,
     namespace_lookup: HashMap<String, PathBuf>,
 ) -> Result<()> {
