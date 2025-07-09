@@ -1,4 +1,7 @@
-use crate::uniffi::error::{Kind, OrcaError};
+use crate::uniffi::{
+    error::{Kind, OrcaError},
+    pipeline_runner::docker::Message,
+};
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -9,6 +12,7 @@ use std::{
     io,
     path::{self},
 };
+use tokio::{sync::broadcast::error::SendError, task::JoinError};
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
@@ -70,6 +74,26 @@ impl From<serde_yaml::Error> for OrcaError {
         }
     }
 }
+impl From<JoinError> for OrcaError {
+    fn from(error: JoinError) -> Self {
+        Self {
+            kind: Kind::IoError {
+                source: error.into(),
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<SendError<Message>> for OrcaError {
+    fn from(error: SendError<Message>) -> Self {
+        Self {
+            kind: Kind::SendError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
 impl From<Kind> for OrcaError {
     fn from(error: Kind) -> Self {
         Self { kind: error }
@@ -105,6 +129,7 @@ impl fmt::Debug for OrcaError {
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
+            | Kind::SendError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
             | Kind::SerdeYamlError { backtrace, .. } => {
                 write!(f, "{}{}", self.kind, format_stack(backtrace.as_ref()))

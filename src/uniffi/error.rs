@@ -14,7 +14,10 @@ use std::{
     path::{self, PathBuf},
     result,
 };
+use tokio::sync::broadcast::error::SendError;
 use uniffi;
+
+use crate::uniffi::pipeline_runner::docker::Message;
 
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
@@ -104,6 +107,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     PathPrefixError {
         source: path::StripPrefixError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    SendError {
+        source: SendError<Message>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

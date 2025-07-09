@@ -4,8 +4,9 @@ pub mod error;
 pub mod model;
 /// Interface into container orchestration engine.
 pub mod orchestrator;
-/// Data persistence provided by a store backend.
-pub mod store;
-
 /// Pipeline management and execution.
 pub mod pipeline;
+/// Pipeline runner interface.
+pub mod pipeline_runner;
+/// Data persistence provided by a store backend.
+pub mod store;

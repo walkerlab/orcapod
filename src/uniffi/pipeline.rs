@@ -6,7 +6,7 @@ use crate::{
     },
     uniffi::{
         error::{Kind, OrcaError, Result},
-        model::{Annotation, PathSet, Pod},
+        model::{Annotation, PathSet, Pod, URI},
     },
 };
 use derive_more::Display;
@@ -126,8 +126,8 @@ impl From<Mapper> for Kernel {
 #[uniffi::export(Display)]
 /// Struct to represent a node in the pipeline graph
 pub struct Node {
-    /// This is name for now till hashing feature get merged
-    pub name: String,
+    /// This is id for now till hashing feature get merged
+    pub id: String,
     /// Hash of the kernel to use in `kernel_lut`
     pub kernel_hash: String,
 }
@@ -136,7 +136,7 @@ impl Node {
     /// Creates a new `Node` instance and computes its hash based on the kernel hash and parent hashes.
     pub fn new(kernel_hash: &str, parent_hashes: Vec<&str>) -> Self {
         Self {
-            name: Self::compute_hash(kernel_hash, parent_hashes),
+            id: Self::compute_hash(kernel_hash, parent_hashes),
             kernel_hash: kernel_hash.to_owned(),
         }
     }
@@ -222,7 +222,7 @@ impl Pipeline {
             // Create the node, insert into graph and store the idx
             for node_name in node_names {
                 let node = Node {
-                    name: (*node_name).clone(),
+                    id: (*node_name).clone(),
                     kernel_hash: kernel.get_hash(),
                 };
                 let node_idx = graph.add_node(node);
@@ -349,6 +349,7 @@ pub struct PipelineJob {
     pub pipeline: Pipeline,
     /// Mapping of outside input to keys to be match with the pipeline `input_map`
     pub input_map: HashMap<String, PathSet>,
+    pub output_dir: URI,
     /// Annotation for the pipeline job
     pub annotation: Option<Annotation>,
 }
@@ -360,6 +361,7 @@ impl PipelineJob {
     pub fn new(
         pipeline: Pipeline,
         input_packet: HashMap<String, PathSet>,
+        output_dir: URI,
         annotation: Option<Annotation>,
     ) -> Result<Self> {
         // Check if input_map has all the requires keys
@@ -390,6 +392,10 @@ impl PipelineJob {
             pipeline,
             input_map: input_packet,
             annotation,
+            output_dir,
         })
     }
+}
+pub struct PipelineResult {
+    pub pipeline_job: PipelineJob,
 }
