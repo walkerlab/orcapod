@@ -88,7 +88,7 @@ impl From<SendError<Message>> for OrcaError {
     fn from(error: SendError<Message>) -> Self {
         Self {
             kind: Kind::SendError {
-                source: error,
+                reason: error.to_string(),
                 backtrace: Some(Backtrace::capture()),
             },
         }

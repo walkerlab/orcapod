@@ -75,7 +75,8 @@
         "getrandom",
         "wasi",
         "petgraph",
-        "rfind"
+        "rfind",
+        "itertools"
     ],
     "useGitignore": false,
     "ignorePaths": [

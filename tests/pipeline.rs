@@ -117,6 +117,10 @@ fn incorrect_input_packet() -> Result<()> {
                     ..Default::default()
                 }),
             )]),
+            URI {
+                namespace: "default".to_owned(),
+                path: PathBuf::from("output"),
+            },
             None
         )
         .is_err()

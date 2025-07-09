@@ -292,6 +292,10 @@ pub fn pipeline_job() -> Result<PipelineJob> {
                 ..Default::default()
             }),
         )]),
+        URI {
+            namespace: "default".to_owned(),
+            path: PathBuf::from("output"),
+        },
         Some(Annotation {
             name: "Example Pipeline Job".to_owned(),
             description: "This is an example pipeline job.".to_owned(),

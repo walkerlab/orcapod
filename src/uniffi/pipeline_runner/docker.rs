@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use futures_util::stream::FuturesUnordered;
-use itertools::Itertools;
+use itertools::Itertools as _;
 use serde_yaml::Serializer;
 use snafu::OptionExt as _;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
@@ -52,7 +52,7 @@ impl DockerPipelineRunner {
     pub fn start(
         &mut self,
         pipeline_job: PipelineJob,
-        namespace_lookup: HashMap<String, PathBuf>,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PipelineRun> {
         // Create a new pipeline run
         let pipeline_run = PipelineRun { pipeline_job };
@@ -80,7 +80,7 @@ impl DockerPipelineRunner {
         // Get all the leaf nodes and call the create_task_for_node function for each leaf node
         // This will recursively create all the tasks and channels for the pipeline
         pipeline.get_leaf_nodes().try_for_each(|node| {
-            self.create_task_for_node(node, &pipeline_run_arc, &source_tx, &namespace_lookup)?;
+            self.create_task_for_node(node, &pipeline_run_arc, &source_tx, namespace_lookup)?;
             Ok::<(), OrcaError>(())
         })?;
 
@@ -209,7 +209,7 @@ impl DockerPipelineRunner {
         pipeline_run: Arc<PipelineRun>,
         parent_channel_rxs: Vec<Receiver<Message>>,
         mut job_manager_channel: Receiver<Message>,
-        tx: Sender<Message>,
+        success_ch_tx: Sender<Message>,
         namespace_lookup: HashMap<String, PathBuf>,
     ) -> Result<()> {
         // Create a futures unordered set to dynamically listen to N number of receivers
@@ -233,7 +233,7 @@ impl DockerPipelineRunner {
             Kernel::Pod(pod) => {
                 // Create a processor for the pod node
                 Box::new(PodNodeProcessor::new(
-                    pod.clone(),
+                    Arc::clone(pod),
                     pipeline_run.pipeline_job.output_dir.namespace.clone(),
                     namespace_lookup.clone(),
                 ))
@@ -241,7 +241,7 @@ impl DockerPipelineRunner {
             Kernel::Mapper(mapper) => {
                 // Create a processor for the mapper node
                 Box::new(MapperProcessor {
-                    mapper: mapper.clone(),
+                    mapper: Arc::clone(mapper),
                 })
             }
             Kernel::Joiner => {
@@ -262,7 +262,7 @@ impl DockerPipelineRunner {
             let rx_result = match result {
                 Ok(rx_result) => rx_result,
                 Err(err) => {
-                    // Record into pipeilne_error log
+                    // Record into pipeline_error log
                     if err.is_panic() {
                         eprintln!("Task panicked: {err}");
                     } else {
@@ -294,10 +294,10 @@ impl DockerPipelineRunner {
     fn process_packet_pod(
         node: &Node,
         pod: Arc<Pod>,
-        success_ch_tx: Sender<Message>,
-        failure_ch_tx: Sender<Message>,
-        input_packet: HashMap<String, PathSet>,
-        pipeline_run: Arc<PipelineRun>,
+        success_ch_tx: &Sender<Message>,
+        failure_ch_tx: &Sender<Message>,
+        input_packet: &HashMap<String, PathSet>,
+        pipeline_run: &Arc<PipelineRun>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<()> {
         // Output directory is pod_runs/pod_run_id/node_id/hash_of_input_packet
@@ -305,7 +305,7 @@ impl DockerPipelineRunner {
         // Compute the hash of the input_packet
         let mut buf = Vec::new();
         let mut serializer = Serializer::new(&mut buf);
-        serialize_hashmap(&input_packet, &mut serializer)?;
+        serialize_hashmap(input_packet, &mut serializer)?;
         let input_packet_hash = hash_buffer(buf);
         let output_dir = URI {
             namespace: pipeline_run.pipeline_job.output_dir.namespace.clone(),
@@ -397,7 +397,7 @@ impl NodeProcessor for PodNodeProcessor {
         // Create the pod job
         let pod_job = PodJob::new(
             None,
-            self.pod.clone(),
+            Arc::clone(&self.pod),
             packet.clone(),
             output_dir,
             cpu_limit,
@@ -508,7 +508,7 @@ impl NodeProcessor for JoinerNodeProcessor {
         success_ch_tx: Sender<Message>,
         failure_ch_tx: Sender<Message>,
     ) -> Result<()> {
-        match {
+        let process_result = {
             // Compute the new packet combination based on the sender node id and the packet
             let new_packets_to_send =
                 self.compute_new_packet_combination(&sender_node_id, &packet)?;
@@ -522,7 +522,9 @@ impl NodeProcessor for JoinerNodeProcessor {
                 .push(packet);
 
             Ok::<Vec<HashMap<String, PathSet>>, OrcaError>(new_packets_to_send)
-        } {
+        };
+
+        match process_result {
             Ok(output_packets) => {
                 // Send the output packets to the success channel
                 for output_packet in output_packets {
