@@ -76,7 +76,8 @@
         "wasi",
         "petgraph",
         "rfind",
-        "itertools"
+        "itertools",
+        "oneshot"
     ],
     "useGitignore": false,
     "ignorePaths": [
