@@ -339,13 +339,16 @@ impl Pipeline {
     }
 }
 
-#[derive(uniffi::Object, Display, Debug, Clone)]
+#[derive(uniffi::Object, Display, Debug, Clone, Serialize)]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
 /// `PipelineJob` struct
 /// This struct is used to store the pipeline and the input map
 pub struct PipelineJob {
-    /// Pipeline struct
+    /// Used to unique identify the pipeline job
+    pub hash: String,
+    /// Pipeline struct (Note: Due to the removal of the hash system to be deferred, this has no guarantee of being unique)
+    #[serde(skip)]
     pub pipeline: Pipeline,
     /// Mapping of outside input to keys to be match with the pipeline `input_map`
     pub input_map: HashMap<String, PathSet>,
@@ -388,11 +391,18 @@ impl PipelineJob {
             });
         }
 
-        Ok(Self {
+        // Create the job without_hash
+        let no_hash = Self {
+            hash: String::new(),
             pipeline,
             input_map: input_packet,
             annotation,
             output_dir,
+        };
+
+        Ok(Self {
+            hash: hash_buffer(to_yaml(&no_hash)?),
+            ..no_hash
         })
     }
 }

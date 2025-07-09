@@ -38,7 +38,7 @@ impl LocalDockerOrchestrator {
     fn prepare_mount_binds(
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
-    ) -> Result<(Vec<String>, [String; 1])> {
+    ) -> Result<(Vec<String>)> {
         // all host mounted paths need to be absolute
         let host_output_directory = path::absolute(
             namespace_lookup[&pod_job.output_dir.namespace].join(&pod_job.output_dir.path),
