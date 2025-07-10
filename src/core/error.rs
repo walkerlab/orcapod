@@ -13,7 +13,7 @@ use std::{
     path::{self},
 };
 use tokio::{
-    sync::{broadcast::error::SendError, oneshot},
+    sync::{mpsc::error::SendError, oneshot},
     task::JoinError,
 };
 

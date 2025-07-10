@@ -333,6 +333,19 @@ impl Pipeline {
                 .map(move |parent_idx| &self.graph[parent_idx])
         })
     }
+
+    pub fn get_children_for_node(&self, node: &Node) -> impl Iterator<Item = &Node> {
+        // Find the NodeIndex for the given node_key
+        let node_index = self
+            .graph
+            .node_indices()
+            .find(|&idx| self.graph[idx] == *node);
+        node_index.into_iter().flat_map(move |idx| {
+            self.graph
+                .neighbors_directed(idx, Outgoing)
+                .map(move |child_idx| &self.graph[child_idx])
+        })
+    }
 }
 
 #[derive(uniffi::Object, Display, Debug, Clone, Serialize)]

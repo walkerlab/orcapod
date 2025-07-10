@@ -2,28 +2,20 @@ use super::PipelineRun;
 use crate::{
     core::{crypto::hash_buffer, model::serialize_hashmap, util::get},
     uniffi::{
-        error::{Kind, OrcaError, Result, selector},
+        error::{OrcaError, Result, selector},
         model::{PathSet, Pod, PodJob, URI},
         pipeline::{Kernel, Mapper, Node, PipelineJob, PipelineResult},
     },
 };
-use futures_util::stream::FuturesUnordered;
+use futures_util::future::try_join_all;
 use itertools::Itertools as _;
 use serde_yaml::Serializer;
 use snafu::OptionExt as _;
-use std::{
-    backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc, thread::sleep,
-    time::Duration,
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, thread::sleep, time::Duration};
 use tokio::{
-    sync::{
-        RwLock,
-        broadcast::{self, Receiver, Sender, error::RecvError},
-        oneshot,
-    },
-    task::{JoinHandle, JoinSet},
+    sync::{RwLock, mpsc},
+    task::{JoinSet, spawn_blocking},
 };
-use tokio_stream::StreamExt as _;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Message {
@@ -40,8 +32,7 @@ pub(crate) enum Message {
 )]
 struct PipelineRunInfo {
     node_task_join_set: JoinSet<Result<()>>, // Join set to track the tasks for this pipeline run
-    job_manager_ch_tx: Sender<Message>,
-    node_tx: HashMap<String, Sender<Message>>,
+    node_tx: HashMap<String, mpsc::Sender<Message>>,
     outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>, // String is the node key, while hash
 }
 
@@ -61,7 +52,7 @@ impl DockerPipelineRunner {
     ///
     /// # Errors
     /// Will error out if the pipeline job fails to start
-    pub fn start(
+    pub async fn start(
         &mut self,
         pipeline_job: PipelineJob,
         namespace_lookup: &HashMap<String, PathBuf>,
@@ -74,45 +65,40 @@ impl DockerPipelineRunner {
         self.pipeline_runs.insert(
             (*pipeline_run_arc).clone(),
             PipelineRunInfo {
-                job_manager_ch_tx: broadcast::channel::<Message>(1).0,
                 node_tx: HashMap::new(),
                 node_task_join_set: JoinSet::new(),
                 outputs: Arc::new(RwLock::new(HashMap::new())),
             },
         );
 
-        // Create the source channel for the pipeline
-        // This channel will be used to send inputs to the pipeline
-        let (source_tx, _) = broadcast::channel::<Message>(128);
-
         // Get reference to the pipeline
         let pipeline = &pipeline_run_arc.pipeline_job.pipeline;
 
-        // Get all the leaf nodes and call the create_task_for_node function for each leaf node
+        // Get all the root nodes and call the create_task_for_node function for each root node
         // This will recursively create all the tasks and channels for the pipeline
-        pipeline.get_leaf_nodes().try_for_each(|node| {
-            self.create_task_for_node(node, &pipeline_run_arc, &source_tx, namespace_lookup)?;
-
-            // Since we don't have output nodes implemented, and currently it is set as leaf nodes,
-            // we can do the output handling logic here too
-
-            Ok::<(), OrcaError>(())
-        })?;
+        let root_nodes_tx = pipeline
+            .get_root_nodes()
+            .map(|node| self.create_task_for_node(node, &pipeline_run_arc, namespace_lookup))
+            .collect::<Result<Vec<_>>>()?;
 
         // All pipeline tasks have been created, now we need to feed the inputs to the pipeline
-        pipeline_run
-            .pipeline_job
-            .input_packets
-            .iter()
-            .try_for_each(|input_map| {
-                source_tx.send(Message::NodeOutput("input".to_owned(), input_map.clone()))?;
-                Ok::<(), OrcaError>(())
-            })?;
+        for tx in &root_nodes_tx {
+            for input_packet in &pipeline_run.pipeline_job.input_packets {
+                tx.send(Message::NodeOutput(
+                    "input".to_owned(),
+                    input_packet.clone(),
+                ))
+                .await?;
+            }
+        }
 
         // Send a message that all job inputs have been sent
-        source_tx.send(Message::NodeProcessingComplete("input".to_owned()))?;
+        for tx in &root_nodes_tx {
+            tx.send(Message::NodeProcessingComplete("input".to_owned()))
+                .await?;
+        }
 
-        sleep(Duration::from_secs(1)); // Give some time for the tasks to start
+        sleep(Duration::from_secs(5)); // Give some time for the tasks to start
         panic!();
         Ok(pipeline_run)
     }
@@ -154,55 +140,40 @@ impl DockerPipelineRunner {
         &mut self,
         node: &Node,
         pipeline_run: &Arc<PipelineRun>,
-        source_tx: &Sender<Message>,
         namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<Sender<Message>> {
+    ) -> Result<mpsc::Sender<Message>> {
         println!("Creating task for node: {}", node.id);
-        // Get the input channels for this node which should be it's parents
-        let mut input_ch_rxs = pipeline_run
-            .pipeline_job
-            .pipeline
-            .get_parents_for_node(node)
-            .map(|parent_node| {
-                // Check if it exists in the pipeline_runs hashmap
-                match get(&self.pipeline_runs, pipeline_run)?
-                    .node_tx
-                    .get(&parent_node.id)
-                {
-                    Some(rx) => Ok(rx.subscribe()),
-                    None => {
-                        // Missing parent node, thus call create_task for the parent node parent node first
-                        Ok(self
-                            .create_task_for_node(
-                                parent_node,
-                                pipeline_run,
-                                source_tx,
-                                namespace_lookup,
-                            )?
-                            .subscribe())
-                    }
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
+        // Create a channel for the node
+        // This channel will be used to send messages to the node processor
+        let (tx, rx) = mpsc::channel::<Message>(128);
 
-        // Check if input_ch_rxs is empty, meaning this node has no parents and is a root node
-        // In this case, we will use the source channel as the input channel
-        // TODO: This will be replaced by input_node logic once that is merged
-        if input_ch_rxs.is_empty() {
-            // No parents, thus this is root node
-            // The parent rx will be the source channel rx
-            input_ch_rxs.push(source_tx.subscribe());
+        // Use closer to limit the scope of the borrow
+        {
+            let pipeline_info =
+                self.pipeline_runs
+                    .get_mut(pipeline_run)
+                    .context(selector::KeyMissing {
+                        key: pipeline_run.to_string(),
+                    })?;
+            // Check if the node is already inside the node_tx
+            if pipeline_info.node_tx.contains_key(&node.id) {
+                // Node already exists, thus we can return the existing tx
+                return Ok(pipeline_info.node_tx.get(&node.id).unwrap().clone());
+            }
+
+            // Record the tx into the pipeline_info tx_hashmap
+            pipeline_info.node_tx.insert(node.id.clone(), tx.clone());
         }
 
-        // Get the job manager ch and subscribe to it (mainly for receiving shutdown signal)
-        let job_manager_ch_rx = get(&self.pipeline_runs, pipeline_run)?
-            .job_manager_ch_tx
-            .subscribe();
+        // Call this function for each of the child nodes to get their Sender_tx
+        let children_node_tx = pipeline_run
+            .pipeline_job
+            .pipeline
+            .get_children_for_node(node)
+            .map(|child_node| self.create_task_for_node(child_node, pipeline_run, namespace_lookup))
+            .collect::<Result<Vec<_>>>()?;
 
-        // Create the output_channel for this node
-        let (tx, _) = broadcast::channel::<Message>(128);
-
-        // Spawn the node_manager for this node
+        // Start the task_manager
         self.pipeline_runs
             .get_mut(pipeline_run)
             .context(selector::KeyMissing {
@@ -212,46 +183,12 @@ impl DockerPipelineRunner {
             .spawn(Self::start_node_manager(
                 node.clone(),
                 Arc::clone(pipeline_run),
-                input_ch_rxs,
-                job_manager_ch_rx,
-                tx.clone(),
+                rx,
+                children_node_tx,
                 namespace_lookup.clone(),
             ));
 
-        // Insert it into the the tx into the pipeline_runs hashmap
-        self.pipeline_runs
-            .get_mut(pipeline_run)
-            .context(selector::KeyMissing {
-                key: pipeline_run.to_string(),
-            })?
-            .node_tx
-            .insert(node.id.clone(), tx.clone());
-
-        // Return tx
         Ok(tx)
-    }
-
-    fn create_task_to_capture_output_of_node(
-        &mut self,
-        node: &Node,
-        pipeline_run: &Arc<PipelineRun>,
-    ) -> Result<()> {
-        let pipeline_run_info =
-            self.pipeline_runs
-                .get_mut(pipeline_run)
-                .context(selector::KeyMissing {
-                    key: pipeline_run.to_string(),
-                })?;
-        // Get the output ch rx for the node
-        let node_rx = get(&pipeline_run_info.node_tx, &node.id)?.subscribe();
-        // Create a new ref copy of pipeline_run_output
-        let outputs_ref = Arc::clone(&pipeline_run_info.outputs);
-        // Create a task to listen to it and record the outputs
-        pipeline_run_info
-            .node_task_join_set
-            .spawn(Self::capture_node_output(node_rx, outputs_ref));
-
-        Ok(())
     }
 
     #[expect(
@@ -259,30 +196,13 @@ impl DockerPipelineRunner {
         reason = "too complex, but necessary for async handling"
     )]
     async fn capture_node_output(
-        mut node_rx: Receiver<Message>,
+        mut output_rx: mpsc::Receiver<Message>,
         outputs_ref: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>,
     ) -> Result<()> {
-        loop {
-            let message = match node_rx.recv().await {
-                Ok(message) => message,
-                Err(err) => {
-                    match err {
-                        RecvError::Closed => {
-                            // No more message will be received, thus we can exit the loop
-                            // Only case where this will occur is when the channel is closed due to abort
-                            break;
-                        }
-                        RecvError::Lagged(_) => {
-                            print!("Warning: Channel lagged, skipping message");
-                        }
-                    }
-                    continue;
-                }
-            };
-            match message {
+        while let Some(msg) = output_rx.recv().await {
+            match msg {
                 Message::NodeOutput(node_id, hash_map) => {
                     // Record the output
-
                     outputs_ref
                         .write()
                         .await
@@ -296,7 +216,6 @@ impl DockerPipelineRunner {
                 }
             }
         }
-
         Ok(())
     }
 
@@ -304,33 +223,16 @@ impl DockerPipelineRunner {
     async fn start_node_manager(
         node: Node,
         pipeline_run: Arc<PipelineRun>,
-        parent_channel_rxs: Vec<Receiver<Message>>,
-        mut job_manager_channel: Receiver<Message>,
-        success_ch_tx: Sender<Message>,
+        node_rx: mpsc::Receiver<Message>,
+        success_chs_tx: Vec<mpsc::Sender<Message>>,
         namespace_lookup: HashMap<String, PathBuf>,
     ) -> Result<()> {
         println!("Starting node manager for node: {}", node.id);
-        // Create a channel to for waiting when the node processing is complete
-        let (processing_complete_ch_tx, processing_complete_ch_rx) = oneshot::channel::<()>();
-
-        // Create a futures unordered set to dynamically listen to N number of receivers
-        let chs_to_listen_to = FuturesUnordered::new();
-
-        // Add all the parent channel receivers to the futures unordered set
-        for mut rx in parent_channel_rxs {
-            chs_to_listen_to.push(tokio::spawn(async move { rx.recv().await }));
-        }
-
-        // Add the job manager channel to the futures unordered set
-        chs_to_listen_to.push(tokio::spawn(
-            async move { job_manager_channel.recv().await },
-        ));
-
         // Create a metadata struct for this node
         let node_metadata = NodeMetaData {
             node_id: node.id.clone(),
-            ch_to_listen_to: chs_to_listen_to,
-            success_ch_tx: success_ch_tx.clone(),
+            node_rx,
+            child_nodes_txs: success_chs_tx.clone(),
             namespace: pipeline_run.pipeline_job.output_dir.namespace.clone(),
             namespace_lookup: namespace_lookup.clone(),
         };
@@ -344,13 +246,11 @@ impl DockerPipelineRunner {
         )? {
             Kernel::Pod(pod) => {
                 let mut processor = PodProcessor::new(Arc::clone(pod), node_metadata);
-                processor.start(processing_complete_ch_tx).await?;
-                processing_complete_ch_rx.await?;
+                processor.start().await;
             }
             Kernel::Mapper(mapper) => {
                 let mut processor = MapperProcessor::new(Arc::clone(mapper), node_metadata);
-                processor.start(processing_complete_ch_tx).await?;
-                processing_complete_ch_rx.await?;
+                processor.start().await;
             }
             Kernel::Joiner => {
                 let parent_nodes_id = pipeline_run
@@ -360,9 +260,16 @@ impl DockerPipelineRunner {
                     .map(|parent_node| parent_node.id.clone())
                     .collect::<Vec<_>>();
                 let mut processor = JoinerProcessor::new(parent_nodes_id, node_metadata);
-                processor.start(processing_complete_ch_tx).await?;
-                processing_complete_ch_rx.await?;
+                processor.start().await;
             }
+        }
+
+        // Notify that node is finish processing
+        println!("Node {} processing complete", node.id);
+        for success_ch_tx in &success_chs_tx {
+            success_ch_tx
+                .send(Message::NodeProcessingComplete(node.id.clone()))
+                .await?;
         }
 
         Ok(())
@@ -371,71 +278,31 @@ impl DockerPipelineRunner {
 
 struct NodeMetaData {
     node_id: String,
-    ch_to_listen_to: FuturesUnordered<JoinHandle<Result<Message, RecvError>>>,
-    success_ch_tx: Sender<Message>, // Channel to send successful outputs to the next node
+    node_rx: mpsc::Receiver<Message>, // Channel to listen to messages from parent nodes
+    child_nodes_txs: Vec<mpsc::Sender<Message>>, // Channel to send successful outputs to the next node
     namespace: String,
     namespace_lookup: HashMap<String, PathBuf>, // Copy of the look up table
 }
 
 trait NodeProcessor {
-    fn get_ch_to_listen_to(
-        &mut self,
-    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>>;
+    fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message>;
 
-    async fn wait_for_node_task_completion(&mut self);
-
-    async fn start(&mut self, process_complete_ch_tx: oneshot::Sender<()>) -> Result<()> {
+    async fn start(&mut self) {
         // Start to listen to the channels
         // Listen to the MPSC channel and handle messages
-        while let Some(result) = self.get_ch_to_listen_to().next().await {
-            let repeater_result = match result {
-                Ok(rx_result) => rx_result,
-                Err(err) => {
-                    // Record into pipeline_error log
-                    if err.is_panic() {
-                        eprintln!("Task panicked: {err}");
-                    } else {
-                        eprintln!("Error receiving message: {err}");
-                    }
-                    continue;
-                }
-            };
-
-            let msg = match repeater_result {
-                Ok(msg) => msg,
-                Err(RecvError::Closed) => {
-                    // Channel is closed, we can exit the loop
-                    eprintln!("Channel closed, exiting node processor");
-                    break;
-                }
-                Err(RecvError::Lagged(_)) => {
-                    // Channel lagged, skip this message
-                    eprintln!("Channel lagged, skipping message");
-                    continue;
-                }
-            };
-
-            // Process the message
-            if self.process_msg(msg).await? {
+        while let Some(msg) = self.get_node_rx().recv().await {
+            if self.process_msg(msg).await {
                 // If the message indicates that processing is complete, we can exit the loop
-                // Wait for all processing tasks to complete before sending the completion message
-
+                // Wait for all processing tasks to complete before returning
                 self.wait_for_node_task_completion().await;
-
-                // Send the node processing complete message
-                process_complete_ch_tx.send(()).map_err(|()| OrcaError {
-                    kind: Kind::ReceiverDroppedBeforeSender {
-                        backtrace: Some(Backtrace::capture()),
-                    },
-                })?;
                 break;
             }
         }
-
-        Ok(())
     }
 
-    async fn process_msg(&mut self, msg: Message) -> Result<bool>;
+    async fn process_msg(&mut self, msg: Message) -> bool;
+
+    async fn wait_for_node_task_completion(&mut self);
 }
 
 struct PodProcessor {
@@ -453,32 +320,28 @@ impl PodProcessor {
         }
     }
 
-    fn process_packet(
-        node_id: &str,
-        pod: &Arc<Pod>,
-        namespace: &str,
-        namespace_lookup: &HashMap<String, PathBuf>,
-        packet: &HashMap<String, PathSet>,
-        success_ch_tx: &Sender<Message>,
+    async fn process_packet(
+        node_id: String,
+        pod: Arc<Pod>,
+        namespace: String,
+        namespace_lookup: HashMap<String, PathBuf>,
+        packet: HashMap<String, PathSet>,
+        success_chs_tx: Vec<mpsc::Sender<Message>>,
     ) -> Result<()> {
         // Process the packet using the pod
-        println!(
-            "Processing packet in pod: {} with node_id: {}",
-            pod.hash, node_id
-        );
-
         // Create the pod_job
-        let mut buf = Vec::new();
-        let mut serializer = Serializer::new(&mut buf);
-        match serialize_hashmap(packet, &mut serializer) {
-            Ok(_) => {}
-            Err(err) => {
-                println!("Failed to serialize packet: {err}");
-            }
-        }
 
-        println!("managed to serialize packet: {:?}", buf);
-        let input_packet_hash = hash_buffer(buf);
+        // We need a unique hash for this given input packet process by the node
+        // therefore we need to generate a hash that has the pod_id + input_packet
+        let node_id_bytes = node_id.as_bytes().to_vec();
+        let packet_copy = packet.clone();
+        let input_packet_hash = spawn_blocking(move || {
+            let mut buf = node_id_bytes;
+            let mut serializer = Serializer::new(&mut buf);
+            serialize_hashmap(&packet_copy, &mut serializer)?;
+            Ok::<_, OrcaError>(hash_buffer(buf))
+        })
+        .await??;
         let output_dir = URI {
             namespace: namespace.to_owned(),
             path: PathBuf::from(format!("pod_runs/{}/{}", pod.hash, input_packet_hash)),
@@ -488,22 +351,16 @@ impl PodProcessor {
         let memory_limit = pod.recommended_memory;
 
         // Create the pod job
-        let pod_job = match PodJob::new(
+        let pod_job = PodJob::new(
             None,
-            Arc::clone(pod),
+            Arc::clone(&pod),
             packet.clone(),
             output_dir,
             cpu_limit,
             memory_limit,
             None,
-            namespace_lookup,
-        ) {
-            Ok(job) => job,
-            Err(err) => {
-                println!("Failed to create pod job: {err}");
-                panic!("Failed to create pod job: {err}");
-            }
-        };
+            &namespace_lookup,
+        )?;
 
         // Simulate pod execution by just printing out pod_job_hash and pod hash
         // This will be replaced by sending the pod_job to the orchestrator via the agent
@@ -513,19 +370,21 @@ impl PodProcessor {
         );
 
         // For now we will just send the input_packet to the success channel
-        match success_ch_tx.send(Message::NodeOutput(node_id.to_owned(), packet.clone())) {
-            Ok(_) => {}
-            Err(err) => {
-                println!("Failed to send message to success channel: {err}");
-            }
-        }
+        try_join_all(success_chs_tx.iter().map(|success_ch_tx| {
+            success_ch_tx.send(Message::NodeOutput(node_id.to_owned(), packet.clone()))
+        }))
+        .await?;
 
         Ok(())
     }
 }
 
 impl NodeProcessor for PodProcessor {
-    async fn process_msg(&mut self, msg: Message) -> Result<bool> {
+    fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message> {
+        &mut self.node_metadata.node_rx
+    }
+
+    async fn process_msg(&mut self, msg: Message) -> bool {
         match msg {
             Message::NodeOutput(sender_node_id, packet) => {
                 println!(
@@ -536,39 +395,33 @@ impl NodeProcessor for PodProcessor {
                 let node_id = self.node_metadata.node_id.clone();
                 let namespace = self.node_metadata.namespace.clone();
                 let namespace_lookup = self.node_metadata.namespace_lookup.clone();
-                let success_ch_tx = self.node_metadata.success_ch_tx.clone();
+                let child_nodes_txs = self.node_metadata.child_nodes_txs.clone();
                 // Forward it into a processing task
-                self.processing_tasks.spawn(async move {
-                    Self::process_packet(
-                        &node_id,
-                        &pod_ref,
-                        &namespace,
-                        &namespace_lookup,
-                        &packet,
-                        &success_ch_tx,
-                    )
-                });
+                self.processing_tasks.spawn(Self::process_packet(
+                    node_id,
+                    pod_ref,
+                    namespace,
+                    namespace_lookup,
+                    packet,
+                    child_nodes_txs,
+                ));
             }
             Message::Stop => {
                 // Stop message received, we will stop processing
                 self.processing_tasks.abort_all();
-                return Ok(true);
+                return true;
             }
             Message::NodeProcessingComplete(_) => {
+                println!("Node processing complete");
                 // Since pod only have one parent, we can expect that there will be no more incoming packet
                 // thus, we need to wait for everything to finish processing and send completion message
                 // Return true to notify caller that processing is complete
                 self.wait_for_node_task_completion().await;
-                return Ok(true);
+                return true;
             }
         }
-        Ok(false)
-    }
-
-    fn get_ch_to_listen_to(
-        &mut self,
-    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>> {
-        &mut self.node_metadata.ch_to_listen_to
+        println!("returning false");
+        false
     }
 
     async fn wait_for_node_task_completion(&mut self) {
@@ -591,7 +444,7 @@ impl MapperProcessor {
         }
     }
 
-    fn process_packet(&self, packet: &HashMap<String, PathSet>) -> Result<()> {
+    async fn process_packet(&self, packet: &HashMap<String, PathSet>) -> Result<()> {
         // Apply the mapping to the input packet
         let output_map = self
             .mapper
@@ -604,53 +457,42 @@ impl MapperProcessor {
             .collect::<Result<HashMap<_, _>>>()?;
 
         // Send the output via the channel
-        self.node_metadata.success_ch_tx.send(Message::NodeOutput(
-            self.node_metadata.node_id.clone(),
-            output_map,
-        ))?;
+        try_join_all(self.node_metadata.child_nodes_txs.iter().map(|ch| {
+            ch.send(Message::NodeOutput(
+                self.node_metadata.node_id.clone(),
+                output_map.clone(),
+            ))
+        }))
+        .await?;
         Ok(())
     }
 }
 
 impl NodeProcessor for MapperProcessor {
-    fn get_ch_to_listen_to(
-        &mut self,
-    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>> {
-        &mut self.node_metadata.ch_to_listen_to
+    fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message> {
+        &mut self.node_metadata.node_rx
     }
 
     async fn wait_for_node_task_completion(&mut self) {
         // Mapper doesn't spawn additional tasks, so this is a no-op
     }
 
-    async fn process_msg(&mut self, msg: Message) -> Result<bool> {
+    async fn process_msg(&mut self, msg: Message) -> bool {
         match msg {
-            Message::NodeOutput(sender_node_id, packet) => {
-                println!(
-                    "Node {} received packet: {:?} from {}",
-                    self.node_metadata.node_id, packet, sender_node_id
-                );
-                let output_map = self
-                    .mapper
-                    .mapping
-                    .iter()
-                    .map(|(input_key, output_key)| {
-                        let input = get(&packet, input_key)?.clone();
-                        Ok((output_key.to_owned(), input))
-                    })
-                    .collect::<Result<HashMap<_, _>>>()?;
-
-                // For now we will just send the input_packet to the success channel
-                self.node_metadata.success_ch_tx.send(Message::NodeOutput(
-                    self.node_metadata.node_id.clone(),
-                    output_map,
-                ))?;
+            Message::NodeOutput(_, packet) => {
+                match self.process_packet(&packet).await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        // Send the error to the failure channel
+                        // For now just print it out
+                        println!("Failed to process packet with error: {}", err);
+                    }
+                }
             }
-            Message::NodeProcessingComplete(_) => return Ok(true),
-            Message::Stop => todo!(),
+            Message::NodeProcessingComplete(_) | Message::Stop => return true,
         }
 
-        Ok(false)
+        false
     }
 }
 
@@ -709,7 +551,7 @@ impl JoinerProcessor {
         Ok(result)
     }
 
-    fn process_packet(
+    async fn process_packet(
         &mut self,
         sender_node_id: &str,
         packet: HashMap<String, PathSet>,
@@ -734,10 +576,13 @@ impl JoinerProcessor {
             Ok(output_packets) => {
                 // Send the output packets to the success channel
                 for output_packet in output_packets {
-                    self.node_metadata.success_ch_tx.send(Message::NodeOutput(
-                        self.node_metadata.node_id.clone(),
-                        output_packet,
-                    ))?;
+                    try_join_all(self.node_metadata.child_nodes_txs.iter().map(|ch| {
+                        ch.send(Message::NodeOutput(
+                            self.node_metadata.node_id.clone(),
+                            output_packet.clone(),
+                        ))
+                    }))
+                    .await?;
                 }
             }
             Err(err) => {
@@ -752,17 +597,15 @@ impl JoinerProcessor {
 }
 
 impl NodeProcessor for JoinerProcessor {
-    fn get_ch_to_listen_to(
-        &mut self,
-    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>> {
-        &mut self.node_metadata.ch_to_listen_to
+    fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message> {
+        &mut self.node_metadata.node_rx
     }
 
     async fn wait_for_node_task_completion(&mut self) {
         // Joiner doesn't spawn additional tasks, so this is a no-op
     }
 
-    async fn process_msg(&mut self, msg: Message) -> Result<bool> {
+    async fn process_msg(&mut self, msg: Message) -> bool {
         match msg {
             Message::NodeOutput(sender_node_id, packet) => {
                 println!(
@@ -770,7 +613,13 @@ impl NodeProcessor for JoinerProcessor {
                     self.node_metadata.node_id, packet, sender_node_id
                 );
                 // Process the packet and send the output to the success channel
-                self.process_packet(&sender_node_id, packet)?;
+                match self.process_packet(&sender_node_id, packet).await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        // Send the error to the failure channel
+                        println!("Failed to process packet with error: {}", err);
+                    }
+                }
             }
             Message::NodeProcessingComplete(sender_node_id) => {
                 // Record that this parent node has completed processing
@@ -780,15 +629,15 @@ impl NodeProcessor for JoinerProcessor {
                 if self.completed_parents.len() == self.input_packet_cache.len() {
                     // All parents have completed processing, we can send the output
                     // Wait for all packets to be processed and send the output
-                    return Ok(true);
+                    return true;
                 }
             }
             Message::Stop => {
                 // We don't have anything to clean up, so we can just return
-                return Ok(true);
+                return true;
             }
         }
 
-        Ok(false)
+        false
     }
 }
