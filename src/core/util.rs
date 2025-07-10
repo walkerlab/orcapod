@@ -1,7 +1,4 @@
-use crate::uniffi::{
-    error::{Result, selector},
-    model::PathSet,
-};
+use crate::uniffi::error::{Result, selector};
 use snafu::OptionExt as _;
 use std::{
     any::type_name,
@@ -42,19 +39,4 @@ where
         key: format!("{key:?}"),
     })?;
     Ok(temp)
-}
-
-pub fn find_missing_keys<'a>(
-    input_map: &HashMap<String, PathSet>,
-    keys_to_check: impl Iterator<Item = &'a String>,
-) -> Vec<String> {
-    keys_to_check
-        .filter_map(|key| {
-            if input_map.contains_key(key) {
-                None
-            } else {
-                Some(key.clone())
-            }
-        })
-        .collect()
 }

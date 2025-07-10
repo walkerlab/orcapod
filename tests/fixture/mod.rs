@@ -281,7 +281,7 @@ pub fn pipeline_job() -> Result<PipelineJob> {
     // Create a simple pipeline_job
     PipelineJob::new(
         pipeline()?,
-        HashMap::from([(
+        vec![HashMap::from([(
             "input_text".to_owned(),
             PathSet::Unary(Blob {
                 kind: BlobKind::File,
@@ -291,7 +291,7 @@ pub fn pipeline_job() -> Result<PipelineJob> {
                 },
                 ..Default::default()
             }),
-        )]),
+        )])],
         URI {
             namespace: "default".to_owned(),
             path: PathBuf::from("output"),

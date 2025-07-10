@@ -6,14 +6,10 @@
 //! process completes successfully and outputs the expected results.
 
 pub mod fixture;
-use std::{collections::HashMap, path::PathBuf, vec};
+use std::vec;
 
 use fixture::pipeline;
-use orcapod::uniffi::{
-    error::Result,
-    model::{Annotation, Blob, BlobKind, PathSet, URI},
-    pipeline::PipelineJob,
-};
+use orcapod::uniffi::{error::Result, model::Annotation};
 
 use crate::fixture::pipeline_job;
 
@@ -98,32 +94,5 @@ fn pipeline_job_creation() -> Result<()> {
         })
     );
 
-    Ok(())
-}
-
-#[test]
-fn incorrect_input_packet() -> Result<()> {
-    assert!(
-        PipelineJob::new(
-            pipeline()?,
-            HashMap::from([(
-                "wrong_key".to_owned(),
-                PathSet::Unary(Blob {
-                    kind: BlobKind::File,
-                    location: URI {
-                        namespace: "default".to_owned(),
-                        path: PathBuf::from("data/input.txt"),
-                    },
-                    ..Default::default()
-                }),
-            )]),
-            URI {
-                namespace: "default".to_owned(),
-                path: PathBuf::from("output"),
-            },
-            None
-        )
-        .is_err()
-    );
     Ok(())
 }

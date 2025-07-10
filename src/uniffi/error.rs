@@ -14,6 +14,7 @@ use std::{
     path::{self, PathBuf},
     result,
 };
+use tokio::sync::oneshot;
 use uniffi;
 
 /// Shorthand for a Result that returns an `OrcaError`.
@@ -23,6 +24,10 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
+    #[snafu(display(
+        "Receiver was dropped before sender could send a message for oneshot channel"
+    ))]
+    ReceiverDroppedBeforeSender { backtrace: Option<Backtrace> },
     #[snafu(display(
         "Received an empty response when attempting to load the alternate container image file: {path:?}."
     ))]
@@ -81,11 +86,6 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Input map missing required packet keys: {missing_keys:?}"))]
-    MissingInputSpecKey {
-        missing_keys: Vec<String>,
-        backtrace: Option<Backtrace>,
-    },
     #[snafu(display("Failed to send message because: {reason}"))]
     SendError {
         reason: String,
@@ -94,6 +94,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     BollardError {
         source: BollardError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    ChannelReceiveError {
+        source: oneshot::error::RecvError,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

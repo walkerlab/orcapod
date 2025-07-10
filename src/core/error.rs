@@ -12,12 +12,25 @@ use std::{
     io,
     path::{self},
 };
-use tokio::{sync::broadcast::error::SendError, task::JoinError};
+use tokio::{
+    sync::{broadcast::error::SendError, oneshot},
+    task::JoinError,
+};
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<oneshot::error::RecvError> for OrcaError {
+    fn from(error: oneshot::error::RecvError) -> Self {
+        Self {
+            kind: Kind::ChannelReceiveError {
                 source: error,
                 backtrace: Some(Backtrace::capture()),
             },
@@ -113,7 +126,8 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
+            Kind::ReceiverDroppedBeforeSender { backtrace, .. }
+            | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::FailedToParseDot { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
@@ -124,8 +138,8 @@ impl fmt::Debug for OrcaError {
             | Kind::NoFileName { backtrace, .. }
             | Kind::NoMatchingPodRun { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
-            | Kind::MissingInputSpecKey { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
+            | Kind::ChannelReceiveError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }

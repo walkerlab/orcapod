@@ -2,7 +2,7 @@ use super::PipelineRun;
 use crate::{
     core::{crypto::hash_buffer, model::serialize_hashmap, util::get},
     uniffi::{
-        error::{OrcaError, Result, selector},
+        error::{Kind, OrcaError, Result, selector},
         model::{PathSet, Pod, PodJob, URI},
         pipeline::{Kernel, Mapper, Node, PipelineJob, PipelineResult},
     },
@@ -11,9 +11,10 @@ use futures_util::stream::FuturesUnordered;
 use itertools::Itertools as _;
 use serde_yaml::Serializer;
 use snafu::OptionExt as _;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::{
     sync::{
+        RwLock,
         broadcast::{self, Receiver, Sender, error::RecvError},
         oneshot,
     },
@@ -27,16 +28,18 @@ pub(crate) enum Message {
     NodeOutput(String, HashMap<String, PathSet>),
     /// String is the `node_id` that has completed processing
     NodeProcessingComplete(String),
-    ProcessingFailed(String, Arc<OrcaError>), // String is the node_id, while OrcaError is the error that occurred
-    Stop,                                     // Message to halt all operations
+    Stop, // Message to halt all operations
 }
 
+#[expect(
+    clippy::type_complexity,
+    reason = "too complex, but necessary for async handling"
+)]
 struct PipelineRunInfo {
     node_task_join_set: JoinSet<Result<()>>, // Join set to track the tasks for this pipeline run
     job_manager_ch_tx: Sender<Message>,
     node_tx: HashMap<String, Sender<Message>>,
-    outputs: HashMap<String, HashMap<String, PathSet>>, // String is the node key, while hash
-    namespace_lookup: HashMap<String, PathBuf>,
+    outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>, // String is the node key, while hash
 }
 
 /// Docker based pipeline runner meant to execute on a single machine
@@ -71,8 +74,7 @@ impl DockerPipelineRunner {
                 job_manager_ch_tx: broadcast::channel::<Message>(1).0,
                 node_tx: HashMap::new(),
                 node_task_join_set: JoinSet::new(),
-                outputs: HashMap::new(),
-                namespace_lookup: namespace_lookup.clone(),
+                outputs: Arc::new(RwLock::new(HashMap::new())),
             },
         );
 
@@ -87,11 +89,25 @@ impl DockerPipelineRunner {
         // This will recursively create all the tasks and channels for the pipeline
         pipeline.get_leaf_nodes().try_for_each(|node| {
             self.create_task_for_node(node, &pipeline_run_arc, &source_tx, namespace_lookup)?;
+
+            // Since we don't have output nodes implemented, and currently it is set as leaf nodes,
+            // we can do the output handling logic here too
+
             Ok::<(), OrcaError>(())
         })?;
 
-        // Create a task to handle outputs of output nodes in pipeline
-        // for node_key in pipeline.output_nodes {}
+        // All pipeline tasks have been created, now we need to feed the inputs to the pipeline
+        pipeline_run
+            .pipeline_job
+            .input_packets
+            .iter()
+            .try_for_each(|input_map| {
+                source_tx.send(Message::NodeOutput("input".to_owned(), input_map.clone()))?;
+                Ok::<(), OrcaError>(())
+            })?;
+
+        // Send a message that all job inputs have been sent
+        source_tx.send(Message::NodeProcessingComplete("input".to_owned()))?;
 
         Ok(pipeline_run)
     }
@@ -210,6 +226,75 @@ impl DockerPipelineRunner {
         Ok(tx)
     }
 
+    fn create_task_to_capture_output_of_node(
+        &mut self,
+        node: &Node,
+        pipeline_run: &Arc<PipelineRun>,
+    ) -> Result<()> {
+        let pipeline_run_info =
+            self.pipeline_runs
+                .get_mut(pipeline_run)
+                .context(selector::KeyMissing {
+                    key: pipeline_run.to_string(),
+                })?;
+        // Get the output ch rx for the node
+        let node_rx = get(&pipeline_run_info.node_tx, &node.id)?.subscribe();
+        // Create a new ref copy of pipeline_run_output
+        let outputs_ref = Arc::clone(&pipeline_run_info.outputs);
+        // Create a task to listen to it and record the outputs
+        pipeline_run_info
+            .node_task_join_set
+            .spawn(Self::capture_node_output(node_rx, outputs_ref));
+
+        Ok(())
+    }
+
+    #[expect(
+        clippy::type_complexity,
+        reason = "too complex, but necessary for async handling"
+    )]
+    async fn capture_node_output(
+        mut node_rx: Receiver<Message>,
+        outputs_ref: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>,
+    ) -> Result<()> {
+        loop {
+            let message = match node_rx.recv().await {
+                Ok(message) => message,
+                Err(err) => {
+                    match err {
+                        RecvError::Closed => {
+                            // No more message will be received, thus we can exit the loop
+                            // Only case where this will occur is when the channel is closed due to abort
+                            break;
+                        }
+                        RecvError::Lagged(_) => {
+                            print!("Warning: Channel lagged, skipping message");
+                        }
+                    }
+                    continue;
+                }
+            };
+            match message {
+                Message::NodeOutput(node_id, hash_map) => {
+                    // Record the output
+
+                    outputs_ref
+                        .write()
+                        .await
+                        .entry(node_id)
+                        .or_default()
+                        .push(hash_map);
+                }
+                Message::NodeProcessingComplete(_) | Message::Stop => {
+                    // Node processing is complete, we can stop listening to this channel
+                    break;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// For tx: Sender<Message>, we only want to send successfully completed results to the next node
     async fn start_node_manager(
         node: Node,
@@ -220,7 +305,7 @@ impl DockerPipelineRunner {
         namespace_lookup: HashMap<String, PathBuf>,
     ) -> Result<()> {
         // Create a channel to for waiting when the node processing is complete
-        let (node_complete_tx, node_complete_rx) = oneshot::channel::<()>();
+        let (processing_complete_ch_tx, processing_complete_ch_rx) = oneshot::channel::<()>();
 
         // Create a futures unordered set to dynamically listen to N number of receivers
         let chs_to_listen_to = FuturesUnordered::new();
@@ -235,111 +320,66 @@ impl DockerPipelineRunner {
             async move { job_manager_channel.recv().await },
         ));
 
+        // Create a metadata struct for this node
+        let node_metadata = NodeMetaData {
+            node_id: node.id.clone(),
+            ch_to_listen_to: chs_to_listen_to,
+            success_ch_tx: success_ch_tx.clone(),
+            namespace: pipeline_run.pipeline_job.output_dir.namespace.clone(),
+            namespace_lookup: namespace_lookup.clone(),
+        };
+
         // Get the kernel for this node and build the correct processor
         match get(
             &pipeline_run.pipeline_job.pipeline.kernel_lut,
             &node.kernel_hash,
         )? {
-            Kernel::Pod(pod) => PodNodeProcessor::new(
-                Arc::clone(pod),
-                node.id.clone(),
-                chs_to_listen_to,
-                success_ch_tx,
-                pipeline_run.pipeline_job.output_dir.namespace.clone(),
-                namespace_lookup,
-                node_complete_tx,
-            ),
+            Kernel::Pod(pod) => {
+                let mut processor = PodProcessor::new(Arc::clone(pod), node_metadata);
+                processor.start(processing_complete_ch_tx).await?;
+                processing_complete_ch_rx.await?;
+            }
             Kernel::Mapper(mapper) => {
-                todo!()
+                let mut processor = MapperProcessor::new(Arc::clone(mapper), node_metadata);
+                processor.start(processing_complete_ch_tx).await?;
+                processing_complete_ch_rx.await?;
             }
             Kernel::Joiner => {
-                todo!()
+                let parent_nodes_id = pipeline_run
+                    .pipeline_job
+                    .pipeline
+                    .get_parents_for_node(&node)
+                    .map(|parent_node| parent_node.id.clone())
+                    .collect::<Vec<_>>();
+                let mut processor = JoinerProcessor::new(parent_nodes_id, node_metadata);
+                processor.start(processing_complete_ch_tx).await?;
+                processing_complete_ch_rx.await?;
             }
-        };
-
-        node_complete_rx.await;
-
-        // // Listen to the MPSC channel and handle messages
-        // while let Some(result) = chs_to_listen_to.next().await {
-        //     let rx_result = match result {
-        //         Ok(rx_result) => rx_result,
-        //         Err(err) => {
-        //             // Record into pipeline_error log
-        //             if err.is_panic() {
-        //                 eprintln!("Task panicked: {err}");
-        //             } else {
-        //                 eprintln!("Error receiving message: {err}");
-        //             }
-        //             continue;
-        //         }
-        //     };
-
-        //     let Ok(msg) = rx_result else {
-        //         eprintln!("Failed to receive message from parent channel");
-        //         continue;
-        //     };
-
-        //     match msg {
-        //         Message::NodeOutput(sender_node_id, packet) => {
-        //             // Inputs from parents are ready, thus we need to process them if they are already computed and cached
-        //             processor.process_packet(
-        //                 &sender_node_id,
-        //                 &node.id,
-        //                 packet,
-        //                 success_ch_tx.clone(),
-        //                 failure_ch_tx.clone(),
-        //             )?;
-        //         }
-        //         Message::Stop => {
-        //             todo!()
-        //         }
-        //         Message::ProcessingFailed(_, orca_error) => todo!(),
-        //         Message::NodeProcessingComplete(node_id) => ,
-        //     }
-        // }
+        }
 
         Ok(())
     }
 }
 
-struct PodNodeProcessor {
-    pod: Arc<Pod>,
+struct NodeMetaData {
     node_id: String,
     ch_to_listen_to: FuturesUnordered<JoinHandle<Result<Message, RecvError>>>,
     success_ch_tx: Sender<Message>, // Channel to send successful outputs to the next node
     namespace: String,
     namespace_lookup: HashMap<String, PathBuf>, // Copy of the look up table
-    node_complete_tx: oneshot::Sender<()>,
-    processing_tasks: JoinSet<Result<(), OrcaError>>,
 }
 
-impl PodNodeProcessor {
-    fn new(
-        pod: Arc<Pod>,
-        node_id: String,
-        ch_to_listen_to: FuturesUnordered<JoinHandle<Result<Message, RecvError>>>,
-        success_ch_tx: Sender<Message>,
-        namespace: String,
-        namespace_lookup: HashMap<String, PathBuf>,
-        node_complete_tx: oneshot::Sender<()>,
-    ) -> Self {
-        Self {
-            pod,
-            node_id,
-            ch_to_listen_to,
-            success_ch_tx,
-            namespace,
-            namespace_lookup,
-            node_complete_tx,
-            processing_tasks: JoinSet::new(),
-        }
-    }
+trait NodeProcessor {
+    fn get_ch_to_listen_to(
+        &mut self,
+    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>>;
 
-    async fn start(&mut self) {
+    async fn wait_for_node_task_completion(&mut self);
+
+    async fn start(&mut self, process_complete_ch_tx: oneshot::Sender<()>) -> Result<()> {
         // Start to listen to the channels
         // Listen to the MPSC channel and handle messages
-
-        while let Some(result) = self.ch_to_listen_to.next().await {
+        while let Some(result) = self.get_ch_to_listen_to().next().await {
             let rx_result = match result {
                 Ok(rx_result) => rx_result,
                 Err(err) => {
@@ -358,31 +398,41 @@ impl PodNodeProcessor {
                 continue;
             };
 
-            match msg {
-                Message::NodeOutput(sender_node_id, packet) => {
-                    let pod_ref = Arc::clone(&self.pod);
-                    let node_id = self.node_id.clone();
-                    let namespace = self.namespace.clone();
-                    let namespace_lookup = self.namespace_lookup.clone();
-                    let success_ch_tx = self.success_ch_tx.clone();
-                    // Forward it into a processing task
-                    self.processing_tasks.spawn(async move {
-                        Self::process_packet(
-                            &node_id,
-                            &pod_ref,
-                            &namespace,
-                            &namespace_lookup,
-                            &packet,
-                            &success_ch_tx,
-                        )
-                    });
-                }
-                Message::Stop => {
-                    todo!()
-                }
-                Message::ProcessingFailed(_, orca_error) => todo!(),
-                Message::NodeProcessingComplete(node_id) => todo!(),
+            // Process the message
+            if self.process_msg(msg).await? {
+                // If the message indicates that processing is complete, we can exit the loop
+                // Wait for all processing tasks to complete before sending the completion message
+
+                self.wait_for_node_task_completion().await;
+
+                // Send the node processing complete message
+                process_complete_ch_tx.send(()).map_err(|()| OrcaError {
+                    kind: Kind::ReceiverDroppedBeforeSender {
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                })?;
+                break;
             }
+        }
+
+        Ok(())
+    }
+
+    async fn process_msg(&mut self, msg: Message) -> Result<bool>;
+}
+
+struct PodProcessor {
+    pod: Arc<Pod>,
+    node_metadata: NodeMetaData,
+    processing_tasks: JoinSet<Result<(), OrcaError>>,
+}
+
+impl PodProcessor {
+    fn new(pod: Arc<Pod>, node_metadata: NodeMetaData) -> Self {
+        Self {
+            pod,
+            node_metadata,
+            processing_tasks: JoinSet::new(),
         }
     }
 
@@ -435,130 +485,259 @@ impl PodNodeProcessor {
     }
 }
 
-// struct MapperProcessor {
-//     mapper: Arc<Mapper>,
-// }
+impl NodeProcessor for PodProcessor {
+    async fn process_msg(&mut self, msg: Message) -> Result<bool> {
+        match msg {
+            Message::NodeOutput(sender_node_id, packet) => {
+                let pod_ref = Arc::clone(&self.pod);
+                let node_id = self.node_metadata.node_id.clone();
+                let namespace = self.node_metadata.namespace.clone();
+                let namespace_lookup = self.node_metadata.namespace_lookup.clone();
+                let success_ch_tx = self.node_metadata.success_ch_tx.clone();
+                // Forward it into a processing task
+                self.processing_tasks.spawn(async move {
+                    Self::process_packet(
+                        &node_id,
+                        &pod_ref,
+                        &namespace,
+                        &namespace_lookup,
+                        &packet,
+                        &success_ch_tx,
+                    )
+                });
+            }
+            Message::Stop => {
+                // Stop message received, we will stop processing
+                self.processing_tasks.abort_all();
+                return Ok(true);
+            }
+            Message::NodeProcessingComplete(_) => {
+                // Since pod only have one parent, we can expect that there will be no more incoming packet
+                // thus, we need to wait for everything to finish processing and send completion message
+                // Return true to notify caller that processing is complete
+                self.wait_for_node_task_completion().await;
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 
-// impl NodeProcessor for MapperProcessor {
-//     fn process_packet(
-//         &mut self,
-//         sender_node_id: String,
-//         current_node_id: String,
-//         packet: HashMap<String, PathSet>,
-//         success_ch_tx: Sender<Message>,
-//         _failure_ch_tx: Sender<Message>,
-//     ) -> Result<()> {
-//         // Apply the mapping to the input packet
-//         let output_map = self
-//             .mapper
-//             .mapping
-//             .iter()
-//             .map(|(input_key, output_key)| {
-//                 let input = get(&packet, input_key)?.clone();
-//                 Ok((output_key.to_owned(), input))
-//             })
-//             .collect::<Result<HashMap<_, _>>>()?;
+    fn get_ch_to_listen_to(
+        &mut self,
+    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>> {
+        &mut self.node_metadata.ch_to_listen_to
+    }
 
-//         // Send the output via the channel
-//         success_ch_tx.send(Message::NodeOutput(sender_node_id, output_map))?;
-//         Ok(())
-//     }
-// }
+    async fn wait_for_node_task_completion(&mut self) {
+        while self.processing_tasks.join_next().await.is_some() {
+            // Wait for all processing tasks to complete
+        }
+    }
+}
 
-// struct JoinerNodeProcessor {
-//     /// Cache for all packets received by the node
-//     input_packet_cache: HashMap<String, Vec<HashMap<String, PathSet>>>,
-// }
+struct MapperProcessor {
+    mapper: Arc<Mapper>,
+    node_metadata: NodeMetaData,
+}
 
-// impl JoinerNodeProcessor {
-//     fn new(parents_node_id: Vec<String>) -> Self {
-//         let input_packet_cache = parents_node_id
-//             .into_iter()
-//             .map(|id| (id, Vec::new()))
-//             .collect();
-//         Self { input_packet_cache }
-//     }
+impl MapperProcessor {
+    const fn new(mapper: Arc<Mapper>, node_metadata: NodeMetaData) -> Self {
+        Self {
+            mapper,
+            node_metadata,
+        }
+    }
 
-//     fn compute_new_packet_combination(
-//         &self,
-//         sender_node_id: &str,
-//         new_packet: &HashMap<String, PathSet>,
-//     ) -> Result<Vec<HashMap<String, PathSet>>> {
-//         // Combine the new packet with the existing packets in the cache
-//         // Get all the cached packets from other parents
-//         let other_parent_ids = self
-//             .input_packet_cache
-//             .keys()
-//             .filter(|key| *key != sender_node_id);
-//         let mut factors = other_parent_ids
-//             .map(|id| get(&self.input_packet_cache, id))
-//             .collect::<Result<Vec<_>>>()?;
+    fn process_packet(&self, packet: &HashMap<String, PathSet>) -> Result<()> {
+        // Apply the mapping to the input packet
+        let output_map = self
+            .mapper
+            .mapping
+            .iter()
+            .map(|(input_key, output_key)| {
+                let input = get(packet, input_key)?.clone();
+                Ok((output_key.to_owned(), input))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
 
-//         // Add the new incoming packet as a factor
-//         let incoming_packet = vec![new_packet.clone()];
-//         factors.push(&incoming_packet);
+        // Send the output via the channel
+        self.node_metadata.success_ch_tx.send(Message::NodeOutput(
+            self.node_metadata.node_id.clone(),
+            output_map,
+        ))?;
+        Ok(())
+    }
+}
 
-//         let result = factors
-//             .into_iter()
-//             .multi_cartesian_product()
-//             .map(|packets_to_combined| {
-//                 packets_to_combined
-//                     .into_iter()
-//                     .fold(HashMap::new(), |mut acc, packet| {
-//                         acc.extend(packet.clone());
-//                         acc
-//                     })
-//             })
-//             .collect::<Vec<_>>();
+impl NodeProcessor for MapperProcessor {
+    fn get_ch_to_listen_to(
+        &mut self,
+    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>> {
+        &mut self.node_metadata.ch_to_listen_to
+    }
 
-//         Ok(result)
-//     }
-// }
+    async fn wait_for_node_task_completion(&mut self) {
+        // Mapper doesn't spawn additional tasks, so this is a no-op
+    }
 
-// impl NodeProcessor for JoinerNodeProcessor {
-//     fn process_packet(
-//         &mut self,
-//         sender_node_id: String,
-//         current_node_id: String,
-//         packet: HashMap<String, PathSet>,
-//         success_ch_tx: Sender<Message>,
-//         failure_ch_tx: Sender<Message>,
-//     ) -> Result<()> {
-//         let process_result = {
-//             // Compute the new packet combination based on the sender node id and the packet
-//             let new_packets_to_send =
-//                 self.compute_new_packet_combination(&sender_node_id, &packet)?;
+    async fn process_msg(&mut self, msg: Message) -> Result<bool> {
+        match msg {
+            Message::NodeOutput(_, hash_map) => {
+                let output_map = self
+                    .mapper
+                    .mapping
+                    .iter()
+                    .map(|(input_key, output_key)| {
+                        let input = get(&hash_map, input_key)?.clone();
+                        Ok((output_key.to_owned(), input))
+                    })
+                    .collect::<Result<HashMap<_, _>>>()?;
 
-//             // Record the packet into the cache
-//             self.input_packet_cache
-//                 .get_mut(&sender_node_id)
-//                 .context(selector::KeyMissing {
-//                     key: sender_node_id.clone(),
-//                 })?
-//                 .push(packet);
+                // For now we will just send the input_packet to the success channel
+                self.node_metadata.success_ch_tx.send(Message::NodeOutput(
+                    self.node_metadata.node_id.clone(),
+                    output_map,
+                ))?;
+            }
+            Message::NodeProcessingComplete(_) => return Ok(true),
+            Message::Stop => todo!(),
+        }
 
-//             Ok::<Vec<HashMap<String, PathSet>>, OrcaError>(new_packets_to_send)
-//         };
+        Ok(false)
+    }
+}
 
-//         match process_result {
-//             Ok(output_packets) => {
-//                 // Send the output packets to the success channel
-//                 for output_packet in output_packets {
-//                     success_ch_tx
-//                         .send(Message::NodeOutput(current_node_id.clone(), output_packet))?;
-//                 }
-//             }
-//             Err(err) => {
-//                 // Send the error to the failure channel
-//                 failure_ch_tx.send(Message::NodeOutput(
-//                     sender_node_id.clone(),
-//                     HashMap::new(), // Empty packet on failure
-//                 ))?;
-//                 return Err(err);
-//             }
-//         }
-//         // Add the new packet into the cache
+struct JoinerProcessor {
+    /// Cache for all packets received by the node
+    input_packet_cache: HashMap<String, Vec<HashMap<String, PathSet>>>,
+    completed_parents: Vec<String>,
+    node_metadata: NodeMetaData,
+}
 
-//         Ok(())
-//     }
-// }
+impl JoinerProcessor {
+    fn new(parents_node_id: Vec<String>, node_metadata: NodeMetaData) -> Self {
+        let input_packet_cache = parents_node_id
+            .into_iter()
+            .map(|id| (id, Vec::new()))
+            .collect();
+        Self {
+            input_packet_cache,
+            node_metadata,
+            completed_parents: Vec::new(),
+        }
+    }
+
+    fn compute_new_packet_combination(
+        &self,
+        sender_node_id: &str,
+        new_packet: &HashMap<String, PathSet>,
+    ) -> Result<Vec<HashMap<String, PathSet>>> {
+        // Combine the new packet with the existing packets in the cache
+        // Get all the cached packets from other parents
+        let other_parent_ids = self
+            .input_packet_cache
+            .keys()
+            .filter(|key| *key != sender_node_id);
+        let mut factors = other_parent_ids
+            .map(|id| get(&self.input_packet_cache, id))
+            .collect::<Result<Vec<_>>>()?;
+
+        // Add the new incoming packet as a factor
+        let incoming_packet = vec![new_packet.clone()];
+        factors.push(&incoming_packet);
+
+        let result = factors
+            .into_iter()
+            .multi_cartesian_product()
+            .map(|packets_to_combined| {
+                packets_to_combined
+                    .into_iter()
+                    .fold(HashMap::new(), |mut acc, packet| {
+                        acc.extend(packet.clone());
+                        acc
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(result)
+    }
+
+    fn process_packet(
+        &mut self,
+        sender_node_id: &str,
+        packet: HashMap<String, PathSet>,
+    ) -> Result<()> {
+        let process_result = {
+            // Compute the new packet combination based on the sender node id and the packet
+            let new_packets_to_send =
+                self.compute_new_packet_combination(sender_node_id, &packet)?;
+
+            // Record the packet into the cache
+            self.input_packet_cache
+                .get_mut(sender_node_id)
+                .context(selector::KeyMissing {
+                    key: sender_node_id.to_owned(),
+                })?
+                .push(packet);
+
+            Ok::<Vec<HashMap<String, PathSet>>, OrcaError>(new_packets_to_send)
+        };
+
+        match process_result {
+            Ok(output_packets) => {
+                // Send the output packets to the success channel
+                for output_packet in output_packets {
+                    self.node_metadata.success_ch_tx.send(Message::NodeOutput(
+                        self.node_metadata.node_id.clone(),
+                        output_packet,
+                    ))?;
+                }
+            }
+            Err(err) => {
+                // Send the error to the failure channel
+                todo!();
+            }
+        }
+        // Add the new packet into the cache
+
+        Ok(())
+    }
+}
+
+impl NodeProcessor for JoinerProcessor {
+    fn get_ch_to_listen_to(
+        &mut self,
+    ) -> &mut FuturesUnordered<JoinHandle<Result<Message, RecvError>>> {
+        &mut self.node_metadata.ch_to_listen_to
+    }
+
+    async fn wait_for_node_task_completion(&mut self) {
+        // Joiner doesn't spawn additional tasks, so this is a no-op
+    }
+
+    async fn process_msg(&mut self, msg: Message) -> Result<bool> {
+        match msg {
+            Message::NodeOutput(sender_node_id, packet) => {
+                // Process the packet and send the output to the success channel
+                self.process_packet(&sender_node_id, packet)?;
+            }
+            Message::NodeProcessingComplete(sender_node_id) => {
+                // Record that this parent node has completed processing
+                self.completed_parents.push(sender_node_id);
+
+                // Check if all parents have completed processing
+                if self.completed_parents.len() == self.input_packet_cache.len() {
+                    // All parents have completed processing, we can send the output
+                    // Wait for all packets to be processed and send the output
+                    return Ok(true);
+                }
+            }
+            Message::Stop => {
+                // We don't have anything to clean up, so we can just return
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+}

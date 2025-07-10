@@ -1,9 +1,5 @@
 use crate::{
-    core::{
-        crypto::hash_buffer,
-        model::to_yaml,
-        util::{find_missing_keys, get},
-    },
+    core::{crypto::hash_buffer, model::to_yaml, util::get},
     uniffi::{
         error::{Kind, OrcaError, Result},
         model::{Annotation, PathSet, Pod, URI},
@@ -351,7 +347,8 @@ pub struct PipelineJob {
     #[serde(skip)]
     pub pipeline: Pipeline,
     /// Mapping of outside input to keys to be match with the pipeline `input_map`
-    pub input_map: HashMap<String, PathSet>,
+    pub input_packets: Vec<HashMap<String, PathSet>>,
+    /// Directory where to store the outputs of the pipeline
     pub output_dir: URI,
     /// Annotation for the pipeline job
     pub annotation: Option<Annotation>,
@@ -363,39 +360,15 @@ impl PipelineJob {
     /// Error out if there are missing keys or failed to convert to yaml
     pub fn new(
         pipeline: Pipeline,
-        input_packet: HashMap<String, PathSet>,
+        input_packets: Vec<HashMap<String, PathSet>>,
         output_dir: URI,
         annotation: Option<Annotation>,
     ) -> Result<Self> {
-        // Check if input_map has all the requires keys
-        let missing_keys = pipeline
-            .get_root_nodes()
-            .map(|node| match pipeline.get_kernel(&node.kernel_hash)? {
-                Kernel::Pod(pod) => Ok(find_missing_keys(&input_packet, pod.input_spec.keys())),
-                Kernel::Mapper(mapper) => {
-                    Ok(find_missing_keys(&input_packet, mapper.mapping.keys()))
-                }
-                Kernel::Joiner => Ok(Vec::<String>::new()), // Should probably error out because joiner should not be a root node
-            })
-            .collect::<Result<Vec<Vec<String>>>>()?
-            .into_iter()
-            .flatten()
-            .collect::<Vec<String>>();
-
-        if !missing_keys.is_empty() {
-            return Err(OrcaError {
-                kind: Kind::MissingInputSpecKey {
-                    missing_keys,
-                    backtrace: Some(Backtrace::capture()),
-                },
-            });
-        }
-
         // Create the job without_hash
         let no_hash = Self {
             hash: String::new(),
             pipeline,
-            input_map: input_packet,
+            input_packets,
             annotation,
             output_dir,
         };
@@ -406,6 +379,8 @@ impl PipelineJob {
         })
     }
 }
+
+#[derive(uniffi::Object, Display, Debug, Clone, Serialize)]
 pub struct PipelineResult {
     pub pipeline_job: PipelineJob,
 }

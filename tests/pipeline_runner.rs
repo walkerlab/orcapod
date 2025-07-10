@@ -29,5 +29,6 @@ async fn basic_run() -> Result<()> {
 
     // Wait for the pipeline run to complete
     let result = runner.get_result(&pipeline_run).await?;
+    println!("Pipeline run result: {result:?}");
     Ok(())
 }
