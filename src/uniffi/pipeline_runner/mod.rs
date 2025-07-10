@@ -52,4 +52,4 @@ impl Hash for PipelineRun {
 }
 
 /// Docker pipeline runner
-pub mod docker;
+pub mod runner;

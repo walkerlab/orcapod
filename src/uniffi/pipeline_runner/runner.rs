@@ -15,11 +15,8 @@ use std::{
     collections::{HashMap, HashSet},
     path::PathBuf,
     sync::Arc,
-    thread::sleep,
-    time::Duration,
 };
 use tokio::{
-    net::unix::pipe,
     sync::{RwLock, mpsc},
     task::{JoinSet, spawn_blocking},
 };
@@ -89,7 +86,7 @@ impl DockerPipelineRunner {
             .get_leaf_nodes()
             .map(|node| node.id.clone())
             .collect::<HashSet<_>>();
-        let outputs = get(&self.pipeline_runs, &pipeline_run_arc)?.outputs.clone();
+        let outputs = Arc::clone(&get(&self.pipeline_runs, &pipeline_run_arc)?.outputs);
 
         // Create the task that captures the output from the nodes and stores them in the outputs map
         self.pipeline_runs
@@ -134,7 +131,9 @@ impl DockerPipelineRunner {
         // This will recursively create all the tasks and channels for the pipeline
         let root_nodes_tx = pipeline
             .get_root_nodes()
-            .map(|node| self.create_task_for_node(node, &pipeline_run_arc, namespace_lookup))
+            .map(|node| {
+                self.create_task_for_node(node, &pipeline_run_arc, &output_tx, namespace_lookup)
+            })
             .collect::<Result<Vec<_>>>()?;
 
         // All pipeline tasks have been created, now we need to feed the inputs to the pipeline
@@ -154,8 +153,6 @@ impl DockerPipelineRunner {
                 .await?;
         }
 
-        sleep(Duration::from_secs(5)); // Give some time for the tasks to start
-        panic!();
         Ok(pipeline_run)
     }
 
@@ -189,6 +186,7 @@ impl DockerPipelineRunner {
 
         Ok(PipelineResult {
             pipeline_job: pipeline_run.pipeline_job.clone(),
+            output_packets: pipeline_run_info.outputs.read().await.clone(),
         })
     }
 
@@ -196,6 +194,7 @@ impl DockerPipelineRunner {
         &mut self,
         node: &Node,
         pipeline_run: &Arc<PipelineRun>,
+        output_tx: &mpsc::Sender<Message>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<mpsc::Sender<Message>> {
         println!("Creating task for node: {}", node.id);
@@ -222,12 +221,21 @@ impl DockerPipelineRunner {
         };
 
         // Call this function for each of the child nodes to get their Sender_tx
-        let children_node_tx = pipeline_run
+        let mut children_node_tx = pipeline_run
             .pipeline_job
             .pipeline
             .get_children_for_node(node)
-            .map(|child_node| self.create_task_for_node(child_node, pipeline_run, namespace_lookup))
+            .map(|child_node| {
+                self.create_task_for_node(child_node, pipeline_run, output_tx, namespace_lookup)
+            })
             .collect::<Result<Vec<_>>>()?;
+
+        // Check if children_node_tx is empty, if so, this is a leaf node thus we need to attach the output_tx
+        if children_node_tx.is_empty() {
+            // This is a leaf node, thus we need to attach the output_tx to the tx
+            // This will allow the node to send its output to the output channel
+            children_node_tx.push(output_tx.clone());
+        }
 
         // Start the task_manager
         self.pipeline_runs
@@ -245,34 +253,6 @@ impl DockerPipelineRunner {
             ));
 
         Ok(tx)
-    }
-
-    #[expect(
-        clippy::type_complexity,
-        reason = "too complex, but necessary for async handling"
-    )]
-    async fn capture_node_output(
-        mut output_rx: mpsc::Receiver<Message>,
-        outputs_ref: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>,
-    ) -> Result<()> {
-        while let Some(msg) = output_rx.recv().await {
-            match msg {
-                Message::NodeOutput(node_id, hash_map) => {
-                    // Record the output
-                    outputs_ref
-                        .write()
-                        .await
-                        .entry(node_id)
-                        .or_default()
-                        .push(hash_map);
-                }
-                Message::NodeProcessingComplete(_) | Message::Stop => {
-                    // Node processing is complete, we can stop listening to this channel
-                    break;
-                }
-            }
-        }
-        Ok(())
     }
 
     /// For tx: Sender<Message>, we only want to send successfully completed results to the next node
@@ -326,6 +306,8 @@ impl DockerPipelineRunner {
                 .send(Message::NodeProcessingComplete(node.id.clone()))
                 .await?;
         }
+
+        println!("Node manager for node: {} has completed", node.id);
 
         Ok(())
     }
@@ -441,11 +423,7 @@ impl NodeProcessor for PodProcessor {
 
     async fn process_msg(&mut self, msg: Message) -> bool {
         match msg {
-            Message::NodeOutput(sender_node_id, packet) => {
-                println!(
-                    "Node {} received packet: {:?} from {}",
-                    self.node_metadata.node_id, packet, sender_node_id
-                );
+            Message::NodeOutput(_, packet) => {
                 let pod_ref = Arc::clone(&self.pod);
                 let node_id = self.node_metadata.node_id.clone();
                 let namespace = self.node_metadata.namespace.clone();
@@ -467,7 +445,6 @@ impl NodeProcessor for PodProcessor {
                 return true;
             }
             Message::NodeProcessingComplete(_) => {
-                println!("Node processing complete");
                 // Since pod only have one parent, we can expect that there will be no more incoming packet
                 // thus, we need to wait for everything to finish processing and send completion message
                 // Return true to notify caller that processing is complete
@@ -540,7 +517,7 @@ impl NodeProcessor for MapperProcessor {
                     Err(err) => {
                         // Send the error to the failure channel
                         // For now just print it out
-                        println!("Failed to process packet with error: {}", err);
+                        println!("Failed to process packet with error: {err}");
                     }
                 }
             }
@@ -642,7 +619,9 @@ impl JoinerProcessor {
             }
             Err(err) => {
                 // Send the error to the failure channel
-                todo!();
+                println!(
+                    "Failed to process packet from {sender_node_id} for joiner node with error: {err}"
+                );
             }
         }
         // Add the new packet into the cache
@@ -663,16 +642,12 @@ impl NodeProcessor for JoinerProcessor {
     async fn process_msg(&mut self, msg: Message) -> bool {
         match msg {
             Message::NodeOutput(sender_node_id, packet) => {
-                println!(
-                    "Node {} received packet: {:?} from {}",
-                    self.node_metadata.node_id, packet, sender_node_id
-                );
                 // Process the packet and send the output to the success channel
                 match self.process_packet(&sender_node_id, packet).await {
                     Ok(()) => {}
                     Err(err) => {
                         // Send the error to the failure channel
-                        println!("Failed to process packet with error: {}", err);
+                        println!("Failed to process packet with error: {err}");
                     }
                 }
             }

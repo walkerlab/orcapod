@@ -334,6 +334,7 @@ impl Pipeline {
         })
     }
 
+    /// Function to get the children of a node
     pub fn get_children_for_node(&self, node: &Node) -> impl Iterator<Item = &Node> {
         // Find the NodeIndex for the given node_key
         let node_index = self
@@ -393,7 +394,12 @@ impl PipelineJob {
     }
 }
 
-#[derive(uniffi::Object, Display, Debug, Clone, Serialize)]
+#[derive(uniffi::Object, Debug, Clone, Serialize)]
+/// `PipelineResult` struct
+/// This struct is used to return the result of a pipeline job
 pub struct PipelineResult {
+    /// Ref to the pipeline job that was executed
     pub pipeline_job: PipelineJob,
+    /// Output packets produced by the pipeline job
+    pub output_packets: HashMap<String, Vec<HashMap<String, PathSet>>>,
 }

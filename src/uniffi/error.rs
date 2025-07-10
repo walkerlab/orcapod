@@ -25,10 +25,6 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
     #[snafu(display(
-        "Receiver was dropped before sender could send a message for oneshot channel"
-    ))]
-    ReceiverDroppedBeforeSender { backtrace: Option<Backtrace> },
-    #[snafu(display(
         "Received an empty response when attempting to load the alternate container image file: {path:?}."
     ))]
     EmptyResponseWhenLoadingContainerAltImage {

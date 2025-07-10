@@ -1,6 +1,6 @@
 use crate::uniffi::{
     error::{Kind, OrcaError},
-    pipeline_runner::docker::Message,
+    pipeline_runner::runner::Message,
 };
 use bollard::errors::Error as BollardError;
 use glob;
@@ -126,8 +126,7 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            Kind::ReceiverDroppedBeforeSender { backtrace, .. }
-            | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
+            Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::FailedToParseDot { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }

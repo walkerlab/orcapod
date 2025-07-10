@@ -7,7 +7,7 @@ pub mod fixture;
 // Example for a local module:
 use std::collections::HashMap;
 
-use orcapod::uniffi::{error::Result, pipeline_runner::docker::DockerPipelineRunner};
+use orcapod::uniffi::{error::Result, pipeline_runner::runner::DockerPipelineRunner};
 
 use crate::fixture::TestDirs;
 use fixture::pipeline_job;
@@ -29,6 +29,6 @@ async fn basic_run() -> Result<()> {
 
     // Wait for the pipeline run to complete
     let result = runner.get_result(&pipeline_run).await?;
-    println!("Pipeline run result: {result:?}");
+    println!("Pipeline run result: {:?}", result.output_packets);
     Ok(())
 }
