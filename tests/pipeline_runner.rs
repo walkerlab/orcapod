@@ -12,7 +12,7 @@ use orcapod::uniffi::{error::Result, pipeline_runner::runner::DockerPipelineRunn
 use crate::fixture::TestDirs;
 use fixture::pipeline_job;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 16)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn basic_run() -> Result<()> {
     let pipeline_job = pipeline_job()?;
 
@@ -28,7 +28,27 @@ async fn basic_run() -> Result<()> {
     let pipeline_run = runner.start(pipeline_job, &namespace_lookup).await?;
 
     // Wait for the pipeline run to complete
-    let result = runner.get_result(&pipeline_run).await?;
-    println!("Pipeline run result: {:?}", result.output_packets);
+    runner.get_result(&pipeline_run).await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stop() -> Result<()> {
+    let pipeline_job = pipeline_job()?;
+
+    // Create the runner
+    let mut runner = DockerPipelineRunner::new();
+
+    let test_dirs = TestDirs::new(&HashMap::from([(
+        "default".to_owned(),
+        Some("./tests/extra/data/"),
+    )]))?;
+    let namespace_lookup = test_dirs.namespace_lookup();
+
+    let pipeline_run = runner.start(pipeline_job, &namespace_lookup).await?;
+
+    // Abort the pipeline run
+    runner.stop(&pipeline_run).await?;
+
     Ok(())
 }

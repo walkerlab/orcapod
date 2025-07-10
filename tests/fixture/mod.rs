@@ -287,7 +287,7 @@ pub fn pipeline_job() -> Result<PipelineJob> {
                 kind: BlobKind::File,
                 location: URI {
                     namespace: "default".to_owned(),
-                    path: PathBuf::from("data/input.txt"),
+                    path: PathBuf::from("input.txt"),
                 },
                 ..Default::default()
             }),
