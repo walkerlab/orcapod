@@ -25,7 +25,7 @@ async fn basic_run() -> Result<()> {
     )]))?;
     let namespace_lookup = test_dirs.namespace_lookup();
 
-    let pipeline_run = runner.start(pipeline_job, &namespace_lookup)?;
+    let pipeline_run = runner.start(pipeline_job, &namespace_lookup).await?;
 
     // Wait for the pipeline run to complete
     let result = runner.get_result(&pipeline_run).await?;

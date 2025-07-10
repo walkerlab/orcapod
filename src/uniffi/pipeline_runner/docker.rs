@@ -11,8 +11,15 @@ use futures_util::future::try_join_all;
 use itertools::Itertools as _;
 use serde_yaml::Serializer;
 use snafu::OptionExt as _;
-use std::{collections::HashMap, path::PathBuf, sync::Arc, thread::sleep, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+    thread::sleep,
+    time::Duration,
+};
 use tokio::{
+    net::unix::pipe,
     sync::{RwLock, mpsc},
     task::{JoinSet, spawn_blocking},
 };
@@ -73,6 +80,55 @@ impl DockerPipelineRunner {
 
         // Get reference to the pipeline
         let pipeline = &pipeline_run_arc.pipeline_job.pipeline;
+
+        // Create the output channel to capture the outputs of the outputs nodes (Currently only leaf nodes)
+        let (output_tx, mut output_rx) = mpsc::channel::<Message>(128); // Channel to capture outputs from nodes
+
+        // Get the output_nodes (leaf nodes for now) so the output task can keep track when parents are done
+        let output_nodes_ids = pipeline
+            .get_leaf_nodes()
+            .map(|node| node.id.clone())
+            .collect::<HashSet<_>>();
+        let outputs = get(&self.pipeline_runs, &pipeline_run_arc)?.outputs.clone();
+
+        // Create the task that captures the output from the nodes and stores them in the outputs map
+        self.pipeline_runs
+            .get_mut(&pipeline_run_arc)
+            .context(selector::KeyMissing {
+                key: pipeline_run_arc.to_string(),
+            })?
+            .node_task_join_set
+            .spawn(async move {
+                let mut complete_parent_nodes = HashSet::new();
+                while let Some(message) = output_rx.recv().await {
+                    match message {
+                        Message::NodeOutput(sender_node_id, hash_map) => {
+                            // Store the output in the outputs map
+                            outputs
+                                .write()
+                                .await
+                                .entry(sender_node_id)
+                                .or_default()
+                                .push(hash_map);
+                        }
+                        Message::NodeProcessingComplete(sender_node_id) => {
+                            // Add the sender node id to the complete parent nodes
+                            complete_parent_nodes.insert(sender_node_id.clone());
+
+                            // Check if all parent nodes are complete
+                            if complete_parent_nodes.is_superset(&output_nodes_ids) {
+                                // All parents are complete, we can exit this task
+                                println!(
+                                    "All parent nodes are complete, stopping output capture task."
+                                );
+                                return Ok(());
+                            }
+                        }
+                        Message::Stop => todo!(),
+                    }
+                }
+                Ok(())
+            });
 
         // Get all the root nodes and call the create_task_for_node function for each root node
         // This will recursively create all the tasks and channels for the pipeline
@@ -158,12 +214,12 @@ impl DockerPipelineRunner {
             // Check if the node is already inside the node_tx
             if pipeline_info.node_tx.contains_key(&node.id) {
                 // Node already exists, thus we can return the existing tx
-                return Ok(pipeline_info.node_tx.get(&node.id).unwrap().clone());
+                return Ok(get(&pipeline_info.node_tx, &node.id)?.clone());
             }
 
             // Record the tx into the pipeline_info tx_hashmap
-            pipeline_info.node_tx.insert(node.id.clone(), tx.clone());
-        }
+            pipeline_info.node_tx.insert(node.id.clone(), tx.clone())
+        };
 
         // Call this function for each of the child nodes to get their Sender_tx
         let children_node_tx = pipeline_run
@@ -264,8 +320,7 @@ impl DockerPipelineRunner {
             }
         }
 
-        // Notify that node is finish processing
-        println!("Node {} processing complete", node.id);
+        // Since all inputs are sent, we can send a message that the "input node" processing is complete
         for success_ch_tx in &success_chs_tx {
             success_ch_tx
                 .send(Message::NodeProcessingComplete(node.id.clone()))
@@ -343,7 +398,7 @@ impl PodProcessor {
         })
         .await??;
         let output_dir = URI {
-            namespace: namespace.to_owned(),
+            namespace: namespace.clone(),
             path: PathBuf::from(format!("pod_runs/{}/{}", pod.hash, input_packet_hash)),
         };
 
@@ -371,7 +426,7 @@ impl PodProcessor {
 
         // For now we will just send the input_packet to the success channel
         try_join_all(success_chs_tx.iter().map(|success_ch_tx| {
-            success_ch_tx.send(Message::NodeOutput(node_id.to_owned(), packet.clone()))
+            success_ch_tx.send(Message::NodeOutput(node_id.clone(), packet.clone()))
         }))
         .await?;
 
@@ -481,7 +536,7 @@ impl NodeProcessor for MapperProcessor {
         match msg {
             Message::NodeOutput(_, packet) => {
                 match self.process_packet(&packet).await {
-                    Ok(_) => {}
+                    Ok(()) => {}
                     Err(err) => {
                         // Send the error to the failure channel
                         // For now just print it out
@@ -614,7 +669,7 @@ impl NodeProcessor for JoinerProcessor {
                 );
                 // Process the packet and send the output to the success channel
                 match self.process_packet(&sender_node_id, packet).await {
-                    Ok(_) => {}
+                    Ok(()) => {}
                     Err(err) => {
                         // Send the error to the failure channel
                         println!("Failed to process packet with error: {}", err);
