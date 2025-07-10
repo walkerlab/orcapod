@@ -12,7 +12,7 @@ use orcapod::uniffi::{error::Result, pipeline_runner::docker::DockerPipelineRunn
 use crate::fixture::TestDirs;
 use fixture::pipeline_job;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 16)]
 async fn basic_run() -> Result<()> {
     let pipeline_job = pipeline_job()?;
 
