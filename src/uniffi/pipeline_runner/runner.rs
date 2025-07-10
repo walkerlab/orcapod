@@ -62,7 +62,7 @@ impl DockerPipelineRunner {
     }
 
     /**
-    Start the `pipeline_job` returning `pipeline_run`un
+    Start the `pipeline_job` returning `pipeline_run`
 
     Algorithm:
     1. Create a new `PipelineRun` from the `pipeline_job`
