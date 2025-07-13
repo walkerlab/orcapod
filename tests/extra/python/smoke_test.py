@@ -11,6 +11,7 @@ from orcapod import (
     Pod,
     PodJob,
     Annotation,
+    Packet,
     Uri,
     LocalDockerOrchestrator,
     LocalFileStore,
@@ -48,7 +49,7 @@ def create_pod_job(data, config):
             version="0.1.0",
         ),
         pod=data["pod"],
-        input_packet={},
+        input_packet=Packet({}),
         output_dir=Uri(
             namespace="default",
             path=".",
