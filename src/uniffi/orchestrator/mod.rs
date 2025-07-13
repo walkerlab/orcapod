@@ -21,7 +21,7 @@ pub enum ImageKind {
 }
 /// Status of a particular compute run.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
-pub enum Status {
+pub enum PodStatus {
     /// Run is ongoing.
     Running,
     /// Run has completed successfully.
@@ -49,7 +49,7 @@ pub struct RunInfo {
     /// Command used to start run.
     pub command: Vec<String>,
     /// Current run status.
-    pub status: Status,
+    pub status: PodStatus,
     /// Mounted volume binds to the environment.
     pub mounts: Vec<String>,
     /// Label metadata set by orchestrator.

@@ -1,13 +1,11 @@
-use crate::uniffi::{error::Result, model::PathSet};
+use crate::uniffi::{error::Result, model::Packet};
 use itertools::Itertools as _;
 use std::{clone::Clone, collections::HashMap};
-
-type Packet = HashMap<String, PathSet>;
 
 pub trait Operator {
     fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
 }
-
+// to make this threadsafe, i might need to manage muts within a self mpsc handler
 pub struct JoinOperator {
     parent_count: usize,
     received_streams: HashMap<String, Vec<Packet>>,
@@ -39,9 +37,9 @@ impl Operator for JoinOperator {
                             .cartesian_product(other_packets.iter())
                             .map(|(left, right)| {
                                 let mut new = HashMap::new();
-                                new.extend(left.clone());
-                                new.extend(right.clone());
-                                new
+                                new.extend(left.0.clone());
+                                new.extend(right.0.clone());
+                                Packet(new)
                             })
                             .collect()
                     });
@@ -72,17 +70,20 @@ impl Operator for MapOperator {
         Ok(packets
             .iter()
             .map(|(_, packet)| {
-                packet
-                    .iter()
-                    .map(|(packet_key, path_set)| {
-                        (
-                            self.map
-                                .get(packet_key)
-                                .map_or_else(|| packet_key.clone(), Clone::clone),
-                            path_set.clone(),
-                        )
-                    })
-                    .collect()
+                Packet(
+                    packet
+                        .0
+                        .iter()
+                        .map(|(packet_key, path_set)| {
+                            (
+                                self.map
+                                    .get(packet_key)
+                                    .map_or_else(|| packet_key.clone(), Clone::clone),
+                                path_set.clone(),
+                            )
+                        })
+                        .collect(),
+                )
             })
             .collect())
     }

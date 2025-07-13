@@ -94,6 +94,14 @@ pub(crate) enum Kind {
     },
     #[snafu(display("Pipeline is not a DAG."))]
     PipelineCyclic { backtrace: Option<Backtrace> },
+    #[snafu(display(
+        "Pod failed during a pipeline run with exit code ({exit_code}). See pod result `{hash}`."
+    ))]
+    PodFailed {
+        hash: String,
+        exit_code: i16,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(transparent)]
     BollardError {
         source: BollardError,

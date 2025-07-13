@@ -20,6 +20,11 @@ use petgraph::{
 };
 use std::collections::HashMap;
 
+pub struct DotAttribute {
+    pub color: String,
+    pub extra_label: String,
+}
+
 #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
 fn make_graph_from_dot(dot: &str) -> Result<DiGraph<String, String>> {
     let mut petgraph = DiGraph::new();
@@ -91,29 +96,83 @@ pub fn make_graph(input_dot: &str) -> Result<DiGraph<String, String>> {
 }
 // todo: should always be topologically sorted, need to contribute to petgraph...
 // todo: remove hashmap index since it can cause panic...
-pub fn make_dot(graph: &DiGraph<String, String>, metadata: &HashMap<String, Kernel>) -> String {
+// todo: indoc would clean up the formatting
+pub fn make_dot(
+    graph: &DiGraph<String, String>,
+    metadata: &HashMap<String, Kernel>,
+    title_config: Option<String>,
+    node_attributes_config: Option<&HashMap<String, DotAttribute>>,
+    status_msg_config: Option<String>,
+) -> String {
     format!(
-        "{}",
+        r#"
+        digraph {{
+        graph [size="12"]
+        {}{}{}
+        }}
+        "#,
+        title_config.map_or_else(String::new, |title| format!(
+            r#"
+            labelloc = "t"
+            label = "{title}"
+            "#
+        )),
         Dot::with_attr_getters(
             graph,
-            &[Config::NodeNoLabel, Config::EdgeNoLabel],
+            &[
+                Config::NodeNoLabel,
+                Config::EdgeNoLabel,
+                Config::GraphContentOnly
+            ],
             &|_graph, _edge| String::new(),
-            &|_graph, node| format!(
-                r#"label = "{}" shape = {}"#,
-                node.1,
-                match metadata[node.1] {
-                    Kernel::Pod { .. } => "box",
-                    Kernel::MapOperator { .. } | Kernel::JoinOperator => "circle",
-                }
-            )
-        )
+            &|_graph, node| node_attributes_config.map_or_else(
+                || format!(
+                    r#"label = "{}" shape = "{}" style = "bold""#,
+                    node.1,
+                    match metadata[node.1] {
+                        Kernel::Pod { .. } => "box",
+                        Kernel::MapOperator { .. } | Kernel::JoinOperator => "circle",
+                    }
+                ),
+                |node_attributes| format!(
+                    r#"label = "{} [{}]" shape = "{}" style = "bold" color = "{}""#,
+                    node.1,
+                    node_attributes[node.1].extra_label,
+                    match metadata[node.1] {
+                        Kernel::Pod { .. } => "box",
+                        Kernel::MapOperator { .. } | Kernel::JoinOperator => "circle",
+                    },
+                    node_attributes[node.1].color,
+                )
+            ),
+        ),
+        status_msg_config.map_or_else(String::new, |status_msg| format!(
+            r#"
+            {{
+                rank = "sink"
+                bottomlabel [
+                    shape = "note"
+                    label = "{status_msg}"
+                ]
+            }}
+            "#
+        )),
     )
 }
 
 pub fn make_svg(
     graph: &DiGraph<String, String>,
     metadata: &HashMap<String, Kernel>,
+    title_config: Option<String>,
+    node_attributes_config: Option<&HashMap<String, DotAttribute>>,
+    status_msg_config: Option<String>,
 ) -> Result<String> {
-    let dot = make_dot(graph, metadata);
+    let dot = make_dot(
+        graph,
+        metadata,
+        title_config,
+        node_attributes_config,
+        status_msg_config,
+    );
     make_svg_from_dot(&dot)
 }

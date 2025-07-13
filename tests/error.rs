@@ -133,7 +133,7 @@ async fn submit_pod_jobs() -> Result<()> {
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;
     pod_job.hash = "bad?hash".into();
-    let responses = client.submit_pod_jobs(vec![pod_job.into()]).await;
+    let responses = client.start_pod_jobs(vec![pod_job.into()]).await;
     assert!(
         responses.len() == 1,
         "Client received an unexpected number of pod job request responses."

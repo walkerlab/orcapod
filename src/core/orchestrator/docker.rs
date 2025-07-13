@@ -3,7 +3,7 @@ use crate::{
     uniffi::{
         error::{Result, selector},
         model::{PathSet, PodJob},
-        orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
+        orchestrator::{PodStatus, RunInfo, docker::LocalDockerOrchestrator},
     },
 };
 use bollard::{
@@ -53,7 +53,7 @@ impl LocalDockerOrchestrator {
         let input_binds = pod_job.pod.input_spec.iter().try_fold::<_, _, Result<_>>(
             vec![],
             |mut flattened_binds, (stream_name, stream_info)| {
-                flattened_binds.extend(match get(&pod_job.input_packet, stream_name)? {
+                flattened_binds.extend(match get(&pod_job.input_packet.0, stream_name)? {
                     PathSet::Unary { blob } => {
                         vec![format!(
                             "{}:{}:{}",
@@ -231,15 +231,15 @@ impl LocalDockerOrchestrator {
                         container_spec.state.as_ref()?.status.as_ref()?,
                         container_spec.state.as_ref()?.exit_code? as i16,
                     ) {
-                        (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
+                        (ContainerStateStatusEnum::RUNNING, _) => PodStatus::Running,
                         (
                             ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
                             0,
-                        ) => Status::Completed,
+                        ) => PodStatus::Completed,
                         (
                             ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
                             exit_code,
-                        ) => Status::Failed { exit_code },
+                        ) => PodStatus::Failed { exit_code },
                         (_, exit_code) => {
                             todo!(
                                 "Unhandled container state: {}, exit code: {exit_code}.",

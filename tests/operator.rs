@@ -4,7 +4,7 @@ use orcapod::{
     core::operator::{JoinOperator, Operator as _},
     uniffi::{
         error::Result,
-        model::{Blob, BlobKind, PathSet, URI},
+        model::{Blob, BlobKind, Packet, PathSet, URI},
     },
 };
 use std::{collections::HashMap, path::PathBuf};
@@ -33,10 +33,10 @@ fn join_once() -> Result<()> {
         .map(|i| {
             (
                 "left".into(),
-                HashMap::from([make_packet_key(
+                Packet(HashMap::from([make_packet_key(
                     "subject".into(),
                     format!("left/subject{i}.png"),
-                )]),
+                )])),
             )
         })
         .collect::<Vec<_>>();
@@ -45,10 +45,10 @@ fn join_once() -> Result<()> {
         .map(|i| {
             (
                 "right".into(),
-                HashMap::from([make_packet_key(
+                Packet(HashMap::from([make_packet_key(
                     "style".into(),
                     format!("right/style{i}.t7"),
-                )]),
+                )])),
             )
         })
         .collect::<Vec<_>>();
@@ -59,30 +59,30 @@ fn join_once() -> Result<()> {
     assert_eq!(
         operator.next(input_streams)?,
         vec![
-            HashMap::from([
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject0.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject1.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject2.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject0.png".into()),
                 make_packet_key("style".into(), "right/style1.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject1.png".into()),
                 make_packet_key("style".into(), "right/style1.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject2.png".into()),
                 make_packet_key("style".into(), "right/style1.t7".into()),
-            ]),
+            ])),
         ],
         "Unexpected streams."
     );
@@ -97,7 +97,10 @@ fn join_spotty() -> Result<()> {
     assert_eq!(
         operator.next(vec![(
             "right".into(),
-            HashMap::from([make_packet_key("style".into(), "right/style0.t7".into(),)]),
+            Packet(HashMap::from([make_packet_key(
+                "style".into(),
+                "right/style0.t7".into(),
+            )])),
         )])?,
         vec![],
         "Unexpected streams."
@@ -106,7 +109,10 @@ fn join_spotty() -> Result<()> {
     assert_eq!(
         operator.next(vec![(
             "right".into(),
-            HashMap::from([make_packet_key("style".into(), "right/style1.t7".into(),)]),
+            Packet(HashMap::from([make_packet_key(
+                "style".into(),
+                "right/style1.t7".into(),
+            )])),
         )])?,
         vec![],
         "Unexpected streams."
@@ -115,20 +121,20 @@ fn join_spotty() -> Result<()> {
     assert_eq!(
         operator.next(vec![(
             "left".into(),
-            HashMap::from([make_packet_key(
+            Packet(HashMap::from([make_packet_key(
                 "subject".into(),
                 "left/subject0.png".into(),
-            )]),
+            )])),
         )])?,
         vec![
-            HashMap::from([
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject0.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject0.png".into()),
                 make_packet_key("style".into(), "right/style1.t7".into()),
-            ]),
+            ])),
         ],
         "Unexpected streams."
     );
@@ -139,31 +145,31 @@ fn join_spotty() -> Result<()> {
                 .map(|i| {
                     (
                         "left".into(),
-                        HashMap::from([make_packet_key(
+                        Packet(HashMap::from([make_packet_key(
                             "subject".into(),
                             format!("left/subject{i}.png"),
-                        )]),
+                        )])),
                     )
                 })
                 .collect::<Vec<_>>()
         )?,
         vec![
-            HashMap::from([
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject1.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject1.png".into()),
                 make_packet_key("style".into(), "right/style1.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject2.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
-            ]),
-            HashMap::from([
+            ])),
+            Packet(HashMap::from([
                 make_packet_key("subject".into(), "left/subject2.png".into()),
                 make_packet_key("style".into(), "right/style1.t7".into()),
-            ]),
+            ])),
         ],
         "Unexpected streams."
     );

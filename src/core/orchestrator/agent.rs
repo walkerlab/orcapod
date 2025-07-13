@@ -19,7 +19,7 @@ use tokio::{
 use tokio_util::task::TaskTracker;
 
 #[expect(clippy::expect_used, reason = "Valid static regex")]
-static RE_AGENT_KEY_EXPR: LazyLock<Regex> = LazyLock::new(|| {
+pub static RE_AGENT_KEY_EXPR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         "(?x)
             ^
@@ -79,7 +79,6 @@ impl AgentClient {
     ///
     /// Will fail if there is an issue sending the message.
     pub(crate) async fn log(&self, message: &str) -> Result<()> {
-        println!("{message}");
         self.publish("log", message).await
     }
 }
@@ -166,8 +165,8 @@ where
         }
     });
     services.spawn(async move {
-        while let Some(content) = response_rx.recv().await {
-            response_task(Arc::clone(&agent.client), content?).await?;
+        while let Some(response) = response_rx.recv().await {
+            response_task(Arc::clone(&agent.client), response?).await?;
         }
         Ok(())
     });

@@ -6,7 +6,7 @@ use crate::{
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{PodJob, PodResult},
-        orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
+        orchestrator::{ImageKind, Orchestrator, PodRun, PodStatus, RunInfo},
     },
 };
 use async_trait;
@@ -222,7 +222,7 @@ impl Orchestrator for LocalDockerOrchestrator {
         let mut result_info: RunInfo;
         while {
             result_info = self.get_info(pod_run).await?;
-            matches!(&result_info.status, Status::Running)
+            matches!(&result_info.status, PodStatus::Running)
         } {
             async_sleep(Duration::from_millis(100)).await;
         }

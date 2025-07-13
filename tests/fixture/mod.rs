@@ -10,8 +10,8 @@
 use names::{Generator, Name};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
-    orchestrator::Status,
+    model::{Annotation, Blob, BlobKind, Packet, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
+    orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{
@@ -86,7 +86,7 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
             version: "0.1.0".to_owned(),
         }),
         pod_style()?.into(),
-        HashMap::from([
+        Packet(HashMap::from([
             (
                 "extra-style".to_owned(),
                 PathSet::Unary {
@@ -123,7 +123,8 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
                     ],
                 },
             ),
-        ]),
+        ]))
+        .into(),
         URI {
             namespace: "default".to_owned(),
             path: PathBuf::from("output"),
@@ -149,7 +150,7 @@ pub fn pod_result_style(
         }),
         pod_job_style(namespace_lookup)?.into(),
         "simple-endeavour".to_owned(),
-        Status::Completed,
+        PodStatus::Completed,
         1_737_922_307,
         1_737_925_907,
         namespace_lookup,
@@ -176,7 +177,7 @@ pub fn pod_job_custom(
             None,
         )?
         .into(),
-        HashMap::new(),
+        Packet(HashMap::new()).into(),
         URI {
             namespace: "default".to_owned(),
             path: PathBuf::from("."),

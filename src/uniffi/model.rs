@@ -10,7 +10,8 @@ use crate::{
     },
     uniffi::{
         error::{OrcaError, Result, selector},
-        orchestrator::Status,
+        orchestrator::PodStatus,
+        pipeline::PipelineStatus,
     },
 };
 use derive_more::Display;
@@ -127,8 +128,7 @@ pub struct PodJob {
     #[serde(deserialize_with = "deserialize_pod")]
     pub pod: Arc<Pod>,
     /// Attached, external input packet.
-    #[serde(serialize_with = "serialize_hashmap")]
-    pub input_packet: HashMap<String, PathSet>,
+    pub input_packet: Arc<Packet>,
     /// Attached, external output directory.
     pub output_dir: URI,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -151,33 +151,37 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_packet: HashMap<String, PathSet>,
+        mut input_packet: Arc<Packet>,
         output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
-        input_packet = input_packet
-            .into_iter()
-            .map(|(stream_name, stream_input)| match stream_input {
-                PathSet::Unary { blob } => Ok((
-                    stream_name,
-                    PathSet::Unary {
-                        blob: hash_blob(namespace_lookup, blob)?,
-                    },
-                )),
-                PathSet::Collection { blobs } => Ok((
-                    stream_name,
-                    PathSet::Collection {
-                        blobs: blobs
-                            .into_iter()
-                            .map(|blob| hash_blob(namespace_lookup, blob))
-                            .collect::<Result<_>>()?,
-                    },
-                )),
-            })
-            .collect::<Result<_>>()?;
+        input_packet = Packet(
+            input_packet
+                .0
+                .iter()
+                .map(|(stream_name, stream_input)| match stream_input {
+                    PathSet::Unary { blob } => Ok((
+                        stream_name.clone(),
+                        PathSet::Unary {
+                            blob: hash_blob(namespace_lookup, blob)?,
+                        },
+                    )),
+                    PathSet::Collection { blobs } => Ok((
+                        stream_name.clone(),
+                        PathSet::Collection {
+                            blobs: blobs
+                                .iter()
+                                .map(|blob| hash_blob(namespace_lookup, blob))
+                                .collect::<Result<_>>()?,
+                        },
+                    )),
+                })
+                .collect::<Result<_>>()?,
+        )
+        .into();
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
@@ -207,12 +211,11 @@ pub struct PodResult {
     #[serde(deserialize_with = "deserialize_pod_job")]
     pub pod_job: Arc<PodJob>,
     /// Produced, external output packet.
-    #[serde(default, serialize_with = "serialize_hashmap")]
-    pub output_packet: HashMap<String, PathSet>,
+    pub output_packet: Arc<Packet>,
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
-    pub status: Status,
+    pub status: PodStatus,
     /// Time in epoch when created in seconds.
     pub created: u64,
     /// Time in epoch when terminated in seconds.
@@ -229,66 +232,69 @@ impl PodResult {
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
         assigned_name: String,
-        status: Status,
+        status: PodStatus,
         created: u64,
         terminated: u64,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
         let skip_allowed = match status {
-            Status::Completed => false,
-            Status::Running | Status::Failed { .. } | Status::Unset => true,
+            PodStatus::Completed => false,
+            PodStatus::Running | PodStatus::Failed { .. } | PodStatus::Unset => true,
         };
-        let output_packet = pod_job
-            .pod
-            .output_spec
-            .iter()
-            .filter_map(|(packet_key, path_info)| {
-                let location = URI {
-                    namespace: pod_job.output_dir.namespace.clone(),
-                    path: pod_job.output_dir.path.join(&path_info.path),
-                };
+        let output_packet = Packet(
+            pod_job
+                .pod
+                .output_spec
+                .iter()
+                .filter_map(|(packet_key, path_info)| {
+                    let location = URI {
+                        namespace: pod_job.output_dir.namespace.clone(),
+                        path: pod_job.output_dir.path.join(&path_info.path),
+                    };
 
-                let local_location = match get(namespace_lookup, &location.namespace) {
-                    Ok(root_path) => root_path.join(&location.path),
-                    Err(error) => return Some(Err(error)),
-                };
+                    let local_location = match get(namespace_lookup, &location.namespace) {
+                        Ok(root_path) => root_path.join(&location.path),
+                        Err(error) => return Some(Err(error)),
+                    };
 
-                match (local_location.try_exists(), skip_allowed) {
-                    (Ok(false), true) => None,
-                    (Err(error), _) => Some(Err(OrcaError::from(error))),
-                    (Ok(false), false) => Some(
-                        selector::IncompleteOutputPacket {
-                            key: packet_key.clone(),
-                            namespace: location.namespace.clone(),
-                            path: location.path,
-                        }
-                        .fail()
-                        .map_err(OrcaError::from),
-                    ),
-                    (Ok(true), _) => Some(Ok((
-                        packet_key,
-                        Blob {
-                            kind: if local_location.is_file() {
-                                BlobKind::File
-                            } else {
-                                BlobKind::Directory
+                    match (local_location.try_exists(), skip_allowed) {
+                        (Ok(false), true) => None,
+                        (Err(error), _) => Some(Err(OrcaError::from(error))),
+                        (Ok(false), false) => Some(
+                            selector::IncompleteOutputPacket {
+                                key: packet_key.clone(),
+                                namespace: location.namespace.clone(),
+                                path: location.path,
+                            }
+                            .fail()
+                            .map_err(OrcaError::from),
+                        ),
+                        (Ok(true), _) => Some(Ok((
+                            packet_key,
+                            Blob {
+                                kind: if local_location.is_file() {
+                                    BlobKind::File
+                                } else {
+                                    BlobKind::Directory
+                                },
+                                location,
+                                checksum: String::new(),
                             },
-                            location,
-                            checksum: String::new(),
+                        ))),
+                    }
+                })
+                .map(|result| {
+                    let (packet_key, blob) = result?;
+                    Ok((
+                        packet_key.clone(),
+                        PathSet::Unary {
+                            blob: hash_blob(namespace_lookup, &blob)?,
                         },
-                    ))),
-                }
-            })
-            .map(|result| {
-                let (packet_key, blob) = result?;
-                Ok((
-                    packet_key.clone(),
-                    PathSet::Unary {
-                        blob: hash_blob(namespace_lookup, blob)?,
-                    },
-                ))
-            })
-            .collect::<Result<_>>()?;
+                    ))
+                })
+                .collect::<Result<_>>()?,
+        )
+        .into();
         let pod_result_no_hash = Self {
             annotation,
             hash: String::new(),
@@ -315,7 +321,7 @@ pub struct Pipeline {
     /// Computational DAG in-memory.
     #[getset(skip)]
     pub graph: DiGraph<String, String>,
-    /// Metadata for each kernel referenced in the DAG.
+    /// Metadata for each kernel referenced in the DAG indexed by node.
     pub metadata: HashMap<String, Kernel>,
     /// key -> N number of node name / input key i.e. provides a rename feature + forking
     pub input_spec: HashMap<String, Vec<InputSpecURI>>,
@@ -348,7 +354,7 @@ impl Pipeline {
     }
     /// Cast the graph into [DOT](https://graphviz.org/doc/info/lang.html).
     pub fn make_dot(&self) -> String {
-        make_dot(&self.graph, &self.metadata)
+        make_dot(&self.graph, &self.metadata, None, None, None)
     }
     /// Render the graph into SVG.
     ///
@@ -356,7 +362,7 @@ impl Pipeline {
     ///
     /// Will return `Err` if there is an issue parsing the graph.
     pub fn make_svg(&self) -> Result<String> {
-        make_svg(&self.graph, &self.metadata)
+        make_svg(&self.graph, &self.metadata, None, None, None)
     }
 }
 
@@ -365,7 +371,7 @@ impl Pipeline {
     clippy::field_scoped_visibility_modifiers,
     reason = "Temporary until we add hash to PipelineJob."
 )]
-#[derive(uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
@@ -405,12 +411,12 @@ impl PipelineJob {
                         .map(|path_set| {
                             Ok(match path_set {
                                 PathSet::Unary { blob } => PathSet::Unary {
-                                    blob: hash_blob(namespace_lookup, blob.clone())?,
+                                    blob: hash_blob(namespace_lookup, blob)?,
                                 },
                                 PathSet::Collection { blobs } => PathSet::Collection {
                                     blobs: blobs
                                         .iter()
-                                        .map(|blob| hash_blob(namespace_lookup, blob.clone()))
+                                        .map(|blob| hash_blob(namespace_lookup, blob))
                                         .collect::<Result<_>>()?,
                                 },
                             })
@@ -430,6 +436,15 @@ impl PipelineJob {
             output_dir: output_dir.clone(),
         })
     }
+}
+
+/// Result from a compute pipeline job run.
+#[derive(uniffi::Record, Debug, Serialize, Deserialize)]
+pub struct PipelineResult {
+    /// A pipeline job that originated the pipeline result.
+    pub pipeline_job: Arc<PipelineJob>,
+    /// Status of pipeline run when terminated.
+    pub status: PipelineStatus,
 }
 
 // --- util types ---
@@ -492,6 +507,34 @@ pub enum PathSet {
         blobs: Vec<Blob>,
     },
 }
+
+/// might be able to get it to work with just `uniffi::Record`... `https://github.com/mozilla/uniffi-rs/issues/2426`
+#[derive(
+    uniffi::Object,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Default,
+    Serialize,
+    Deserialize,
+    Display,
+    CloneGetters,
+)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct Packet(#[serde(serialize_with = "serialize_hashmap")] pub HashMap<String, PathSet>);
+
+#[uniffi::export]
+impl Packet {
+    /// How to create a packet.
+    #[uniffi::constructor]
+    pub const fn new(path_sets: HashMap<String, PathSet>) -> Self {
+        Self(path_sets)
+    }
+}
+
 /// Location of BLOB data.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct URI {
@@ -541,7 +584,7 @@ pub enum Kernel {
 #[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize)]
 pub struct InputSpecURI {
     /// Node reference name in pipeline.
-    pub node_id: String,
+    pub node: String,
     /// Specification key.
     pub key: String,
 }
@@ -550,7 +593,7 @@ pub struct InputSpecURI {
 #[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize)]
 pub struct OutputSpecURI {
     /// Node reference name in pipeline.
-    pub node_id: String,
+    pub node: String,
     /// Specification key.
     pub key: String,
 }
@@ -562,3 +605,9 @@ uniffi::custom_type!(PathBuf, String, {
     try_lift: |val| Ok(PathBuf::from(&val)),
     lower: |obj| obj.display().to_string(),
 });
+
+// uniffi::custom_type!(Packet, HashMap<String, PathSet>, {
+//     remote,
+//     try_lift: |val| Ok(Packet(val)),
+//     lower: |obj| obj.0,
+// });

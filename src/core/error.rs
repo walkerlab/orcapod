@@ -125,6 +125,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoRemainingServices { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::PipelineCyclic { backtrace, .. }
+            | Kind::PodFailed { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChronoParseError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }

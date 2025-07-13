@@ -2,11 +2,13 @@ use crate::{
     core::{orchestrator::agent::start_service, pipeline::process_pipeline_job},
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{PipelineJob, PodJob},
-        orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
+        model::{PipelineJob, PipelineResult, PodJob},
+        orchestrator::{Orchestrator, PodStatus, docker::LocalDockerOrchestrator},
+        pipeline::{PipelineRun, PipelineStatus},
         store::{Store as _, filestore::LocalFileStore},
     },
 };
+use colored::Colorize as _;
 use derive_more::Display;
 use futures_executor::block_on;
 use futures_util::future::join_all;
@@ -73,9 +75,9 @@ impl AgentClient {
             })?,
         })
     }
-    /// Submit many pod jobs to be processed in parallel.
+    /// Start many pod jobs to be processed in parallel.
     /// Return order will match inputs, casting outputs to `String` (since `uniffi` doesn't support sending unwrapped `Result`s).
-    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<Response> {
+    pub async fn start_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<Response> {
         join_all(pod_jobs.iter().map(|pod_job| async {
             match self
                 .publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
@@ -89,17 +91,53 @@ impl AgentClient {
         }))
         .await
     }
-    /// Submit a pipeline job to be processed asynchronously.
+    /// Start a prepared pipeline run to be processed asynchronously.
     ///
     /// # Errors
     ///
     /// Will fail if there is an issue publishing the pipeline job.
-    pub async fn submit_pipeline_job(&self, pipeline_job: Arc<PipelineJob>) -> Result<()> {
+    pub async fn start_pipeline_run(&self, pipeline_run: Arc<PipelineRun>) -> Result<()> {
         self.publish(
-            &format!("request/pipeline_job/{}", pipeline_job.hash),
-            &pipeline_job,
+            &format!("request/pipeline_job/{}", pipeline_run.pipeline_job.hash),
+            &pipeline_run.pipeline_job,
         )
         .await
+    }
+    /// Wait for pipeline result to be ready.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue creating a pipeline result.
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "Subscribe key expression ensures we will have enough elements."
+    )]
+    pub async fn get_pipeline_result(
+        &self,
+        pipeline_run: Arc<PipelineRun>,
+    ) -> Result<PipelineResult> {
+        let subscriber = self
+            .session
+            .declare_subscriber(&format!(
+                "group/{}/*/pipeline_job/{}/**",
+                self.group, pipeline_run.pipeline_job.hash
+            ))
+            .await
+            .context(selector::AgentCommunicationFailure {})?;
+        let pipeline_result_result;
+        loop {
+            let sample = subscriber
+                .recv_async()
+                .await
+                .context(selector::AgentCommunicationFailure {})?;
+            let topic_kind = sample.key_expr().as_str().split('/').collect::<Vec<_>>()[2];
+            if ["success", "failure"].contains(&topic_kind) {
+                pipeline_result_result =
+                    serde_json::from_slice::<PipelineResult>(&sample.payload().to_bytes())?;
+                break;
+            }
+        }
+        Ok(pipeline_result_result)
     }
     /// Watch orchestration agent communication.
     ///
@@ -115,7 +153,7 @@ impl AgentClient {
             .context(selector::AgentCommunicationFailure {})?;
         while let Ok(sample) = subscriber.recv_async().await {
             let value = serde_json::from_slice::<Value>(&sample.payload().to_bytes())?;
-            println!("{}: {value:#}", sample.key_expr().as_str());
+            println!("{}: {value:#}", sample.key_expr().as_str().yellow());
         }
         Ok(())
     }
@@ -181,13 +219,21 @@ impl Agent {
                 Ok(pod_result)
             },
             async |client, pod_result| {
-                let response_topic = match &pod_result.status {
-                    Status::Completed => &format!("success/pod_job/{}", pod_result.pod_job.hash),
-                    Status::Running | Status::Failed { .. } | Status::Unset => {
-                        &format!("failure/pod_job/{}", pod_result.pod_job.hash)
-                    }
-                };
-                client.publish(response_topic, &pod_result).await
+                client
+                    .publish(
+                        &format!(
+                            "{}/pod_job/{}",
+                            match &pod_result.status {
+                                PodStatus::Completed => "success",
+                                PodStatus::Running
+                                | PodStatus::Failed { .. }
+                                | PodStatus::Unset => "failure",
+                            },
+                            pod_result.pod_job.hash
+                        ),
+                        &pod_result,
+                    )
+                    .await
             },
         ));
         services.spawn(start_service(
@@ -195,7 +241,7 @@ impl Agent {
             "request/pipeline_job/**".to_owned(),
             namespace_lookup.clone(),
             async |agent, inner_namespace_lookup, _, pipeline_job: PipelineJob| {
-                Ok(process_pipeline_job(
+                process_pipeline_job(
                     Arc::clone(&agent.client),
                     format!("status/pipeline_job/{}/", pipeline_job.hash),
                     "request/pod_job/",
@@ -203,9 +249,24 @@ impl Agent {
                     "failure/pod_job/",
                     pipeline_job,
                     inner_namespace_lookup,
-                ))
+                )
+                .await
             },
-            async |_, _| Ok(()),
+            async |client, pipeline_result| {
+                client
+                    .publish(
+                        &format!(
+                            "{}/pipeline_job/{}",
+                            match &pipeline_result.status {
+                                PipelineStatus::Completed => "success",
+                                PipelineStatus::Failed => "failure",
+                            },
+                            pipeline_result.pipeline_job.hash
+                        ),
+                        &pipeline_result,
+                    )
+                    .await
+            },
         ));
         if let Some(store) = available_store {
             services.spawn(start_service(

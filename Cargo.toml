@@ -127,6 +127,7 @@ impl_trait_in_params = { level = "allow", priority = 127 }             # impl in
 implicit_return = { level = "allow", priority = 127 }                  # missing return ok
 inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }      # intel syntax ok
 integer_division = { level = "allow", priority = 127 }                 # allow discarding remainder
+iter_over_hash_type = { level = "allow", priority = 127 }              # allow iterating over unordered iterables like `HashMap`
 little_endian_bytes = { level = "allow", priority = 127 }              # allow to_le_bytes / from_le_bytes
 missing_asserts_for_indexing = { level = "allow", priority = 127 }     # missing assert before indexing ok
 missing_docs_in_private_items = { level = "allow", priority = 127 }    # missing docs on private ok

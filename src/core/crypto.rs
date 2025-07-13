@@ -86,9 +86,10 @@ pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
 /// # Errors
 ///
 /// Will return error if hashing fails on file or directory.
+/// todo: might be better to take a mut ref and change checksum in place
 pub fn hash_blob(
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
-    blob: Blob,
+    blob: &Blob,
 ) -> Result<Blob> {
     let blob_path = get(namespace_lookup, &blob.location.namespace)?.join(&blob.location.path);
     Ok(Blob {
@@ -96,6 +97,6 @@ pub fn hash_blob(
             BlobKind::File => hash_file(blob_path)?,
             BlobKind::Directory => hash_dir(blob_path)?,
         },
-        ..blob
+        ..blob.clone()
     })
 }
