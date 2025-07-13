@@ -49,7 +49,7 @@ async def main(client, agent, test_dir, namespace_lookup, pod_jobs):
     await asyncio.sleep(5)  # ensure service ready
 
     try:
-        await client.submit_pod_jobs(pod_jobs=pod_jobs)
+        await client.start_pod_jobs(pod_jobs=pod_jobs)
         await verify(client.group(), len(pod_jobs))
     finally:
         shutil.rmtree(test_dir)
