@@ -12,13 +12,14 @@ runs:
       env:
         DIAGRAM_SCOPE:
           orcapod::uniffi::{
-            model::{Pod, PodJob, PodResult, Pipeline, PipelineJob},
-            store::filestore::LocalFileStore,
+            model::{Pod, PodJob, PodResult, Pipeline, PipelineJob, PipelineResult},
             orchestrator::{
               PodRun,
               docker::LocalDockerOrchestrator,
               agent::{AgentClient, Agent},
             },
+            pipeline::PipelineRun,
+            store::filestore::LocalFileStore,
           }
       run: |
         : Generate crate diagram
