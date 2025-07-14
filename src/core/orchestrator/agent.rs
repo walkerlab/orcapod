@@ -1,6 +1,11 @@
-use crate::uniffi::{
-    error::{OrcaError, Result, selector},
-    orchestrator::agent::{Agent, AgentClient},
+use crate::{
+    core::pipeline::{NodeInfo, NodeState, Payload},
+    uniffi::{
+        error::{OrcaError, Result, selector},
+        model::{Packet, PipelineJob},
+        orchestrator::agent::{Agent, AgentClient},
+        pipeline::{PipelineRun, PipelineStatus},
+    },
 };
 use chrono::{DateTime, Utc};
 use futures_util::future::FutureExt as _;
@@ -8,9 +13,9 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::PathBuf,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 use tokio::{
     sync::mpsc::{self, error::SendError},
@@ -80,6 +85,122 @@ impl AgentClient {
     /// Will fail if there is an issue sending the message.
     pub(crate) async fn log(&self, message: &str) -> Result<()> {
         self.publish("log", message).await
+    }
+    #[expect(
+        clippy::excessive_nesting,
+        clippy::indexing_slicing,
+        clippy::expect_used,
+        clippy::significant_drop_tightening,
+        reason = "debug"
+    )]
+    pub(crate) fn new_pipeline_run(&self, pipeline_job: &Arc<PipelineJob>) -> PipelineRun {
+        let pipeline_run = PipelineRun {
+            pipeline_job: Arc::clone(pipeline_job),
+            status: Arc::new(Mutex::new(PipelineStatus::Running)),
+            state: Arc::new(Mutex::new(HashMap::new())),
+            services: TaskTracker::new(),
+        };
+        pipeline_run.services.spawn({
+            let agent_client = Arc::new(self.clone());
+            let inner_pipeline_run = pipeline_run.clone();
+            async move {
+                let pipeline_result = agent_client
+                    .get_pipeline_result(inner_pipeline_run.clone().into())
+                    .await?;
+                let mut status = inner_pipeline_run.status.lock().expect("debug");
+                *status = pipeline_result.status;
+                Ok::<_, OrcaError>(())
+            }
+        });
+        pipeline_run.services.spawn({
+            let agent_client = Arc::new(self.clone());
+            let pipeline_hash = pipeline_job.hash.clone();
+            let state = Arc::clone(&pipeline_run.state);
+            let pipeline_metadata = pipeline_job.pipeline.metadata.clone();
+            async move {
+                let subscriber = agent_client
+                    .session
+                    .declare_subscriber(&format!(
+                        "group/{}/status/pipeline_job/{}/**",
+                        &agent_client.group, &pipeline_hash
+                    ))
+                    .await
+                    .context(selector::AgentCommunicationFailure {})?;
+                // let tracker = TaskTracker::new();
+                loop {
+                    let sample = subscriber
+                        .recv_async()
+                        .await
+                        .context(selector::AgentCommunicationFailure {})?;
+                    // todo: can remove need for this by updating RE_AGENT_KEY_EXPR
+                    let subtopics = sample.key_expr().as_str().split('/').collect::<Vec<_>>();
+                    let (feed_type, source) = (subtopics[5], subtopics[6]);
+                    let payload = serde_json::from_slice::<Payload<Packet, ()>>(
+                        &sample.payload().to_bytes(),
+                    )?;
+                    if feed_type == "output" {
+                        let mut inner_state = state.lock().expect("debug");
+                        if let Some(node_info) = inner_state.get_mut(source) {
+                            let node_state = match &payload {
+                                Payload::Cancelled => NodeState::Cancelled,
+                                Payload::Failed(error_msg) => {
+                                    NodeState::Failed(error_msg.to_owned())
+                                }
+                                Payload::End(()) => NodeState::Completed,
+                                Payload::Stream(_) => node_info.state.clone(),
+                            };
+                            *node_info = NodeInfo {
+                                state: node_state,
+                                completed_packets: node_info.completed_packets
+                                    + u32::from(matches!(payload, Payload::Stream(_))),
+                            };
+                        } else {
+                            let node_state = match &payload {
+                                Payload::Cancelled => NodeState::Cancelled,
+                                Payload::Failed(error_msg) => {
+                                    NodeState::Failed(error_msg.to_owned())
+                                }
+                                Payload::End(()) => NodeState::Completed,
+                                Payload::Stream(_) => NodeState::Active,
+                            };
+                            inner_state.insert(
+                                source.to_owned(),
+                                NodeInfo {
+                                    state: node_state,
+                                    completed_packets: u32::from(matches!(
+                                        payload,
+                                        Payload::Stream(_)
+                                    )),
+                                },
+                            );
+                        }
+                    } else if feed_type == "input" {
+                        let mut inner_state = state.lock().expect("debug");
+                        if !inner_state.contains_key(source) {
+                            inner_state.insert(
+                                source.to_owned(),
+                                NodeInfo {
+                                    state: NodeState::Active,
+                                    completed_packets: 0,
+                                },
+                            );
+                        }
+                    }
+                    let inner_state = state.lock().expect("debug");
+                    if inner_state.keys().collect::<HashSet<_>>()
+                        == pipeline_metadata.keys().collect::<HashSet<_>>()
+                        && !inner_state.values().any(|v| {
+                            matches!(v.state, NodeState::Idle)
+                                || matches!(v.state, NodeState::Active)
+                        })
+                    {
+                        break;
+                    }
+                }
+                Ok::<_, OrcaError>(())
+            }
+        });
+        pipeline_run
     }
 }
 

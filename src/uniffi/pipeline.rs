@@ -1,21 +1,16 @@
 use crate::{
     core::{
         graph::{DotAttribute, make_dot},
-        pipeline::{NodeInfo, NodeState, Payload},
+        pipeline::{NodeInfo, NodeState},
     },
-    uniffi::{
-        error::{OrcaError, Result, selector},
-        model::{Packet, PipelineJob},
-        orchestrator::agent::AgentClient,
-    },
+    uniffi::model::PipelineJob,
 };
 use chrono::Local;
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use snafu::ResultExt as _;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Write as _,
     sync::{Arc, Mutex},
 };
@@ -33,149 +28,40 @@ use uniffi;
 // get_pipeline_result: long running waiting until pipeline run becomes a pipeline result
 
 /// Status of a particular compute pipeline run.
-#[derive(uniffi::Enum, Debug, Serialize, Deserialize)]
+#[derive(uniffi::Enum, Debug, Serialize, Deserialize, Clone)]
 pub enum PipelineStatus {
     /// Run has completed successfully.
     Completed,
     /// Run failed.
     Failed,
+    /// Run has not finished.
+    Running,
 }
 
 /// Current computational pipeline managed by an orchestrator agent.
 #[expect(clippy::field_scoped_visibility_modifiers, reason = "debug")]
-#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct PipelineRun {
     /// Original compute request.
     pub pipeline_job: Arc<PipelineJob>,
+    /// Status of pipeline run.
     #[getset(skip)]
-    pub(crate) agent_client: Arc<AgentClient>,
+    pub status: Arc<Mutex<PipelineStatus>>,
     #[getset(skip)]
     pub(crate) state: Arc<Mutex<HashMap<String, NodeInfo>>>,
     #[getset(skip)]
     pub(crate) services: TaskTracker,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[uniffi::export]
 impl PipelineRun {
-    /// Initialize a pipeline run instance.
-    #[uniffi::constructor]
-    pub fn new(pipeline_job: Arc<PipelineJob>, agent_client: Arc<AgentClient>) -> Self {
-        Self {
-            pipeline_job,
-            agent_client,
-            state: Arc::new(Mutex::new(HashMap::new())),
-            services: TaskTracker::new(),
-        }
-    }
-    /// Start updating the pipeline run state based on network updates.
-    ///
     /// # Panics
-    ///
-    /// Will panic if unable to acquire mut ref on services.
-    ///
-    /// # Errors
-    ///
-    /// Will error if there is an issue attaching to the status topic.
-    #[expect(
-        clippy::expect_used,
-        clippy::unused_async,
-        clippy::excessive_nesting,
-        clippy::indexing_slicing,
-        reason = "debug"
-    )]
-    pub async fn attach(&self) -> Result<()> {
-        self.services.spawn({
-            let agent_client = Arc::clone(&self.agent_client);
-            let pipeline_hash = self.pipeline_job.hash.clone();
-            let state = Arc::clone(&self.state);
-            let pipeline_metadata = self.pipeline_job.pipeline.metadata.clone();
-            async move {
-                let subscriber = agent_client
-                    .session
-                    .declare_subscriber(&format!(
-                        "group/{}/status/pipeline_job/{}/**",
-                        &agent_client.group, &pipeline_hash
-                    ))
-                    .await
-                    .context(selector::AgentCommunicationFailure {})?;
-                // let tracker = TaskTracker::new();
-                loop {
-                    let sample = subscriber
-                        .recv_async()
-                        .await
-                        .context(selector::AgentCommunicationFailure {})?;
-                    // todo: can remove need for this by updating RE_AGENT_KEY_EXPR
-                    let subtopics = sample.key_expr().as_str().split('/').collect::<Vec<_>>();
-                    let (feed_type, source) = (subtopics[5], subtopics[6]);
-                    let payload = serde_json::from_slice::<Payload<Packet, ()>>(
-                        &sample.payload().to_bytes(),
-                    )?;
-                    if feed_type == "output" {
-                        let mut inner_state = state.lock().expect("debug");
-                        if let Some(node_info) = inner_state.get_mut(source) {
-                            let node_state = match &payload {
-                                Payload::Cancelled => NodeState::Cancelled,
-                                Payload::Failed(error_msg) => {
-                                    NodeState::Failed(error_msg.to_owned())
-                                }
-                                Payload::End(()) => NodeState::Completed,
-                                Payload::Stream(_) => node_info.state.clone(),
-                            };
-                            *node_info = NodeInfo {
-                                state: node_state,
-                                completed_packets: node_info.completed_packets
-                                    + u32::from(matches!(payload, Payload::Stream(_))),
-                            };
-                        } else {
-                            let node_state = match &payload {
-                                Payload::Cancelled => NodeState::Cancelled,
-                                Payload::Failed(error_msg) => {
-                                    NodeState::Failed(error_msg.to_owned())
-                                }
-                                Payload::End(()) => NodeState::Completed,
-                                Payload::Stream(_) => NodeState::Active,
-                            };
-                            inner_state.insert(
-                                source.to_owned(),
-                                NodeInfo {
-                                    state: node_state,
-                                    completed_packets: u32::from(matches!(
-                                        payload,
-                                        Payload::Stream(_)
-                                    )),
-                                },
-                            );
-                        }
-                    } else if feed_type == "input" {
-                        let mut inner_state = state.lock().expect("debug");
-                        if !inner_state.contains_key(source) {
-                            inner_state.insert(
-                                source.to_owned(),
-                                NodeInfo {
-                                    state: NodeState::Active,
-                                    completed_packets: 0,
-                                },
-                            );
-                        }
-                    }
-                    let inner_state = state.lock().expect("debug");
-                    if inner_state.keys().collect::<HashSet<_>>()
-                        == pipeline_metadata.keys().collect::<HashSet<_>>()
-                        && !inner_state.values().any(|v| {
-                            matches!(v.state, NodeState::Idle)
-                                || matches!(v.state, NodeState::Active)
-                        })
-                    {
-                        break;
-                    }
-                }
-                Ok::<_, OrcaError>(())
-            }
-        });
-        Ok(())
+    #[expect(clippy::unwrap_used, reason = "debug")]
+    pub fn status(&self) -> PipelineStatus {
+        self.status.lock().unwrap().clone()
     }
     /// Generates summary of compute pipeline status.
     ///

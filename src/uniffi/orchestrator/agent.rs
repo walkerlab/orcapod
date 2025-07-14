@@ -15,8 +15,8 @@ use futures_util::future::join_all;
 use getset::CloneGetters;
 use serde_json::Value;
 use snafu::{OptionExt as _, ResultExt as _};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::task::JoinSet;
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{task::JoinSet, time::sleep as async_sleep};
 use uniffi;
 use zenoh;
 
@@ -54,7 +54,7 @@ pub struct AgentClient {
     pub(crate) session: zenoh::Session,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl AgentClient {
     /// Create a client to connect to the agent network.
     ///
@@ -96,12 +96,15 @@ impl AgentClient {
     /// # Errors
     ///
     /// Will fail if there is an issue publishing the pipeline job.
-    pub async fn start_pipeline_run(&self, pipeline_run: Arc<PipelineRun>) -> Result<()> {
+    pub async fn start_pipeline_job(&self, pipeline_job: Arc<PipelineJob>) -> Result<PipelineRun> {
+        let pipeline_run = self.new_pipeline_run(&pipeline_job);
+        async_sleep(Duration::from_secs(1)).await; // Give a chance for pipeline run listeners to start.
         self.publish(
             &format!("request/pipeline_job/{}", pipeline_run.pipeline_job.hash),
             &pipeline_run.pipeline_job,
         )
-        .await
+        .await?;
+        Ok(pipeline_run)
     }
     /// Wait for pipeline result to be ready.
     ///
@@ -110,34 +113,44 @@ impl AgentClient {
     /// Will return `Err` if there is an issue creating a pipeline result.
     #[expect(
         clippy::indexing_slicing,
+        clippy::excessive_nesting,
         reason = "Subscribe key expression ensures we will have enough elements."
     )]
     pub async fn get_pipeline_result(
         &self,
         pipeline_run: Arc<PipelineRun>,
     ) -> Result<PipelineResult> {
-        let subscriber = self
-            .session
-            .declare_subscriber(&format!(
-                "group/{}/*/pipeline_job/{}/**",
-                self.group, pipeline_run.pipeline_job.hash
-            ))
-            .await
-            .context(selector::AgentCommunicationFailure {})?;
-        let pipeline_result_result;
-        loop {
-            let sample = subscriber
-                .recv_async()
-                .await
-                .context(selector::AgentCommunicationFailure {})?;
-            let topic_kind = sample.key_expr().as_str().split('/').collect::<Vec<_>>()[2];
-            if ["success", "failure"].contains(&topic_kind) {
-                pipeline_result_result =
-                    serde_json::from_slice::<PipelineResult>(&sample.payload().to_bytes())?;
-                break;
+        let pipeline_run_status = pipeline_run.status();
+        Ok(match &pipeline_run_status {
+            PipelineStatus::Completed | PipelineStatus::Failed => PipelineResult {
+                pipeline_job: Arc::clone(&pipeline_run.pipeline_job),
+                status: pipeline_run_status,
+            },
+            PipelineStatus::Running => {
+                let subscriber = self
+                    .session
+                    .declare_subscriber(&format!(
+                        "group/{}/*/pipeline_job/{}/**",
+                        self.group, pipeline_run.pipeline_job.hash
+                    ))
+                    .await
+                    .context(selector::AgentCommunicationFailure {})?;
+                let pipeline_result_result;
+                loop {
+                    let sample = subscriber
+                        .recv_async()
+                        .await
+                        .context(selector::AgentCommunicationFailure {})?;
+                    let topic_kind = sample.key_expr().as_str().split('/').collect::<Vec<_>>()[2];
+                    if ["success", "failure"].contains(&topic_kind) {
+                        pipeline_result_result =
+                            serde_json::from_slice::<PipelineResult>(&sample.payload().to_bytes())?;
+                        break;
+                    }
+                }
+                pipeline_result_result
             }
-        }
-        Ok(pipeline_result_result)
+        })
     }
     /// Watch orchestration agent communication.
     ///
@@ -260,6 +273,7 @@ impl Agent {
                             match &pipeline_result.status {
                                 PipelineStatus::Completed => "success",
                                 PipelineStatus::Failed => "failure",
+                                PipelineStatus::Running => todo!("Should not be possible."),
                             },
                             pipeline_result.pipeline_job.hash
                         ),
