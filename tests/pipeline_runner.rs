@@ -1,4 +1,5 @@
 #![expect(missing_docs, reason = "OK in tests.")]
+
 // If 'fixture' is a local module, ensure there is a 'mod fixture;' statement or a 'fixture.rs' file in the same directory or in 'tests/'.
 // If 'fixture' is an external crate, add it to Cargo.toml and import as shown below.
 // use fixture::pipeline_job;

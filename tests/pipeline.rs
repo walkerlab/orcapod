@@ -33,8 +33,8 @@ fn creation() -> Result<()> {
     // so graph of 5, and 4 kernels due to the mapping being repeated
     assert_eq!(
         pipeline.kernel_lut.len(),
-        4,
-        "Kernel LUT should have exactly 4 entries."
+        7,
+        "Kernel LUT should have exactly 7 entries."
     );
 
     Ok(())
@@ -44,7 +44,7 @@ fn creation() -> Result<()> {
 fn root_nodes() -> Result<()> {
     let pipeline = pipeline()?;
 
-    assert_eq!(pipeline.get_root_nodes().count(), 1);
+    assert_eq!(pipeline.get_root_nodes().count(), 2);
     Ok(())
 }
 
@@ -62,6 +62,15 @@ fn get_parents_key_for_node() -> Result<()> {
     let node_key = pipeline.get_root_nodes().next().unwrap();
 
     assert_eq!(pipeline.get_parents_for_node(node_key).count(), 0);
+    Ok(())
+}
+
+#[test]
+fn get_childen_for_node() -> Result<()> {
+    let pipeline = pipeline()?;
+    let node_key = pipeline.get_root_nodes().next().unwrap();
+
+    assert_eq!(pipeline.get_children_for_node(node_key).count(), 1);
     Ok(())
 }
 

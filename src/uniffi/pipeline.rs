@@ -12,7 +12,7 @@ use petgraph::{graph::DiGraph, prelude::NodeIndex};
 use serde::Serialize;
 use std::{
     backtrace::Backtrace,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{Hash, Hasher},
     string::String,
     sync::Arc,
@@ -243,8 +243,9 @@ impl Pipeline {
         })
     }
 
-    /// Returns the input specification for the pipeline.
-    /// This is currently a combination of all the root nodes' input specifications.
+    /// Returns the input specification for the pipeline, where the specification is a list of unique
+    /// keys that are required as input to the pipeline.
+    ///
     /// # Errors
     /// Will error out if it fails to get the kernel from the kernel lookup table
     pub fn get_input_spec(&self) -> Result<Vec<&String>> {
@@ -254,7 +255,7 @@ impl Pipeline {
         Ok(self
             .get_root_nodes()
             .map(|node| Ok(get(&self.kernel_lut, &node.kernel_hash)?.get_input_keys()))
-            .collect::<Result<Vec<_>>>()?
+            .collect::<Result<HashSet<_>>>()?
             .into_iter()
             .flatten()
             .collect())

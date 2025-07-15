@@ -190,7 +190,7 @@ pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestCo
 
 // Pipeline stuff
 
-pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
+pub fn append_name_pod(pod_name: &str) -> Result<Pod> {
     Pod::new(
         Some(Annotation {
             name: pod_name.to_owned(),
@@ -225,21 +225,30 @@ pub fn pod_append_name(pod_name: &str) -> Result<Pod> {
 
 pub fn pipeline() -> Result<Pipeline> {
     // Create a simple pipeline where the functions job is to add append their name into the input file
-    // Structure: A -> B -> C
+    // Structure: A -> Mapper -> Joiner -> B -> Mapper -> C, D -> Mapper -> Joiner
 
     // Create the components of the pipeline
-    let pod_a = pod_append_name("A")?;
-    let pod_b = pod_append_name("B")?;
-    let pod_c = pod_append_name("C")?;
+    let pod_a = append_name_pod("A")?;
+    let pod_b = append_name_pod("B")?;
+    let pod_c = append_name_pod("C")?;
+    let pod_d = append_name_pod("D")?;
 
+    // Create the file mapper that will be used to map the output of one pod to the input of another
     let file_mapper = Mapper::new(HashMap::from([(
         "output_text".to_owned(),
         "input_text".to_owned(),
     )]))?;
+
+    // Create the file mapper that will be used to map the output of one pod to the input of another
+    let file_mapper_for_pod_d = Mapper::new(HashMap::from([(
+        "output_text".to_owned(),
+        "input2_text".to_owned(),
+    )]))?;
+
     let mut kernel_to_node_name = HashMap::<Kernel, Vec<String>>::new();
 
     // Insert the pods into the kernel_to_node_name mapping
-    for pod in [&pod_a, &pod_b, &pod_c] {
+    for pod in [&pod_a, &pod_b, &pod_c, &pod_d] {
         kernel_to_node_name
             .entry(pod.clone().into())
             .or_default()
@@ -252,18 +261,34 @@ pub fn pipeline() -> Result<Pipeline> {
             );
     }
 
-    // Insert the mapping next
-    for idx in 0..2 {
-        kernel_to_node_name
-            .entry(file_mapper.clone().into())
-            .or_default()
-            .push("file_mapper_".to_owned() + &idx.to_string());
-    }
+    // Add mapper to end of pod_a and pod_b
+    kernel_to_node_name
+        .entry(file_mapper.clone().into())
+        .or_default()
+        .push("pod_a_mapper".to_owned());
+
+    kernel_to_node_name
+        .entry(file_mapper.into())
+        .or_default()
+        .push("pod_b_mapper".to_owned());
+
+    // Insert mapper for pod_d
+    kernel_to_node_name
+        .entry(file_mapper_for_pod_d.into())
+        .or_default()
+        .push("pod_d_mapper".to_owned());
+
+    // Add the joiner
+    kernel_to_node_name
+        .entry(Kernel::Joiner)
+        .or_default()
+        .push("pod_b_joiner".to_owned());
 
     // Write all the edges in DOT format
     let dot = "
         digraph {
-        A -> file_mapper_0 -> B -> file_mapper_1 -> C;
+        A -> pod_a_mapper -> pod_b_joiner -> B -> pod_b_mapper -> C;
+        D -> pod_d_mapper -> pod_b_joiner;
         }
     ";
 

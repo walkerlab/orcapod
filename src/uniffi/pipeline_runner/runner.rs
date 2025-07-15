@@ -426,7 +426,7 @@ struct NodeMetaData {
 ///
 /// Main purpose was to reduce the amount of code duplication between different node processors
 /// As a result, each processor only needs to worry about writing their own function to process the msg.
-trait NodeProcessor {
+pub(crate) trait NodeProcessor {
     fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message>;
 
     async fn start(&mut self) {
@@ -668,6 +668,7 @@ struct JoinerProcessor {
     input_packet_cache: HashMap<String, Vec<HashMap<String, PathSet>>>,
     completed_parents: Vec<String>,
     node_metadata: NodeMetaData,
+    initial_computation_completed: bool,
 }
 
 impl JoinerProcessor {
@@ -680,11 +681,12 @@ impl JoinerProcessor {
             input_packet_cache,
             node_metadata,
             completed_parents: Vec::new(),
+            initial_computation_completed: false,
         }
     }
 
     fn compute_new_packet_combination(
-        &self,
+        &mut self,
         sender_node_id: &str,
         new_packet: &HashMap<String, PathSet>,
     ) -> Result<Vec<HashMap<String, PathSet>>> {
@@ -694,12 +696,36 @@ impl JoinerProcessor {
             .input_packet_cache
             .keys()
             .filter(|key| *key != sender_node_id);
+
+        // Create a vector to hold the incoming packet
+        // This will be used to compute the cartesian product and will be modified if the initial computation is not completed
+        let mut incoming_packet = vec![new_packet.clone()];
+
+        // Determine if the initial computation has been computed
+        if !self.initial_computation_completed {
+            // Check if we at least have one cached packet for each of the other parents
+            for parent_id in other_parent_ids.clone() {
+                if get(&self.input_packet_cache, parent_id)?.is_empty() {
+                    // We are still missing other parents, so we can't compute the new packet combination yet
+                    return Ok(Vec::new());
+                }
+            }
+
+            // We have at least one packet for each of the other parents, thus we can compute the cartesian product
+            // For the initial computation, we will add all of the add all previous packets for this sender
+            get(&self.input_packet_cache, &sender_node_id.to_owned())?
+                .iter()
+                .for_each(|packet| incoming_packet.push(packet.clone()));
+
+            self.initial_computation_completed = true;
+        }
+
         let mut factors = other_parent_ids
             .map(|id| get(&self.input_packet_cache, id))
             .collect::<Result<Vec<_>>>()?;
 
         // Add the new incoming packet as a factor
-        let incoming_packet = vec![new_packet.clone()];
+
         factors.push(&incoming_packet);
 
         let result = factors
@@ -805,4 +831,104 @@ impl NodeProcessor for JoinerProcessor {
 
         false
     }
+}
+
+#[cfg(test)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(clippy::panic_in_result_fn, reason = "Unit test")]
+async fn joiner() -> Result<()> {
+    // Create a fake mpsc channel for the node
+    let (_, node_rx) = mpsc::channel::<Message>(128);
+
+    // Create a child mpsc
+    let (child_tx, mut child_rx) = mpsc::channel::<Message>(128);
+
+    let node_metadata = NodeMetaData {
+        node_id: "joiner_node".to_owned(),
+        node_rx,
+        child_nodes_txs: vec![child_tx],
+        namespace: "test".to_owned(),
+        namespace_lookup: HashMap::new(),
+    };
+
+    let mut joiner_process = JoinerProcessor::new(
+        vec!["0".to_owned(), "1".to_owned(), "2".to_owned()],
+        node_metadata,
+    );
+
+    // Make each parent has 1 packet
+    for idx in 0..2 {
+        joiner_process
+            .process_packet(
+                &format!("{idx}"),
+                make_test_packet("data_1.txt".to_owned().into()),
+            )
+            .await?;
+    }
+
+    // Confirm that there should be no output yet
+
+    // Now we send the missing parent package
+    // This will yield one unique combination
+    joiner_process
+        .process_packet("2", make_test_packet("data_1.txt".to_owned().into()))
+        .await?;
+
+    // Confirm that the output is sent to the child channel
+    assert!(
+        child_rx.len() == 1,
+        "Should have only one message in the channel",
+    );
+    assert!(
+        child_rx.recv().await.is_some(),
+        "Should have received a message"
+    );
+
+    // Insert another one
+    joiner_process
+        .process_packet("2", make_test_packet("data_2.txt".to_owned().into()))
+        .await?;
+
+    // The joiner node should send another one
+    assert!(
+        child_rx.len() == 1,
+        "Should have only one message in the channel",
+    );
+    assert!(
+        child_rx.recv().await.is_some(),
+        "Should have received a message"
+    );
+
+    // Now insert to packet for parent 0, which should yield 2 packets in total
+    // This is because of the cartesian product
+    joiner_process
+        .process_packet("0", make_test_packet("data_2.txt".to_owned().into()))
+        .await?;
+
+    assert!(
+        child_rx.len() == 2,
+        "Should have only two messages in the channel",
+    );
+    assert!(
+        child_rx.recv().await.is_some(),
+        "Should have received a message"
+    );
+
+    Ok(())
+}
+
+#[cfg(test)]
+fn make_test_packet(path: PathBuf) -> HashMap<String, PathSet> {
+    use crate::uniffi::model::{Blob, BlobKind};
+
+    let path_set = PathSet::Unary(Blob {
+        kind: BlobKind::File,
+        location: URI {
+            namespace: "test".to_owned(),
+            path,
+        },
+        checksum: String::new(),
+    });
+
+    HashMap::from([("key".to_owned(), path_set)])
 }
