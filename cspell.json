@@ -15,7 +15,9 @@
         "numpy",
         "graphviz",
         "uniffi",
-        "cffi"
+        "cffi",
+        "zenoh",
+        "PodJob",
     ],
     "ignoreWords": [
         "relpath",
@@ -77,7 +79,9 @@
         "petgraph",
         "rfind",
         "itertools",
-        "oneshot"
+        "oneshot",
+        "patchelf",
+        "colinianking"
     ],
     "useGitignore": false,
     "ignorePaths": [

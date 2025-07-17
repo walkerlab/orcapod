@@ -12,10 +12,8 @@ use std::{
     io,
     path::{self},
 };
-use tokio::{
-    sync::{mpsc::error::SendError, oneshot},
-    task::JoinError,
-};
+use tokio::sync::{mpsc::error::SendError, oneshot};
+use tokio::task;
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
@@ -87,16 +85,17 @@ impl From<serde_yaml::Error> for OrcaError {
         }
     }
 }
-impl From<JoinError> for OrcaError {
-    fn from(error: JoinError) -> Self {
+impl From<task::JoinError> for OrcaError {
+    fn from(error: task::JoinError) -> Self {
         Self {
-            kind: Kind::IoError {
-                source: error.into(),
+            kind: Kind::TokioTaskJoinError {
+                source: error,
                 backtrace: Some(Backtrace::capture()),
             },
         }
     }
 }
+
 impl From<SendError<Message>> for OrcaError {
     fn from(error: SendError<Message>) -> Self {
         Self {
@@ -126,7 +125,8 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
+            Kind::AgentCommunicationFailure { backtrace, .. }
+            | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::FailedToParseDot { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
@@ -136,6 +136,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoContainerNames { backtrace, .. }
             | Kind::NoFileName { backtrace, .. }
             | Kind::NoMatchingPodRun { backtrace, .. }
+            | Kind::NoRemainingServices { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChannelReceiveError { backtrace, .. }
@@ -144,7 +145,8 @@ impl fmt::Debug for OrcaError {
             | Kind::PathPrefixError { backtrace, .. }
             | Kind::SendError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
-            | Kind::SerdeYamlError { backtrace, .. } => {
+            | Kind::SerdeYamlError { backtrace, .. }
+            | Kind::TokioTaskJoinError { backtrace, .. } => {
                 write!(f, "{}{}", self.kind, format_stack(backtrace.as_ref()))
             }
         }

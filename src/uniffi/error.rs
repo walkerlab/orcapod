@@ -10,11 +10,13 @@ use serde_yaml;
 use snafu::prelude::Snafu;
 use std::{
     backtrace::Backtrace,
-    io,
+    error::Error,
+    io, marker,
     path::{self, PathBuf},
     result,
 };
 use tokio::sync::oneshot;
+use tokio::task;
 use uniffi;
 
 /// Shorthand for a Result that returns an `OrcaError`.
@@ -24,6 +26,11 @@ pub type Result<T, E = OrcaError> = result::Result<T, E>;
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
+    #[snafu(display("Agent encountered a communication error. Reason: {source}."))]
+    AgentCommunicationFailure {
+        source: Box<dyn Error + marker::Send + Sync>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display(
         "Received an empty response when attempting to load the alternate container image file: {path:?}."
     ))]
@@ -77,6 +84,8 @@ pub(crate) enum Kind {
         pod_job_hash: String,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("All services have completed."))]
+    NoRemainingServices { backtrace: Option<Backtrace> },
     #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
     NoTagFoundInContainerAltImage {
         path: PathBuf,
@@ -120,6 +129,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     SerdeYamlError {
         source: serde_yaml::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    TokioTaskJoinError {
+        source: task::JoinError,
         backtrace: Option<Backtrace>,
     },
 }
