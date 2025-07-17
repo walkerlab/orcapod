@@ -1,8 +1,5 @@
 use crate::{
-    core::orchestrator::{
-        ASYNC_RUNTIME,
-        agent::{EventPayload, start_service},
-    },
+    core::orchestrator::agent::{EventPayload, start_service},
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{PodJob, PodResult},
@@ -11,12 +8,13 @@ use crate::{
     },
 };
 use derive_more::Display;
+use futures_executor::block_on;
 use futures_util::future::join_all;
 use getset::CloneGetters;
 use serde_json::Value;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::{runtime::Handle, task::JoinSet};
+use tokio::task::JoinSet;
 use uniffi;
 use zenoh;
 
@@ -60,13 +58,10 @@ impl AgentClient {
     /// Will fail if there is an issue initializing a session.
     #[uniffi::constructor]
     pub fn new(group: String, host: String) -> Result<Self> {
-        let handle = Handle::try_current()
-            .ok()
-            .unwrap_or_else(|| ASYNC_RUNTIME.handle().clone());
         Ok(Self {
             group,
             host,
-            session: handle.block_on(async {
+            session: block_on(async {
                 Ok::<_, OrcaError>(
                     zenoh::open(zenoh::Config::default())
                         .await
