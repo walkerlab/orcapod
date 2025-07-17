@@ -6,20 +6,21 @@ use crate::{
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{PodJob, PodResult},
-        orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
+        orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
     },
 };
 use async_trait;
 use bollard::{
     Docker,
     container::{RemoveContainerOptions, StartContainerOptions, WaitContainerOptions},
+    errors::Error::DockerContainerWaitError,
     image::{CreateImageOptions, ImportImageOptions},
 };
 use derive_more::Display;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, futures::TryFutureExt as _};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::fs::File;
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{fs::File, time::sleep as async_sleep};
 use tokio_util::{
     bytes::{Bytes, BytesMut},
     codec::{BytesCodec, FramedRead},
@@ -192,12 +193,32 @@ impl Orchestrator for LocalDockerOrchestrator {
             })?;
         Ok(run_info)
     }
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "Favor readability due to complexity in external dependency."
+    )]
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api
+        match self
+            .api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()
-            .await?;
-        let result_info = self.get_info(pod_run).await?;
+            .await
+        {
+            Ok(_) => (),
+            Err(err) => match err {
+                DockerContainerWaitError { .. } => (),
+                _ => return Err(OrcaError::from(err)),
+            },
+        }
+
+        let mut result_info: RunInfo;
+        while {
+            result_info = self.get_info(pod_run).await?;
+            matches!(&result_info.status, Status::Running)
+        } {
+            async_sleep(Duration::from_millis(100)).await;
+        }
+
         PodResult::new(
             None,
             Arc::clone(&pod_run.pod_job),
