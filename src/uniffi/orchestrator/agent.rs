@@ -1,8 +1,5 @@
 use crate::{
-    core::orchestrator::{
-        ASYNC_RUNTIME,
-        agent::{EventPayload, start_service},
-    },
+    core::orchestrator::agent::{EventPayload, start_service},
     uniffi::{
         error::{OrcaError, Result, selector},
         model::PodJob,
@@ -10,6 +7,7 @@ use crate::{
     },
 };
 use derive_more::Display;
+use futures_executor::block_on;
 use futures_util::future::join_all;
 use getset::CloneGetters;
 use serde_json::Value;
@@ -49,7 +47,7 @@ impl AgentClient {
         Ok(Self {
             group,
             host,
-            session: ASYNC_RUNTIME.block_on(async {
+            session: block_on(async {
                 Ok::<_, OrcaError>(
                     zenoh::open(zenoh::Config::default())
                         .await
