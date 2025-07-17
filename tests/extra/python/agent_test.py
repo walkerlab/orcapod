@@ -12,6 +12,7 @@ from orcapod import (
     Agent,
     AgentClient,
     LocalDockerOrchestrator,
+    LocalFileStore,
     PodJob,
     Uri,
     Pod,
@@ -30,7 +31,7 @@ async def verify(group, pod_job_count):
         with session.declare_subscriber(
             f"group/{group}/success/pod_job/**", count
         ) as subscriber:
-            await asyncio.sleep(10)
+            await asyncio.sleep(20)
 
     if counter != pod_job_count:
         raise Exception(f"Unexpected successful pod job count: {counter}.")
@@ -38,7 +39,12 @@ async def verify(group, pod_job_count):
 
 async def main(client, agent, test_dir, namespace_lookup, pod_jobs):
     watcher = asyncio.create_task(client.watch(key_expr="**"))
-    worker = asyncio.create_task(agent.start(namespace_lookup=namespace_lookup))
+    worker = asyncio.create_task(
+        agent.start(
+            namespace_lookup=namespace_lookup,
+            available_store=LocalFileStore(directory=f"{test_dir}/store"),
+        ),
+    )
     await asyncio.sleep(5)  # ensure service ready
 
     try:

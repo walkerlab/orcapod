@@ -3,22 +3,23 @@
     clippy::panic_in_result_fn,
     clippy::panic,
     clippy::expect_used,
+    clippy::indexing_slicing,
     reason = "OK in tests."
 )]
 
 pub mod fixture;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pull_image};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Pod, PodJob, PodResult, URI},
+    model::PodResult,
     orchestrator::{
         agent::{Agent, AgentClient},
         docker::LocalDockerOrchestrator,
     },
+    store::{ModelID, Store as _, filestore::LocalFileStore},
 };
 use std::{
     collections::HashMap,
-    path::PathBuf,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -39,8 +40,10 @@ fn simple() -> Result<()> {
 }
 
 #[expect(clippy::excessive_nesting, reason = "Nesting is manageable")]
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn parallel_four_cores() -> Result<()> {
+    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
+    let store = LocalFileStore::new(test_dirs.0["default"].path().into());
     // config
     let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
     pull_image(image_reference)?;
@@ -68,35 +71,56 @@ async fn parallel_four_cores() -> Result<()> {
     });
     services.spawn({
         let inner_agent = agent.clone();
-        async move { inner_agent.start(&NAMESPACE_LOOKUP_READ_ONLY).await }
+        let inner_store = store.clone();
+        async move {
+            inner_agent
+                .start(&NAMESPACE_LOOKUP_READ_ONLY, Some(inner_store.into()))
+                .await
+        }
     });
     services.spawn(async move {
         let session = zenoh::open(zenoh::Config::default())
             .await
             .expect("Unable to create a zenoh session.");
         let subscriber = session
-            .declare_subscriber(&format!("group/{group}/success/pod_job/**"))
+            .declare_subscriber(&format!("group/{group}/*/pod_job/**"))
             .await
             .expect("Unable to create subscriber.");
-        let mut counter = 0;
+        let mut success_counter = 0;
+        let mut failure_counter = 0;
         while let Ok(sample) = subscriber.recv_async().await {
-            counter += 1;
-            let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
-            assert!(
-                u128::from(pod_result.created * 1000)
-                    <= current_timestamp + margin_millis + u128::from(service_readiness_delay_secs),
-                "Started pod run too late."
-            );
-            assert!(
-                u128::from(pod_result.terminated * 1000)
-                    <= current_timestamp
-                        + 2 * margin_millis
-                        + run_duration_secs * 1000
-                        + u128::from(service_readiness_delay_secs),
-                "Took too long to finish pod run."
-            );
-            if counter == 4 {
-                break;
+            let topic_kind = sample.key_expr().as_str().split('/').collect::<Vec<_>>()[2];
+            if ["success", "failure"].contains(&topic_kind) {
+                let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
+                assert!(
+                    u128::from(pod_result.created * 1000)
+                        <= current_timestamp
+                            + margin_millis
+                            + u128::from(service_readiness_delay_secs),
+                    "Started pod run too late."
+                );
+                assert!(
+                    u128::from(pod_result.terminated * 1000)
+                        <= current_timestamp
+                            + 2 * margin_millis
+                            + u128::from(run_duration_secs) * 1000
+                            + u128::from(service_readiness_delay_secs),
+                    "Took too long to finish pod run."
+                );
+                async_sleep(Duration::from_secs(1)).await; // give agent a chance to save pod result first
+                assert_eq!(
+                    store.load_pod_result(&ModelID::Hash(pod_result.hash.clone()))?,
+                    pod_result,
+                    "Stored pod result does not match."
+                );
+                if topic_kind == "success" {
+                    success_counter += 1;
+                } else {
+                    failure_counter += 1;
+                }
+                if success_counter == 3 && failure_counter == 1 {
+                    break;
+                }
             }
         }
         Ok(())
@@ -107,44 +131,9 @@ async fn parallel_four_cores() -> Result<()> {
     });
     async_sleep(Duration::from_secs(service_readiness_delay_secs)).await;
     // submit requests
-    let pod_jobs = (1..5)
-        .map(|i| {
-            Ok(Arc::new(PodJob::new(
-                Some(Annotation {
-                    name: "simple".to_owned(),
-                    description: "This is an example pod job.".to_owned(),
-                    version: format!("0.{i}.0"),
-                }),
-                Pod::new(
-                    Some(Annotation {
-                        name: "simple".to_owned(),
-                        description: "This is an example pod.".to_owned(),
-                        version: format!("{i}.0.0"),
-                    }),
-                    image_reference.into(),
-                    format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"),
-                    HashMap::new(),
-                    PathBuf::from("/tmp/output"),
-                    HashMap::new(),
-                    "https://github.com/user/simple".to_owned(),
-                    0.1,          // 100 millicores as frac cores
-                    10_u64 << 20, // 10 MiB in bytes
-                    None,
-                )?
-                .into(),
-                HashMap::new(),
-                URI {
-                    namespace: "default".to_owned(),
-                    path: PathBuf::from("."),
-                },
-                1.0,          // 1000 millicores as frac cores
-                10_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
-                None,
-                &NAMESPACE_LOOKUP_READ_ONLY,
-            )?))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    client.submit_pod_jobs(pod_jobs).await;
+    client
+        .submit_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 3, 1)?)
+        .await;
 
     services
         .join_next()

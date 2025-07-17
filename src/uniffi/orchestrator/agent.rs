@@ -2,8 +2,9 @@ use crate::{
     core::orchestrator::agent::{EventPayload, start_service},
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::PodJob,
+        model::{PodJob, PodResult},
         orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
+        store::{Store as _, filestore::LocalFileStore},
     },
 };
 use derive_more::Display;
@@ -16,6 +17,19 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::task::JoinSet;
 use uniffi;
 use zenoh;
+
+/// A response, similar to Rust's `Result` but casting error to `String`.
+///
+/// This is a workaround due to `UniFFI` limitations when trying to send a collection of `Result`
+/// over the CFFI boundary e.g. concurrent calls where it is necessary to know the status of each
+/// request to determine what to retry.
+#[derive(uniffi::Enum)]
+pub enum Response {
+    /// Success
+    Ok,
+    /// Error cast to `String`
+    Err(String),
+}
 
 /// Client to connect to an execution agent within a coordinated fleet. Connection optimized/rerouted by Zenoh.
 #[expect(
@@ -58,14 +72,14 @@ impl AgentClient {
     }
     /// Submit many pod jobs to be processed in parallel.
     /// Return order will match inputs, casting outputs to `String` (since `uniffi` doesn't support sending unwrapped `Result`s).
-    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<String> {
+    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<Response> {
         join_all(pod_jobs.iter().map(|pod_job| async {
             match self
                 .publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
                 .await
             {
-                Ok(()) => "ok".into(),
-                Err(error) => error.to_string(),
+                Ok(()) => Response::Ok,
+                Err(error) => Response::Err(error.to_string()),
             }
         }))
         .await
@@ -126,13 +140,18 @@ impl Agent {
     /// # Errors
     ///
     /// Will stop and return an error if encounters an error while processing any pod job request.
-    pub async fn start(&self, namespace_lookup: &HashMap<String, PathBuf>) -> Result<()> {
+    #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
+    pub async fn start(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        available_store: Option<Arc<LocalFileStore>>,
+    ) -> Result<()> {
         let mut services = JoinSet::new();
         services.spawn(start_service(
             Arc::new(self.clone()),
             "request/pod_job/**".to_owned(),
             namespace_lookup.clone(),
-            |input: &PodJob| EventPayload::Request(input.clone()),
+            |pod_job: &PodJob| EventPayload::Request(pod_job.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {
                 let pod_run = agent
                     .orchestrator
@@ -152,6 +171,33 @@ impl Agent {
                 client.publish(response_topic, &pod_result).await
             },
         ));
+        if let Some(store) = available_store {
+            services.spawn(start_service(
+                Arc::new(self.clone()),
+                "success/pod_job/**".to_owned(),
+                namespace_lookup.clone(),
+                |pod_result: &PodResult| EventPayload::Success(pod_result.clone()),
+                {
+                    let inner_store = Arc::clone(&store);
+                    async move |_, _, _, pod_result| {
+                        inner_store.save_pod_result(&pod_result)?;
+                        Ok(())
+                    }
+                },
+                async |_, ()| Ok(()),
+            ));
+            services.spawn(start_service(
+                Arc::new(self.clone()),
+                "failure/pod_job/**".to_owned(),
+                namespace_lookup.clone(),
+                |pod_result: &PodResult| EventPayload::Failure(pod_result.clone()),
+                async move |_, _, _, pod_result| {
+                    store.save_pod_result(&pod_result)?;
+                    Ok(())
+                },
+                async |_, ()| Ok(()),
+            ));
+        }
         services
             .join_next()
             .await
