@@ -12,7 +12,8 @@ use orcapod::{
 };
 use serde_json;
 use serde_yaml;
-use std::{collections::HashMap, fs, ops::Deref as _, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fs, ops::Deref as _, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{self, time::sleep as async_sleep};
 
 fn contains_debug(error: impl Into<OrcaError>) -> bool {
     !format!("{:?}", error.into()).is_empty()
@@ -72,6 +73,16 @@ fn external_yaml() {
     assert!(
         serde_yaml::from_str::<HashMap<String, String>>(":").is_err_and(contains_debug),
         "Did not raise a serde yaml error."
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn external_tokio_task() {
+    let handle = tokio::spawn(async_sleep(Duration::from_secs(60 * 60)));
+    handle.abort();
+    assert!(
+        handle.await.is_err_and(contains_debug),
+        "Did not raise a tokio task join error."
     );
 }
 
