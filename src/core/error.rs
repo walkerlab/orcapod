@@ -25,6 +25,16 @@ impl From<BollardError> for OrcaError {
         }
     }
 }
+impl From<EncodingError> for OrcaError {
+    fn from(error: EncodingError) -> Self {
+        Self {
+            kind: Kind::FailedToParseDot {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
 impl From<oneshot::error::RecvError> for OrcaError {
     fn from(error: oneshot::error::RecvError) -> Self {
         Self {

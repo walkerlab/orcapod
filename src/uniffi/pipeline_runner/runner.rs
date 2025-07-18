@@ -6,7 +6,7 @@ use crate::{
         pipeline::{Kernel, Mapper, Node, PipelineJob, PipelineResult},
     },
 };
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, config, serde::encode_to_vec};
 use futures_util::future::try_join_all;
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
@@ -525,7 +525,11 @@ impl NodeProcessor for MapperProcessor {
         session
             .put(
                 output_key_exp,
-                bitcode::encode(&Message::NodeOutput(node_id.to_owned(), output_map)),
+                bincode::serde::encode_to_vec(
+                    &Message::NodeOutput(node_id.to_owned(), output_map),
+                    bincode::config::standard(),
+                )
+                .unwrap(),
             )
             .await
             .unwrap();
@@ -567,47 +571,10 @@ impl JoinerProcessor {
         }
     }
 
-    fn compute_new_packet_combination(
-        sender_node_id: &str,
-        new_packet: &HashMap<String, PathSet>,
-        packet_cache: HashMap<String, Vec<HashMap<String, PathSet>>>,
-    ) -> Result<Vec<HashMap<String, PathSet>>> {
-        // Combine the new packet with the existing packets in the cache
-        // Get all the cached packets from other parents
-        let other_parent_ids = packet_cache.keys().filter(|key| *key != sender_node_id);
-
-        // Create a vector to hold the incoming packet
-        // This will be used to compute the cartesian product and will be modified if the initial computation is not completed
-        let mut incoming_packet = vec![new_packet.clone()];
-
-        // Determine if the initial computation has been computed
-        if !self.initial_computation_completed {
-            // Check if we at least have one cached packet for each of the other parents
-            for parent_id in other_parent_ids.clone() {
-                if get(&self.input_packet_cache, parent_id)?.is_empty() {
-                    // We are still missing other parents, so we can't compute the new packet combination yet
-                    return Ok(Vec::new());
-                }
-            }
-
-            // We have at least one packet for each of the other parents, thus we can compute the cartesian product
-            // For the initial computation, we will add all of the add all previous packets for this sender
-            get(&self.input_packet_cache, &sender_node_id.to_owned())?
-                .iter()
-                .for_each(|packet| incoming_packet.push(packet.clone()));
-
-            self.initial_computation_completed = true;
-        }
-
-        let mut factors = other_parent_ids
-            .map(|id| get(&self.input_packet_cache, id))
-            .collect::<Result<Vec<_>>>()?;
-
-        // Add the new incoming packet as a factor
-
-        factors.push(&incoming_packet);
-
-        let result = factors
+    fn compute_cartesian_product(
+        factors: &Vec<&Vec<HashMap<String, PathSet>>>,
+    ) -> Vec<HashMap<String, PathSet>> {
+        factors
             .into_iter()
             .multi_cartesian_product()
             .map(|packets_to_combined| {
@@ -618,9 +585,7 @@ impl JoinerProcessor {
                         acc
                     })
             })
-            .collect::<Vec<_>>();
-
-        Ok(result)
+            .collect::<Vec<_>>()
     }
 }
 
@@ -641,6 +606,60 @@ impl NodeProcessor for JoinerProcessor {
                 key: sender_node_id.to_owned(),
             })?
             .push(packet.clone());
+
+        // Check if we have all the other parents needed to compute the cartesian product
+        if self.input_packet_cache.values().all(|v| !v.is_empty()) {
+            // Get all the cached packets from other parents
+            let other_parent_ids = self
+                .input_packet_cache
+                .keys()
+                .filter(|key| *key != sender_node_id);
+
+            // Build the factors of the product
+            let mut factors = other_parent_ids
+                .map(|id| get(&self.input_packet_cache, id))
+                .collect::<Result<Vec<_>>>()?;
+
+            // Add the new packet as a factor
+            factors.push(&vec![packet.clone()]);
+
+            // Compute the cartesian product of the factors
+            self.processing_tasks.spawn(async move {
+                let cartesian_product = Self::compute_cartesian_product(&factors);
+
+                // Post all products to the output channel
+                for output_packet in cartesian_product {
+                    let result = session.put(
+                        output_key_exp.to_owned() + SUCCESS_KEY_EXP,
+                        encode_to_vec(
+                            &Message::NodeOutput(node_id.to_owned(), output_packet),
+                            config::standard(),
+                        )?,
+                    );
+                }
+
+                Ok(())
+            });
+        }
+
+        // Check if this packet is the first packet from this parent node
+        if get(&self.input_packet_cache, sender_node_id)?.len() == 1 {}
+
+        // Determine if the initial computation is completed
+        if !self.initial_computation_completed {
+            // Check if we have at least one packet for each parent node
+            if self.input_packet_cache.values().all(|v| !v.is_empty()) {
+                self.initial_computation_completed = true;
+            } else {
+                // If not, we cannot compute the new packet combination yet
+                return Ok(());
+            }
+        }
+        if self.input_packet_cache.values().all(|v| !v.is_empty())
+            | self.input_packet_cache.values().any(|v| v.len() == 1)
+        {
+            // Initial case where we first have at least one packet for each parent node met
+        }
 
         self.processing_tasks.spawn(async move {
             let process_result = {

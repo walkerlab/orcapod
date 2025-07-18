@@ -107,6 +107,11 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
+    EncodingError {
+        source: EncodingError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
     GlobPatternError {
         source: glob::PatternError,
         backtrace: Option<Backtrace>,
