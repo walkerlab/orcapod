@@ -209,7 +209,14 @@ impl AgentClient {
     clippy::let_underscore_must_use,
     reason = "`result::Result<(), SendError<_>>` is the only uncaptured result since it would mean we can't transmit results over mpsc."
 )]
-pub async fn start_service<RequestF, RequestI, RequestR, ResponseF, ResponseI, ResponseR>(
+pub async fn start_service<
+    RequestF,  // function to run on requests
+    RequestI,  // input to the function for requests
+    RequestR,  // output to the function for requests
+    ResponseF, // function to run on completing a request i.e. response
+    ResponseI, // input to the function for responses
+    ResponseR, // output to the function for responses
+>(
     agent: Arc<Agent>,
     request_key_expr: String,
     namespace_lookup: HashMap<String, PathBuf>,
