@@ -29,6 +29,7 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 # make async fn in traits work with dyn traits
 async-trait = "0.1.88"
+bitcode = "0.6.6"
 # docker API in orchestrator
 bollard = "0.17.1"
 # datetime utilities

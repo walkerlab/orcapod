@@ -1,4 +1,3 @@
-use super::PipelineRun;
 use crate::{
     core::{crypto::hash_buffer, model::serialize_hashmap, util::get},
     uniffi::{
@@ -7,12 +6,14 @@ use crate::{
         pipeline::{Kernel, Mapper, Node, PipelineJob, PipelineResult},
     },
 };
+use bitcode::{Decode, Encode};
 use futures_util::future::try_join_all;
 use itertools::Itertools as _;
 use serde_yaml::Serializer;
 use snafu::OptionExt as _;
 use std::{
     collections::{HashMap, HashSet},
+    hash::{Hash, Hasher},
     path::PathBuf,
     sync::Arc,
 };
@@ -21,7 +22,7 @@ use tokio::{
     task::{JoinSet, spawn_blocking},
 };
 
-#[derive(Clone, Debug)]
+#[derive(Encode, Decode, Clone, Debug)]
 pub(crate) enum Message {
     /// String is the `parent_node_id`, while `HashMap` is output of the parent node
     NodeOutput(String, HashMap<String, PathSet>),
@@ -34,10 +35,25 @@ pub(crate) enum Message {
     clippy::type_complexity,
     reason = "too complex, but necessary for async handling"
 )]
-struct PipelineRunInfo {
-    node_task_join_set: JoinSet<Result<()>>, // Join set to track the tasks for this pipeline run
-    node_tx: HashMap<String, mpsc::Sender<Message>>,
+#[derive(Debug, Clone)]
+pub struct PipelineRun {
+    /// PipelineJob that this run is associated with
+    pub pipeline_job: PipelineJob, // The pipeline job that this run is associated with
     outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>, // String is the node key, while hash
+}
+
+impl PartialEq for PipelineRun {
+    fn eq(&self, other: &Self) -> bool {
+        self.pipeline_job.hash == other.pipeline_job.hash
+    }
+}
+
+impl Eq for PipelineRun {}
+
+impl Hash for PipelineRun {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pipeline_job.hash.hash(state);
+    }
 }
 
 /**
@@ -52,9 +68,17 @@ struct PipelineRunInfo {
  */
 #[derive(Default)]
 pub struct DockerPipelineRunner {
-    pipeline_runs: HashMap<PipelineRun, PipelineRunInfo>, // For each pipeline run, we have a join set to track the tasks and wait on them
+    pipeline_runs: HashSet<Arc<PipelineRun>>,
 }
 
+/**
+ * This is an implementation of a pipeline runner that uses Zenoh to communicate between the tasks
+ * The runtime is tokio
+ *
+ * These are the key expressions of the components of the pipeline:
+ * - Input Node: pipeline_job_hash/input_node/outputs (This is where the pipeline_job packets get fed to)
+ * - Nodes: pipeline_job_hash/node_id/outputs/(success|failure) (This is where the node outputs are sent to)
+*/
 impl DockerPipelineRunner {
     /// Create a new Docker pipeline runner
     pub fn new() -> Self {
@@ -87,90 +111,17 @@ impl DockerPipelineRunner {
         &mut self,
         pipeline_job: PipelineJob,
         namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<PipelineRun> {
+    ) -> Result<&PipelineRun> {
         // Create a new pipeline run
-        let pipeline_run = PipelineRun { pipeline_job };
-        let pipeline_run_arc = Arc::new(pipeline_run.clone());
-
-        // Insert into the list of pipeline runs
-        self.pipeline_runs.insert(
-            (*pipeline_run_arc).clone(),
-            PipelineRunInfo {
-                node_tx: HashMap::new(),
-                node_task_join_set: JoinSet::new(),
-                outputs: Arc::new(RwLock::new(HashMap::new())),
-            },
-        );
+        let pipeline_run = Arc::new(PipelineRun {
+            pipeline_job,
+            outputs: Arc::new(RwLock::new(HashMap::new())),
+        });
 
         // Get reference to the pipeline
-        let pipeline = &pipeline_run_arc.pipeline_job.pipeline;
+        let pipeline = &pipeline_run.pipeline_job.pipeline;
 
-        // Create the output channel to capture the outputs of the outputs nodes (Currently only leaf nodes)
-        let (output_tx, mut output_rx) = mpsc::channel::<Message>(128); // Channel to capture outputs from nodes
-
-        // Insert the output channel into the pipeline run info
-        self.pipeline_runs
-            .get_mut(&pipeline_run_arc)
-            .context(selector::KeyMissing {
-                key: pipeline_run_arc.to_string(),
-            })?
-            .node_tx
-            .insert("output".to_owned(), output_tx.clone());
-
-        // Get the output_nodes (leaf nodes for now) so the output task can keep track when parents are done
-        let output_nodes_ids = pipeline
-            .get_leaf_nodes()
-            .map(|node| node.id.clone())
-            .collect::<HashSet<_>>();
-        let outputs = Arc::clone(&get(&self.pipeline_runs, &pipeline_run_arc)?.outputs);
-
-        // Create the task that captures the output from the nodes and stores them in the outputs map
-        self.pipeline_runs
-            .get_mut(&pipeline_run_arc)
-            .context(selector::KeyMissing {
-                key: pipeline_run_arc.to_string(),
-            })?
-            .node_task_join_set
-            .spawn(async move {
-                let mut complete_parent_nodes = HashSet::new();
-                while let Some(message) = output_rx.recv().await {
-                    match message {
-                        Message::NodeOutput(sender_node_id, hash_map) => {
-                            // Store the output in the outputs map
-                            outputs
-                                .write()
-                                .await
-                                .entry(sender_node_id)
-                                .or_default()
-                                .push(hash_map);
-                        }
-                        Message::NodeProcessingComplete(sender_node_id) => {
-                            // Add the sender node id to the complete parent nodes
-                            complete_parent_nodes.insert(sender_node_id.clone());
-
-                            // Check if all parent nodes are complete
-                            if complete_parent_nodes.is_superset(&output_nodes_ids) {
-                                // All parents are complete, we can exit this task
-                                return Ok(());
-                            }
-                        }
-                        Message::Stop => {
-                            // No clear action needed, just exit the task
-                            return Ok(());
-                        }
-                    }
-                }
-                Ok(())
-            });
-
-        // Get all the root nodes and call the create_task_for_node function for each root node
-        // This will recursively create all the tasks and channels for the pipeline
-        let root_nodes_tx = pipeline
-            .get_root_nodes()
-            .map(|node| {
-                self.create_task_for_node(node, &pipeline_run_arc, &output_tx, namespace_lookup)
-            })
-            .collect::<Result<Vec<_>>>()?;
+        // Create a task for each node
 
         // All pipeline tasks have been created, now we need to feed the inputs to the pipeline
         for tx in &root_nodes_tx {
@@ -189,7 +140,15 @@ impl DockerPipelineRunner {
                 .await?;
         }
 
-        Ok(pipeline_run)
+        // Insert into the list of pipeline runs
+        self.pipeline_runs.insert(pipeline_run);
+
+        Ok(self
+            .pipeline_runs
+            .get(&pipeline_run_arc)
+            .context(selector::KeyMissing {
+                key: pipeline_run.to_string(),
+            })?)
     }
 
     /// Given a pipeline run, wait for all its tasks to complete and return the `PipelineResult`
@@ -264,79 +223,6 @@ impl DockerPipelineRunner {
         Ok(())
     }
 
-    /// Helper function to create a task for each node, while recursively BFS through the pipeline
-    /// Summary:
-    /// 1. Check if their is already a channel created for the node, if not create one and insert it
-    /// 2. Call this function for each of the child nodes to get their `Sender_tx`
-    /// 3. If the node is a leaf node, attach the `output_tx` to the tx (Will be replaced by `output_nodes`)
-    /// 4. Start the task manager for the node, which will act as the node's processor
-    fn create_task_for_node(
-        &mut self,
-        node: &Node,
-        pipeline_run: &Arc<PipelineRun>,
-        output_tx: &mpsc::Sender<Message>,
-        namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<mpsc::Sender<Message>> {
-        println!("Creating task for node: {}", node.id);
-        // Create a channel for the node
-
-        // Use closer to limit the scope of the borrow
-        let (tx, rx) = {
-            let pipeline_info =
-                self.pipeline_runs
-                    .get_mut(pipeline_run)
-                    .context(selector::KeyMissing {
-                        key: pipeline_run.to_string(),
-                    })?;
-            // Check if the node is already inside the node_tx
-            if pipeline_info.node_tx.contains_key(&node.id) {
-                // Node already exists, thus we can return the existing tx
-                return Ok(get(&pipeline_info.node_tx, &node.id)?.clone());
-            }
-
-            // This channel will be used to send messages to the node processor
-            let (tx, rx) = mpsc::channel::<Message>(128);
-
-            // Record the tx into the pipeline_info tx_hashmap
-            pipeline_info.node_tx.insert(node.id.clone(), tx.clone());
-            (tx, rx)
-        };
-
-        // Call this function for each of the child nodes to get their Sender_tx
-        let mut children_node_tx = pipeline_run
-            .pipeline_job
-            .pipeline
-            .get_children_for_node(node)
-            .map(|child_node| {
-                self.create_task_for_node(child_node, pipeline_run, output_tx, namespace_lookup)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        // Check if children_node_tx is empty, if so, this is a leaf node thus we need to attach the output_tx
-        if children_node_tx.is_empty() {
-            // This is a leaf node, thus we need to attach the output_tx to the tx
-            // This will allow the node to send its output to the output channel
-            children_node_tx.push(output_tx.clone());
-        }
-
-        // Start the task_manager
-        self.pipeline_runs
-            .get_mut(pipeline_run)
-            .context(selector::KeyMissing {
-                key: pipeline_run.to_string(),
-            })?
-            .node_task_join_set
-            .spawn(Self::start_node_manager(
-                node.clone(),
-                Arc::clone(pipeline_run),
-                rx,
-                children_node_tx,
-                namespace_lookup.clone(),
-            ));
-
-        Ok(tx)
-    }
-
     /// Act as the processor of the node by:
     /// 1. Creating a metadata struct for the node to be passed to the appropriate processor
     /// 2. Get the kernel for the node and build the correct processor for this node
@@ -345,27 +231,13 @@ impl DockerPipelineRunner {
     ///
     /// # Errors
     /// Will error out if the kernel for the node is not found or if the
-    async fn start_node_manager(
-        node: Node,
-        pipeline_run: Arc<PipelineRun>,
-        node_rx: mpsc::Receiver<Message>,
-        success_chs_tx: Vec<mpsc::Sender<Message>>,
-        namespace_lookup: HashMap<String, PathBuf>,
+    async fn start_node_task(
+        kernel: Kernel,
+        output_key_expression: String,
+        namespace_path: PathBuf,
     ) -> Result<()> {
-        // Create a metadata struct for this node
-        let node_metadata = NodeMetaData {
-            node_id: node.id.clone(),
-            node_rx,
-            child_nodes_txs: success_chs_tx.clone(),
-            namespace: pipeline_run.pipeline_job.output_dir.namespace.clone(),
-            namespace_lookup: namespace_lookup.clone(),
-        };
-
         // Get the kernel for this node and build the correct processor
-        match get(
-            &pipeline_run.pipeline_job.pipeline.kernel_lut,
-            &node.kernel_hash,
-        )? {
+        match kernel {
             Kernel::Pod(pod) => {
                 let mut processor = PodProcessor::new(Arc::clone(pod), node_metadata);
                 processor.start().await;
@@ -411,55 +283,37 @@ impl DockerPipelineRunner {
     }
 }
 
-/// Metadata for the node processor
-/// Contains fields that is normally needed to process incoming packets
-struct NodeMetaData {
-    node_id: String,
-    node_rx: mpsc::Receiver<Message>, // Channel to listen to messages from parent nodes
-    child_nodes_txs: Vec<mpsc::Sender<Message>>, // Channel to send successful outputs to the next node
-    namespace: String,
-    namespace_lookup: HashMap<String, PathBuf>, // Copy of the look up table
-}
-
 /// Unify the interface for node processors and provide a common way to handle processing of incoming messages
 /// This trait defines the methods that all node processors should implement
 ///
 /// Main purpose was to reduce the amount of code duplication between different node processors
 /// As a result, each processor only needs to worry about writing their own function to process the msg.
 pub(crate) trait NodeProcessor {
-    fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message>;
+    async fn process_packet(
+        &mut self,
+        packet: HashMap<String, PathSet>,
+        session: Arc<zenoh::Session>,
+        output_key_exp: &str,
+    ) -> Result<()>;
 
-    async fn start(&mut self) {
-        // Start to listen to the channels
-        // Listen to the MPSC channel and handle messages
-        while let Some(msg) = self.get_node_rx().recv().await {
-            if self.process_msg(msg).await {
-                // If the message indicates that processing is complete, we can exit the loop
-                // Wait for all processing tasks to complete before returning
-                self.wait_for_node_task_completion().await;
-                break;
-            }
-        }
-    }
+    async fn wait_for_node_task_completion(&mut self) -> Result<()>;
 
-    async fn process_msg(&mut self, msg: Message) -> bool;
-
-    async fn wait_for_node_task_completion(&mut self);
+    fn stop(&mut self) -> Result<()>;
 }
 
 /// Processor for Pods
 /// Currently missing implementation to call agents for actual pod processing
 struct PodProcessor {
+    session: zenoh::Session,
     pod: Arc<Pod>,
-    node_metadata: NodeMetaData,
     processing_tasks: JoinSet<Result<(), OrcaError>>,
 }
 
 impl PodProcessor {
-    fn new(pod: Arc<Pod>, node_metadata: NodeMetaData) -> Self {
+    fn new(pod: Arc<Pod>) -> Self {
         Self {
+            session: zenoh::Session::default(),
             pod,
-            node_metadata,
             processing_tasks: JoinSet::new(),
         }
     }
@@ -537,59 +391,19 @@ impl PodProcessor {
 }
 
 impl NodeProcessor for PodProcessor {
-    fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message> {
-        &mut self.node_metadata.node_rx
+    async fn process_packet(
+        &mut self,
+        packet: HashMap<String, PathSet>,
+        session: Arc<zenoh::Session>,
+        output_key_exp: &str,
+    ) -> Result<()>;
+
+    async fn wait_for_node_task_completion(&mut self) -> Result<()> {
+        todo!()
     }
 
-    async fn process_msg(&mut self, msg: Message) -> bool {
-        match msg {
-            Message::NodeOutput(_, packet) => {
-                let pod_ref = Arc::clone(&self.pod);
-                let node_id = self.node_metadata.node_id.clone();
-                let namespace = self.node_metadata.namespace.clone();
-                let namespace_lookup = self.node_metadata.namespace_lookup.clone();
-                let child_nodes_txs = self.node_metadata.child_nodes_txs.clone();
-                // Forward it into a processing task
-                self.processing_tasks.spawn(async move {
-                    // Process the packet using the pod
-                    // This will execute the pod and send the output to the next node
-                    if let Err(err) = Self::process_packet(
-                        node_id,
-                        pod_ref,
-                        namespace,
-                        namespace_lookup,
-                        packet,
-                        child_nodes_txs,
-                    )
-                    .await
-                    {
-                        // Send the error to the failure channel
-                        // For now just print it out
-                        eprintln!("Failed to process packet with error: {err}");
-                    }
-                    Ok(())
-                });
-            }
-            Message::Stop => {
-                // Stop message received, we will stop processing
-                self.processing_tasks.abort_all();
-                return true;
-            }
-            Message::NodeProcessingComplete(_) => {
-                // Since pod only have one parent, we can expect that there will be no more incoming packet
-                // thus, we need to wait for everything to finish processing and send completion message
-                // Return true to notify caller that processing is complete
-                self.wait_for_node_task_completion().await;
-                return true;
-            }
-        }
-        false
-    }
-
-    async fn wait_for_node_task_completion(&mut self) {
-        while self.processing_tasks.join_next().await.is_some() {
-            // Wait for all processing tasks to complete
-        }
+    fn stop(&mut self) -> Result<()> {
+        todo!()
     }
 }
 
@@ -597,7 +411,6 @@ impl NodeProcessor for PodProcessor {
 /// This processor renames the `input_keys` from the input packet to the `output_keys` defined by the map
 struct MapperProcessor {
     mapper: Arc<Mapper>,
-    node_metadata: NodeMetaData,
 }
 
 impl MapperProcessor {
@@ -633,30 +446,41 @@ impl MapperProcessor {
 }
 
 impl NodeProcessor for MapperProcessor {
-    fn get_node_rx(&mut self) -> &mut mpsc::Receiver<Message> {
-        &mut self.node_metadata.node_rx
+    async fn process_packet(
+        &mut self,
+        packet: HashMap<String, PathSet>,
+        session: Arc<zenoh::Session>,
+        output_key_exp: &str,
+    ) -> Result<()> {
+        // Apply the mapping to the input packet
+        let output_map = self
+            .mapper
+            .mapping
+            .iter()
+            .map(|(input_key, output_key)| {
+                let input = get(&packet, input_key)?.clone();
+                Ok((output_key.to_owned(), input))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+
+        // Send the packet outwards
+        session
+            .put(
+                output_key_exp,
+                bitcode::encode(&Message::NodeOutput((), ())),
+            )
+            .await
+            .unwrap();
+
+        Ok(())
     }
 
-    async fn wait_for_node_task_completion(&mut self) {
-        // Mapper doesn't spawn additional tasks, so this is a no-op
+    async fn wait_for_node_task_completion(&mut self) -> Result<()> {
+        todo!()
     }
 
-    async fn process_msg(&mut self, msg: Message) -> bool {
-        match msg {
-            Message::NodeOutput(_, packet) => {
-                match self.process_packet(&packet).await {
-                    Ok(()) => {}
-                    Err(err) => {
-                        // Send the error to the failure channel
-                        // For now just print it out
-                        eprintln!("Failed to process packet with error: {err}");
-                    }
-                }
-            }
-            Message::NodeProcessingComplete(_) | Message::Stop => return true,
-        }
-
-        false
+    fn stop(&mut self) -> Result<()> {
+        todo!()
     }
 }
 

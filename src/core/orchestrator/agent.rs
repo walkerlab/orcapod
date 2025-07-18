@@ -102,6 +102,7 @@ impl AgentClient {
 
 #[expect(
     clippy::let_underscore_must_use,
+    clippy::excessive_nesting,
     reason = "`result::Result<(), SendError<_>>` is the only uncaptured result since it would mean we can't transmit results over mpsc."
 )]
 pub async fn start_service<

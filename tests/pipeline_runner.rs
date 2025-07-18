@@ -33,7 +33,7 @@ async fn basic_run() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stop() -> Result<()> {
     let pipeline_job = pipeline_job()?;
 
