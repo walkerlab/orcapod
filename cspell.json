@@ -82,7 +82,8 @@
         "itertools",
         "oneshot",
         "patchelf",
-        "colinianking"
+        "colinianking",
+        "bitcode"
     ],
     "useGitignore": false,
     "ignorePaths": [

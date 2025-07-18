@@ -21,7 +21,6 @@
 	},
 	"runArgs": [
 		"--name=${localWorkspaceFolderBasename}_devcontainer",
-		"--gpus=all",
 		"--privileged",
 		"--cgroupns=host"
 	],
