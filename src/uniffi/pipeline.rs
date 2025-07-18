@@ -1,9 +1,9 @@
 use crate::{
     core::{
-        graph::{DotAttribute, make_dot},
+        graph::{DOTAttribute, make_dot},
         pipeline::{NodeInfo, NodeState},
     },
-    uniffi::model::PipelineJob,
+    uniffi::{error::Result, model::PipelineJob},
 };
 use chrono::Local;
 use derive_more::Display;
@@ -68,13 +68,18 @@ impl PipelineRun {
     /// # Panics
     ///
     /// Will panic if unable to acquire mut ref on services.
+    ///
+    /// # Errors
+    ///
+    /// Will fail if there is an issue constructing the summary DOT.
     #[expect(
-        clippy::expect_used,
+        clippy::unwrap_in_result,
         clippy::excessive_nesting,
+        clippy::expect_used,
         clippy::let_underscore_must_use,
         reason = "debug"
     )]
-    pub fn summarize_dot(&self) -> String {
+    pub fn summarize_dot(&self) -> Result<String> {
         let summary_msg = if self.services.is_empty() {
             "Pipeline not active.\n".to_owned()
         } else {
@@ -91,7 +96,7 @@ impl PipelineRun {
                 if let Some(node_info) = self.state.lock().expect("debug").get(node) {
                     node_attribute = (
                         node.clone(),
-                        DotAttribute {
+                        DOTAttribute {
                             color: match &node_info.state {
                                 NodeState::Idle => todo!("Should not be possible"),
                                 NodeState::Cancelled => "chocolate4".into(),
@@ -117,7 +122,7 @@ impl PipelineRun {
                 } else {
                     node_attribute = (
                         node.clone(),
-                        DotAttribute {
+                        DOTAttribute {
                             color: "black".into(),
                             extra_label: "p=0".into(),
                         },
@@ -146,36 +151,4 @@ impl PipelineRun {
             )),
         )
     }
-    // /// Generate an SVG snapshot summary of the compute DAG progress.
-    // ///
-    // /// # Errors
-    // ///
-    // /// Will fail if unable to generate summary compute DAG SVG.
-    // pub fn summarize_svg(&self) -> Result<String> {
-    //     make_svg(
-    //         &self.pipeline_job.pipeline.graph,
-    //         &self.pipeline_job.pipeline.metadata,
-    //         Some(format!(
-    //             "Pipeline Job Summary [hash={}]",
-    //             self.pipeline_job.hash
-    //         )),
-    //         Some(
-    //             &self
-    //                 .pipeline_job
-    //                 .pipeline
-    //                 .metadata
-    //                 .keys()
-    //                 .map(|node| {
-    //                     (
-    //                         node.clone(),
-    //                         DotAttribute {
-    //                             color: "red".into(),
-    //                             extra_label: "stuff(1)".into(),
-    //                         },
-    //                     )
-    //                 })
-    //                 .collect::<HashMap<_, _>>(),
-    //         ),
-    //     )
-    // }
 }

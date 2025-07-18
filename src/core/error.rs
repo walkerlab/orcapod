@@ -1,7 +1,9 @@
 use crate::uniffi::error::{Kind, OrcaError};
 use bollard::errors::Error as BollardError;
 use chrono;
+use dot_parser::ast::PestError;
 use glob;
+use minijinja;
 use serde_json;
 use serde_yaml;
 use std::{
@@ -32,6 +34,16 @@ impl From<chrono::ParseError> for OrcaError {
         }
     }
 }
+impl From<PestError> for OrcaError {
+    fn from(error: PestError) -> Self {
+        Self {
+            kind: Kind::DOTError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
 impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
         Self {
@@ -46,6 +58,16 @@ impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self {
             kind: Kind::IoError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<minijinja::Error> for OrcaError {
+    fn from(error: minijinja::Error) -> Self {
+        Self {
+            kind: Kind::JinjaError {
                 source: error,
                 backtrace: Some(Backtrace::capture()),
             },
@@ -128,9 +150,10 @@ impl fmt::Debug for OrcaError {
             | Kind::PodFailed { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChronoParseError { backtrace, .. }
+            | Kind::DOTError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
-            | Kind::LayoutError { backtrace, .. }
+            | Kind::JinjaError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
             | Kind::SerdeYamlError { backtrace, .. }

@@ -1,7 +1,7 @@
 use crate::{
     core::{
         crypto::{hash_blob, hash_buffer},
-        graph::{make_dot, make_graph, make_svg},
+        graph::{make_dot, make_graph},
         model::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
@@ -353,16 +353,12 @@ impl Pipeline {
         })
     }
     /// Cast the graph into [DOT](https://graphviz.org/doc/info/lang.html).
-    pub fn make_dot(&self) -> String {
-        make_dot(&self.graph, &self.metadata, None, None, None)
-    }
-    /// Render the graph into SVG.
     ///
     /// # Errors
     ///
-    /// Will return `Err` if there is an issue parsing the graph.
-    pub fn make_svg(&self) -> Result<String> {
-        make_svg(&self.graph, &self.metadata, None, None, None)
+    /// Fails if there is an issue constructing the pipeline DOT.
+    pub fn make_dot(&self) -> Result<String> {
+        make_dot(&self.graph, &self.metadata, None, None, None)
     }
 }
 

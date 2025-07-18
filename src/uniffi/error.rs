@@ -5,7 +5,10 @@
 
 use bollard::errors::Error as BollardError;
 use chrono;
+use dot_parser::ast::PestError;
 use glob;
+use minijinja;
+use petgraph::{algo::Cycle, prelude::NodeIndex};
 use serde_json;
 use serde_yaml;
 use snafu::prelude::Snafu;
@@ -92,8 +95,11 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Pipeline is not a DAG."))]
-    PipelineCyclic { backtrace: Option<Backtrace> },
+    #[snafu(display("Pipeline is not a DAG. Cycle: {cycle:?}."))]
+    PipelineCyclic {
+        cycle: Cycle<NodeIndex>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display(
         "Pod failed during a pipeline run with exit code ({exit_code}). See pod result `{hash}`."
     ))]
@@ -113,6 +119,11 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
+    DOTError {
+        source: PestError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
     GlobPatternError {
         source: glob::PatternError,
         backtrace: Option<Backtrace>,
@@ -122,9 +133,9 @@ pub(crate) enum Kind {
         source: io::Error,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("{message}"))]
-    LayoutError {
-        message: String,
+    #[snafu(transparent)]
+    JinjaError {
+        source: minijinja::Error,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
