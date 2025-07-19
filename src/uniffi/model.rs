@@ -1,7 +1,7 @@
 use crate::{
     core::{
         crypto::{hash_blob, hash_buffer},
-        graph::{make_dot, make_graph},
+        graph::{DOTStyleConfig, make_dot, make_graph},
         model::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
@@ -78,9 +78,8 @@ impl Pod {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue initializing a `Pod` instance.
-    #[uniffi::constructor]
+    #[uniffi::constructor(default(annotation=None, required_gpu = None))]
     pub fn new(
-        annotation: Option<Annotation>,
         image: String,
         command: Vec<String>,
         input_spec: HashMap<String, PathInfo>,
@@ -89,6 +88,7 @@ impl Pod {
         source_commit_url: String,
         recommended_cpus: f32,
         recommended_memory: u64,
+        annotation: Option<Annotation>,
         required_gpu: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
@@ -147,16 +147,16 @@ impl PodJob {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue initializing a `PodJob` instance.
-    #[uniffi::constructor]
+    #[uniffi::constructor(default(annotation=None, env_vars = None))]
     pub fn new(
-        annotation: Option<Annotation>,
         pod: Arc<Pod>,
         mut input_packet: Arc<Packet>,
         output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
-        env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
+        annotation: Option<Annotation>,
+        env_vars: Option<HashMap<String, String>>,
     ) -> Result<Self> {
         input_packet = Packet(
             input_packet
@@ -357,8 +357,15 @@ impl Pipeline {
     /// # Errors
     ///
     /// Fails if there is an issue constructing the pipeline DOT.
-    pub fn make_dot(&self) -> Result<String> {
-        make_dot(&self.graph, &self.metadata, None, None, None)
+    #[uniffi::method(default(with_style = true))]
+    pub fn make_dot(&self, with_style: bool) -> Result<String> {
+        make_dot(
+            &self.graph,
+            with_style.then(|| DOTStyleConfig {
+                node_metadata: Some(&self.metadata),
+                ..DOTStyleConfig::default()
+            }),
+        )
     }
 }
 

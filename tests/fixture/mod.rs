@@ -31,11 +31,6 @@ pub static NAMESPACE_LOOKUP_READ_ONLY: LazyLock<HashMap<String, PathBuf>> =
 
 pub fn pod_style() -> Result<Pod> {
     Pod::new(
-        Some(Annotation {
-            name: "style-transfer".to_owned(),
-            description: "This is an example pod.".to_owned(),
-            version: "1.0.0".to_owned(),
-        }),
         "example.server.com/user/style-transfer:1.0.0".to_owned(),
         str_to_vec("python /run.py"),
         HashMap::from([
@@ -74,17 +69,17 @@ pub fn pod_style() -> Result<Pod> {
         "https://github.com/user/style-transfer/tree/1.0.0".to_owned(),
         0.25,        // 250 millicores as frac cores
         1_u64 << 30, // 1GiB in bytes
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod.".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
         None,
     )
 }
 
 pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -> Result<PodJob> {
     PodJob::new(
-        Some(Annotation {
-            name: "style-transfer".to_owned(),
-            description: "This is an example pod job.".to_owned(),
-            version: "0.1.0".to_owned(),
-        }),
         pod_style()?.into(),
         Packet(HashMap::from([
             (
@@ -131,11 +126,16 @@ pub fn pod_job_style(namespace_lookup: &HashMap<String, PathBuf, RandomState>) -
         },
         0.5,         // 500 millicores as frac cores
         2_u64 << 30, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
+        namespace_lookup,
+        Some(Annotation {
+            name: "style-transfer".to_owned(),
+            description: "This is an example pod job.".to_owned(),
+            version: "0.1.0".to_owned(),
+        }),
         Some(HashMap::from([
             ("ZZZ".to_owned(), "PLEASE".to_owned()),
             ("AAA".to_owned(), "SORT".to_owned()),
         ])),
-        namespace_lookup,
     )
 }
 
@@ -163,9 +163,7 @@ pub fn pod_job_custom(
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(
-        None,
         Pod::new(
-            None,
             image_reference.into(),
             command.to_owned(),
             HashMap::new(),
@@ -174,6 +172,7 @@ pub fn pod_job_custom(
             "https://github.com/place/holder".to_owned(),
             0.1,          // 100 millicores as frac cores
             10_u64 << 20, // 10 MiB in bytes
+            None,
             None,
         )?
         .into(),
@@ -184,8 +183,9 @@ pub fn pod_job_custom(
         },
         1.0,          // 1000 millicores as frac cores
         10_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
-        None,
         namespace_lookup,
+        None,
+        None,
     )
 }
 

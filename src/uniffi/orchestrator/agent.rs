@@ -209,6 +209,7 @@ impl Agent {
     ///
     /// Will stop and return an error if encounters an error while processing any pod job request.
     #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
+    #[uniffi::method(default(available_store = None))]
     pub async fn start(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,

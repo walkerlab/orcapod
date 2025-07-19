@@ -541,14 +541,14 @@ async fn process_pod_packet(
     pod_result_topic_key_expression: String,
 ) -> Result<Vec<Packet>> {
     let pod_job = PodJob::new(
-        None,
         Arc::clone(pod),
         packet.into(),
         output_dir,
         pod.recommended_cpus,
         pod.recommended_memory,
-        None,
         namespace_lookup,
+        None,
+        None,
     )?;
 
     let mut services = JoinSet::new();

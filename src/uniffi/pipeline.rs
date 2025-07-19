@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        graph::{DOTAttribute, make_dot},
+        graph::{DOTStyleConfig, make_dot},
         pipeline::{NodeInfo, NodeState},
     },
     uniffi::{error::Result, model::PipelineJob},
@@ -86,69 +86,66 @@ impl PipelineRun {
             "Pipeline running...\n".to_owned()
         };
         let mut error_msgs = String::new();
-        let node_attributes = &self
+        let (node_extra_label, node_color) = self
             .pipeline_job
             .pipeline
             .metadata
             .keys()
             .map(|node| {
-                let node_attribute;
+                let extra_label;
+                let color;
                 if let Some(node_info) = self.state.lock().expect("debug").get(node) {
-                    node_attribute = (
+                    extra_label = (node.clone(), format!("p={}", node_info.completed_packets));
+                    color = (
                         node.clone(),
-                        DOTAttribute {
-                            color: match &node_info.state {
-                                NodeState::Idle => todo!("Should not be possible"),
-                                NodeState::Cancelled => "chocolate4".into(),
-                                NodeState::Completed => "green".into(),
-                                NodeState::Active => "yellow2".into(),
-                                NodeState::Failed(error_msg) => {
-                                    let _ = writeln!(
-                                        error_msgs,
-                                        "{node}: {}",
-                                        error_msg
-                                            .split_once("stack backtrace")
-                                            .map(|(prefix, _)| prefix)
-                                            .map_or(error_msg.as_str(), |brief_error_msg| {
-                                                brief_error_msg
-                                            })
-                                    );
-                                    "red".into()
-                                }
-                            },
-                            extra_label: format!("p={}", node_info.completed_packets),
+                        match &node_info.state {
+                            NodeState::Idle => todo!("Should not be possible"),
+                            NodeState::Cancelled => "chocolate4".into(),
+                            NodeState::Completed => "green".into(),
+                            NodeState::Active => "yellow2".into(),
+                            NodeState::Failed(error_msg) => {
+                                let _ = writeln!(
+                                    error_msgs,
+                                    "{node}: {}",
+                                    error_msg
+                                        .split_once("stack backtrace")
+                                        .map(|(prefix, _)| prefix)
+                                        .map_or(error_msg.as_str(), |brief_error_msg| {
+                                            brief_error_msg
+                                        })
+                                );
+                                "red".into()
+                            }
                         },
                     );
                 } else {
-                    node_attribute = (
-                        node.clone(),
-                        DOTAttribute {
-                            color: "black".into(),
-                            extra_label: "p=0".into(),
-                        },
-                    );
+                    extra_label = (node.clone(), "p=0".into());
+                    color = (node.clone(), "black".into());
                 }
-                node_attribute
+                (extra_label, color)
             })
-            .collect::<HashMap<_, _>>();
+            .unzip();
 
         make_dot(
             &self.pipeline_job.pipeline.graph,
-            &self.pipeline_job.pipeline.metadata,
-            Some(format!(
-                "Pipeline Job Summary [hash={}]\nUpdated: {}\n",
-                self.pipeline_job.hash,
-                Local::now().format("%Y-%m-%d %H:%M:%S")
-            )),
-            Some(node_attributes),
-            Some(format!(
-                "{}Summary: {summary_msg}",
-                if error_msgs.is_empty() {
-                    error_msgs
-                } else {
-                    format!("Errors:\n{error_msgs}\n")
-                }
-            )),
+            Some(DOTStyleConfig {
+                title_text: Some(format!(
+                    "Pipeline Job Summary [hash={}]\nUpdated: {}\n",
+                    self.pipeline_job.hash,
+                    Local::now().format("%Y-%m-%d %H:%M:%S")
+                )),
+                node_extra_label: Some(&node_extra_label),
+                node_metadata: Some(&self.pipeline_job.pipeline.metadata),
+                node_color: Some(&node_color),
+                caption_text: Some(format!(
+                    "{}Summary: {summary_msg}",
+                    if error_msgs.is_empty() {
+                        error_msgs
+                    } else {
+                        format!("Errors:\n{error_msgs}\n")
+                    }
+                )),
+            }),
         )
     }
 }
