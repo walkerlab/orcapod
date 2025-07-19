@@ -2,6 +2,7 @@ use crate::uniffi::{
     error::{Kind, OrcaError},
     pipeline_runner::runner::Message,
 };
+use bincode::error::EncodeError;
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -25,10 +26,10 @@ impl From<BollardError> for OrcaError {
         }
     }
 }
-impl From<EncodingError> for OrcaError {
-    fn from(error: EncodingError) -> Self {
+impl From<EncodeError> for OrcaError {
+    fn from(error: EncodeError) -> Self {
         Self {
-            kind: Kind::FailedToParseDot {
+            kind: Kind::EncodingError {
                 source: error,
                 backtrace: Some(Backtrace::capture()),
             },
@@ -150,6 +151,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChannelReceiveError { backtrace, .. }
+            | Kind::EncodingError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }

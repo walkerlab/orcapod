@@ -3,6 +3,7 @@
     reason = "Needed since SNAFU dynamically generating selectors."
 )]
 
+use bincode::error::EncodeError;
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -108,7 +109,7 @@ pub(crate) enum Kind {
     },
     #[snafu(transparent)]
     EncodingError {
-        source: EncodingError,
+        source: EncodeError,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

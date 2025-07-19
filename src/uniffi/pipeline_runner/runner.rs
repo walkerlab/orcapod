@@ -228,14 +228,16 @@ impl DockerPipelineRunner {
         Ok(())
     }
 
-    /// Act as the processor of the node by:
-    /// 1. Creating a metadata struct for the node to be passed to the appropriate processor
-    /// 2. Get the kernel for the node and build the correct processor for this node
-    /// 3. Start the processor and wait till it completes
-    /// 4. Send a message that the node processing is complete
-    ///
-    /// # Errors
-    /// Will error out if the kernel for the node is not found or if the
+    /**
+     * Act as the processor of the node by:
+     * 1. Creating a metadata struct for the node to be passed to the appropriate processor
+     * 2. Get the kernel for the node and build the correct processor for this node
+     * 3. Start the processor and wait till it completes
+     * 4. Send a message that the node processing is complete
+     *
+     * # Errors
+     * Will error out if the kernel for the node is not found or if the
+     */
     async fn start_node_task(
         kernel: Kernel,
         output_key_expression: String,
@@ -446,19 +448,12 @@ impl NodeProcessor for PodProcessor {
 
         // Simulate pod execution by just printing out pod_job_hash and pod hash
         // This will be replaced by sending the pod_job to the orchestrator via the agent
-        self.processing_tasks.spawn(async move {
-            println!(
-                "Simulating Executing pod job: {} with pod hash: {}",
-                pod_job.hash, pod_job.pod.hash
-            );
-            Ok(())
-        });
 
+        // Build the output_packet, in reality, this will be extracted from the pod_result
         #[expect(
             clippy::unwrap_used,
             reason = "Hard code for now, will be replaced by agent"
         )]
-        // Build the output_packet, in reality, this will be extracted from the pod_result
         let output_packet = self
             .pod
             .output_spec
@@ -466,24 +461,40 @@ impl NodeProcessor for PodProcessor {
             .map(|output_key| (output_key.clone(), packet.values().next().cloned().unwrap()))
             .collect::<HashMap<_, _>>();
 
-        // For now we will just send the input_packet to the success channel
-        session
-            .put(
-                output_key_exp,
-                bitcode::encode(&Message::NodeOutput(node_id.to_owned(), output_packet)),
-            )
-            .await
-            .context(selector::AgentCommunicationFailure {})?;
+        let node_id_clone = node_id.to_owned();
+        let output_key_exp_clone = output_key_exp.to_owned();
+        self.processing_tasks.spawn(async move {
+            println!(
+                "Simulating Executing pod job: {} with pod hash: {}",
+                pod_job.hash, pod_job.pod.hash
+            );
+
+            // For now we will just send the input_packet to the success channel
+            session
+                .put(
+                    output_key_exp_clone + SUCCESS_KEY_EXP,
+                    bincode::serde::encode_to_vec(
+                        &Message::NodeOutput(node_id_clone, output_packet),
+                        bincode::config::standard(),
+                    )?,
+                )
+                .await
+                .context(selector::AgentCommunicationFailure {})?;
+
+            Ok(())
+        });
 
         Ok(())
     }
 
     async fn wait_for_node_task_completion(&mut self) -> Result<()> {
-        todo!()
+        while self.processing_tasks.join_next().await.is_some() {}
+        Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
-        todo!()
+        self.processing_tasks.abort_all();
+        Ok(())
     }
 }
 
@@ -528,21 +539,22 @@ impl NodeProcessor for MapperProcessor {
                 bincode::serde::encode_to_vec(
                     &Message::NodeOutput(node_id.to_owned(), output_map),
                     bincode::config::standard(),
-                )
-                .unwrap(),
+                )?,
             )
             .await
-            .unwrap();
+            .context(selector::AgentCommunicationFailure {})?;
 
         Ok(())
     }
 
     async fn wait_for_node_task_completion(&mut self) -> Result<()> {
-        todo!()
+        // All mappers tasks are synchronous, so we don't need to wait for anything
+        Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
-        todo!()
+        // Mappers do not have any state to stop, so we can just return Ok
+        Ok(())
     }
 }
 
@@ -572,7 +584,7 @@ impl JoinerProcessor {
     }
 
     fn compute_cartesian_product(
-        factors: &Vec<&Vec<HashMap<String, PathSet>>>,
+        factors: &Vec<Vec<HashMap<String, PathSet>>>,
     ) -> Vec<HashMap<String, PathSet>> {
         factors
             .into_iter()
@@ -597,8 +609,8 @@ impl NodeProcessor for JoinerProcessor {
         packet: &HashMap<String, PathSet>,
         session: Arc<zenoh::Session>,
         output_key_exp: &str,
-        namespace: &str,
-        namespace_lookup: &HashMap<String, PathBuf>,
+        _namespace: &str,
+        _namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<()> {
         self.input_packet_cache
             .get_mut(sender_node_id)
@@ -615,115 +627,73 @@ impl NodeProcessor for JoinerProcessor {
                 .keys()
                 .filter(|key| *key != sender_node_id);
 
-            // Build the factors of the product
+            // Build the factors of the product as owned values to avoid lifetime issues
             let mut factors = other_parent_ids
-                .map(|id| get(&self.input_packet_cache, id))
+                .map(|id| get(&self.input_packet_cache, id).map(|v| v.clone()))
                 .collect::<Result<Vec<_>>>()?;
 
             // Add the new packet as a factor
-            factors.push(&vec![packet.clone()]);
+            factors.push(vec![packet.clone()]);
 
             // Compute the cartesian product of the factors
+            let node_id_clone = node_id.to_owned();
+            let output_key_exp_clone = output_key_exp.to_owned();
+
             self.processing_tasks.spawn(async move {
+                // Convert Vec<Vec<HashMap<...>>> to Vec<&Vec<HashMap<...>>> for compute_cartesian_product
                 let cartesian_product = Self::compute_cartesian_product(&factors);
 
                 // Post all products to the output channel
                 for output_packet in cartesian_product {
-                    let result = session.put(
-                        output_key_exp.to_owned() + SUCCESS_KEY_EXP,
-                        encode_to_vec(
-                            &Message::NodeOutput(node_id.to_owned(), output_packet),
-                            config::standard(),
-                        )?,
-                    );
+                    let result = {
+                        session
+                            .put(
+                                output_key_exp_clone.clone() + SUCCESS_KEY_EXP,
+                                encode_to_vec(
+                                    &Message::NodeOutput(node_id_clone.clone(), output_packet),
+                                    config::standard(),
+                                )?,
+                            )
+                            .await
+                            .context(selector::AgentCommunicationFailure {})?;
+                        Ok::<(), OrcaError>(())
+                    };
+
+                    // If the result is an error, we will just send it to the error channel
+                    if let Err(err) = result {
+                        session
+                            .put(
+                                output_key_exp_clone.clone() + FAILURE_KEY_EXP,
+                                encode_to_vec(
+                                    &Message::NodeProcessingFailure(
+                                        node_id_clone.clone(),
+                                        err.to_string(),
+                                    ),
+                                    config::standard(),
+                                )?,
+                            )
+                            .await
+                            .context(selector::AgentCommunicationFailure {})?;
+                    }
                 }
 
                 Ok(())
             });
         }
-
-        // Check if this packet is the first packet from this parent node
-        if get(&self.input_packet_cache, sender_node_id)?.len() == 1 {}
-
-        // Determine if the initial computation is completed
-        if !self.initial_computation_completed {
-            // Check if we have at least one packet for each parent node
-            if self.input_packet_cache.values().all(|v| !v.is_empty()) {
-                self.initial_computation_completed = true;
-            } else {
-                // If not, we cannot compute the new packet combination yet
-                return Ok(());
-            }
-        }
-        if self.input_packet_cache.values().all(|v| !v.is_empty())
-            | self.input_packet_cache.values().any(|v| v.len() == 1)
-        {
-            // Initial case where we first have at least one packet for each parent node met
-        }
-
-        self.processing_tasks.spawn(async move {
-            let process_result = {
-                for packet in self.compute_new_packet_combination(sender_node_id, &packet)? {
-                    session
-                        .put(
-                            output_key_exp.to_owned() + SUCCESS_KEY_EXP,
-                            bincode::serde::encode_to_vec(
-                                &Message::NodeOutput(node_id.to_owned(), packet),
-                                bincode::config::standard(),
-                            )
-                            .unwrap(),
-                        )
-                        .await
-                        .context(selector::AgentCommunicationFailure {})?;
-                }
-                Ok::<(), OrcaError>(())
-            };
-
-            match process_result {
-                Ok(_) => {}
-                Err(err) => {
-                    // Something failed thus we should output to the failed channel
-                    session
-                        .put(
-                            output_key_exp.to_owned() + FAILURE_KEY_EXP,
-                            bincode::serde::encode_to_vec(
-                                &Message::NodeProcessingFailure(
-                                    node_id.to_owned(),
-                                    err.to_string(),
-                                ),
-                                bincode::config::standard(),
-                            )
-                            .unwrap(),
-                        )
-                        .await
-                        .context(selector::AgentCommunicationFailure {})?;
-                }
-            }
-            // For each new packet, we
-            Ok(())
-        });
-
         Ok(())
     }
 
     async fn wait_for_node_task_completion(&mut self) -> Result<()> {
-        todo!()
+        // We must wait for all joiner processing task to complete
+        while self.processing_tasks.join_next().await.is_some() {}
+        Ok(())
     }
 
     fn stop(&mut self) -> Result<()> {
-        todo!()
+        // We want to abort any computation
+        self.processing_tasks.abort_all();
+        Ok(())
     }
-}
-
-// Utils functions
-fn get_node_id(output_key_exp: &str) -> String {
-    // Extract the node id from the output key expression
-    // The output key expression is in the format of "pipeline_job_hash/node_id/outputs"
-    output_key_exp
-        .split('/')
-        .nth(1)
-        .map(|s| s.to_owned())
-        .unwrap_or_else(|| "unknown_node".to_owned())
 }
 
 #[cfg(test)]
