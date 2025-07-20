@@ -155,6 +155,7 @@ impl DockerPipelineRunner {
             .context(selector::AgentCommunicationFailure {})?;
 
         // For each node, we will create call create_node_processing_task
+        println!("Num of node indices: {}", graph.node_count());
         for node_idx in graph.node_indices() {
             let node = &graph[node_idx];
 
@@ -348,6 +349,8 @@ impl DockerPipelineRunner {
         namespace: String,
         namespace_lookup: HashMap<String, PathBuf>,
     ) -> Result<()> {
+        // Print out node id for debugging
+        println!("Creating processing task for node: {}", node.id);
         // Create the correct processor for the node based on the kernel type
         let node_processor: Arc<Mutex<Box<dyn NodeProcessor>>> = Arc::new(Mutex::new(
             match get(&pipeline.kernel_lut, &node.kernel_hash)? {
@@ -378,6 +381,7 @@ impl DockerPipelineRunner {
         let mut key_exps_to_subscribe_to = pipeline
             .get_parents_for_node(&node)
             .map(|parent_node| {
+                println!("Setting up listener for parent node: {}", parent_node.id);
                 format!(
                     "{pipeline_job_id}/{}/outputs/{SUCCESS_KEY_EXP}",
                     parent_node.id
@@ -443,8 +447,14 @@ impl DockerPipelineRunner {
         if let Err(err) = result {
             eprintln!("Failed to send ready message for node {}: {}", node_id, err);
         } else {
-            println!("Ready message sent for node {}", node_id);
+            println!(
+                "Ready message sent for node {}, with key exp {}",
+                node_id,
+                format!("{pipeline_job_id}/{node_id}/status/ready")
+            );
         }
+
+        println!("Listening for messages on node: {}", node_id);
 
         while let Ok(payload) = subscriber.recv_async().await {
             // Extract the message from the payload

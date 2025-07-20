@@ -21,12 +21,11 @@ async fn basic_run() -> Result<()> {
 
     // Create zenoh to monitor the node ready message
     let zenoh = zenoh::open(zenoh::Config::default()).await.unwrap(); // Replace with the correct error variant if needed
-    let sub = zenoh.declare_subscriber("*/*/status/ready").await.unwrap();
+    let sub = zenoh.declare_subscriber("**").await.unwrap();
 
     tokio::spawn({
         async move {
             // Receive loop ready, publish ready message
-            zenoh.put("ready", vec![]).await.unwrap();
             println!("Listening for messages...");
             loop {
                 match sub.recv_async().await {
@@ -36,33 +35,45 @@ async fn basic_run() -> Result<()> {
                             msg.payload().try_to_string().unwrap()
                         );
                     }
-                    Err(_) => todo!(),
+                    Err(err) => println!("Error receiving message: {}", err),
                 }
             }
         }
     });
 
-    // Wait for the zenoh subscriber to be ready
-    sleep(std::time::Duration::from_secs(5)).await;
+    let zenoh2 = zenoh::open(zenoh::Config::default()).await.unwrap();
 
-    // Create the runner
-    let mut runner = DockerPipelineRunner::new();
+    let joiner = tokio::spawn(async move {
+        sleep(tokio::time::Duration::from_secs(2)).await;
+        // Send a bunch of messsage to the channel
+        for i in 0..10 {
+            zenoh2
+                .put(format!("test/{}", i), format!("message {}", i).as_bytes())
+                .await
+                .unwrap();
+            println!("Sent message {}", i);
+        }
+    });
 
-    let test_dirs = TestDirs::new(&HashMap::from([(
-        "default".to_owned(),
-        Some("./tests/extra/data/"),
-    )]))?;
-    let namespace_lookup = test_dirs.namespace_lookup();
+    joiner.await.unwrap();
+    // // Create the runner
+    // let mut runner = DockerPipelineRunner::new();
 
-    let pipeline_run = runner
-        .start(pipeline_job, "default", &namespace_lookup)
-        .await?;
+    // let test_dirs = TestDirs::new(&HashMap::from([(
+    //     "default".to_owned(),
+    //     Some("./tests/extra/data/"),
+    // )]))?;
+    // let namespace_lookup = test_dirs.namespace_lookup();
 
-    sleep(std::time::Duration::from_secs(5)).await;
-    panic!();
-    // Wait for the pipeline run to complete
-    let pipeline_result = runner.get_result(&pipeline_run).await?;
-    println!("{:?}", pipeline_result.output_packets);
+    // let pipeline_run = runner
+    //     .start(pipeline_job, "default", &namespace_lookup)
+    //     .await?;
+
+    // sleep(std::time::Duration::from_secs(5)).await;
+    // panic!();
+    // // Wait for the pipeline run to complete
+    // let pipeline_result = runner.get_result(&pipeline_run).await?;
+    // println!("{:?}", pipeline_result.output_packets);
 
     Ok(())
 }
