@@ -3,7 +3,7 @@
     reason = "Needed since SNAFU dynamically generating selectors."
 )]
 
-use bincode::error::EncodeError;
+use bincode::error::{DecodeError, EncodeError};
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -105,6 +105,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     ChannelReceiveError {
         source: oneshot::error::RecvError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    DecodeError {
+        source: DecodeError,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

@@ -1,8 +1,5 @@
-use crate::uniffi::{
-    error::{Kind, OrcaError},
-    pipeline_runner::runner::Message,
-};
-use bincode::error::EncodeError;
+use crate::uniffi::error::{Kind, OrcaError};
+use bincode::error::{DecodeError, EncodeError};
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -13,13 +10,23 @@ use std::{
     io,
     path::{self},
 };
-use tokio::sync::{mpsc::error::SendError, oneshot};
+use tokio::sync::oneshot;
 use tokio::task;
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError {
+                source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<DecodeError> for OrcaError {
+    fn from(error: DecodeError) -> Self {
+        Self {
+            kind: Kind::DecodeError {
                 source: error,
                 backtrace: Some(Backtrace::capture()),
             },
@@ -106,17 +113,6 @@ impl From<task::JoinError> for OrcaError {
         }
     }
 }
-
-impl From<SendError<Message>> for OrcaError {
-    fn from(error: SendError<Message>) -> Self {
-        Self {
-            kind: Kind::SendError {
-                reason: error.to_string(),
-                backtrace: Some(Backtrace::capture()),
-            },
-        }
-    }
-}
 impl From<Kind> for OrcaError {
     fn from(error: Kind) -> Self {
         Self { kind: error }
@@ -151,6 +147,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChannelReceiveError { backtrace, .. }
+            | Kind::DecodeError { backtrace, .. }
             | Kind::EncodingError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
