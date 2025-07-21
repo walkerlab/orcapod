@@ -24,7 +24,7 @@ async fn basic_run() -> Result<()> {
 
     tokio::spawn({
         async move {
-            let sub = zenoh.declare_subscriber("**").await.unwrap();
+            let sub = zenoh.declare_subscriber("**/failure").await.unwrap();
             // Receive loop ready, publish ready message
             println!("Listening for messages...");
             loop {
@@ -64,25 +64,25 @@ async fn basic_run() -> Result<()> {
     Ok(())
 }
 
-// #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-// async fn stop() -> Result<()> {
-//     let pipeline_job = pipeline_job()?;
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn stop() -> Result<()> {
+    let pipeline_job = pipeline_job()?;
 
-//     // Create the runner
-//     let mut runner = DockerPipelineRunner::new();
+    // Create the runner
+    let mut runner = DockerPipelineRunner::new();
 
-//     let test_dirs = TestDirs::new(&HashMap::from([(
-//         "default".to_owned(),
-//         Some("./tests/extra/data/"),
-//     )]))?;
-//     let namespace_lookup = test_dirs.namespace_lookup();
+    let test_dirs = TestDirs::new(&HashMap::from([(
+        "default".to_owned(),
+        Some("./tests/extra/data/"),
+    )]))?;
+    let namespace_lookup = test_dirs.namespace_lookup();
 
-//     let pipeline_run = runner
-//         .start(pipeline_job, "default", &namespace_lookup)
-//         .await?;
+    let pipeline_run = runner
+        .start(pipeline_job, "default", &namespace_lookup)
+        .await?;
 
-//     // Abort the pipeline run
-//     runner.stop(&pipeline_run).await?;
+    // Abort the pipeline run
+    runner.stop(&pipeline_run).await?;
 
-//     Ok(())
-// }
+    Ok(())
+}

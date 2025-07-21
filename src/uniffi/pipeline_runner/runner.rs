@@ -7,10 +7,6 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use bincode::{
-    config, de,
-    serde::{decode_from_slice, encode_to_vec},
-};
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Serializer;
@@ -20,6 +16,7 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     path::PathBuf,
+    result,
     sync::Arc,
 };
 use tokio::{
@@ -183,35 +180,13 @@ impl DockerPipelineRunner {
         let input_node_key_exp = format!("{pipeline_job_hash}/{INPUT_KEY_EXP}");
         for packet in &pipeline_run.pipeline_job.input_packets {
             // Send the packet to the input node key_exp
-            let payload_encoded = encode_to_vec(
-                PathSet::Unary(Blob {
-                    kind: BlobKind::File,
-                    location: URI {
-                        namespace: "asdfasdf".to_owned(),
-                        path: "asdfasdf".into(),
-                    },
-                    checksum: "".to_owned(),
-                }),
-                config::standard(),
-            )?;
-
-            let (decoded_packet, _): (PathSet, usize) =
-                decode_from_slice(&payload_encoded, config::standard())?;
-            println!("decoded packet: {:?}", decoded_packet);
-            println!(
-                "Payload bytes: {:?}",
-                encode_to_vec(
-                    NodeOutput::Packet("input_node".to_owned(), packet.clone()),
-                    config::standard(),
-                )?
-            );
             session
                 .put(
                     &input_node_key_exp,
-                    encode_to_vec(
-                        NodeOutput::Packet("input_node".to_owned(), packet.clone()),
-                        config::standard(),
-                    )?,
+                    serde_json::to_string(&NodeOutput::Packet(
+                        "input_node".to_owned(),
+                        packet.clone(),
+                    ))?,
                 )
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
@@ -221,10 +196,7 @@ impl DockerPipelineRunner {
         session
             .put(
                 input_node_key_exp,
-                encode_to_vec(
-                    NodeOutput::ProcessingCompleted("input_node".to_owned()),
-                    config::standard(),
-                )?,
+                serde_json::to_string(&NodeOutput::ProcessingCompleted("input_node".to_owned()))?,
             )
             .await
             .context(selector::AgentCommunicationFailure {})?;
@@ -232,11 +204,6 @@ impl DockerPipelineRunner {
         // Insert into the list of pipeline runs
         self.pipeline_runs
             .insert(pipeline_job_hash.clone(), pipeline_run);
-
-        println!(
-            "Pipeline run started with id: {} and hash: {}",
-            pipeline_job_hash, pipeline_job_hash
-        );
 
         Ok(pipeline_job_hash)
     }
@@ -255,12 +222,8 @@ impl DockerPipelineRunner {
                     key: pipeline_run_id.to_owned(),
                 })?;
 
-        println!("len of node_tasks: {}", pipeline_run.node_tasks.len());
-        println!("Join set {:?}", pipeline_run.node_tasks);
         // Wait for all the tasks to complete
         while let Some(result) = pipeline_run.node_tasks.join_next().await {
-            println!("Join set {:?}", pipeline_run.node_tasks);
-            println!("Task completed, result: {:?}", result);
             match result {
                 Ok(Ok(())) => {} // Task completed successfully
                 Ok(Err(err)) => {
@@ -272,8 +235,6 @@ impl DockerPipelineRunner {
                     return Err(err.into());
                 }
             }
-            pipeline_run.node_tasks.abort_all();
-            panic!();
         }
 
         Ok(PipelineResult {
@@ -287,7 +248,6 @@ impl DockerPipelineRunner {
     /// Will error out if the pipeline run is not found or if any of the tasks fail to stop correctly
     pub async fn stop(&mut self, pipeline_run_id: &str) -> Result<()> {
         // To stop the pipeline run, we need to send a stop message to all the tasks
-
         // Get the pipeline run first
         let pipeline_run =
             self.pipeline_runs
@@ -330,14 +290,10 @@ impl DockerPipelineRunner {
 
         while let Ok(payload) = subscriber.recv_async().await {
             // Extract the message from the payload
-            let (msg, _): (NodeOutput, usize) =
-                decode_from_slice(&payload.payload().to_bytes(), config::standard())?;
+            let msg: NodeOutput = serde_json::from_slice(&payload.payload().to_bytes())?;
 
             match msg {
                 NodeOutput::Packet(sender_id, hash_map) => {
-                    // Optionally, you can log or print the output packet
-                    println!("Captured output from node {}: {:?}", sender_id, hash_map);
-
                     // Store the output packet in the outputs map
                     let mut outputs_lock = outputs.write().await;
                     outputs_lock
@@ -351,10 +307,6 @@ impl DockerPipelineRunner {
                 }
             }
         }
-
-        // Print exit message
-        println!("Capture task for node {} completed.", node_id);
-
         Ok(())
     }
 
@@ -392,7 +344,7 @@ impl DockerPipelineRunner {
             },
         ));
 
-        // Create a joinset to spawn and handle incoming messages tasks
+        // Create a join set to spawn and handle incoming messages tasks
         let mut listener_tasks = JoinSet::new();
 
         // Create the list of key_expressions to subscribe to
@@ -429,10 +381,12 @@ impl DockerPipelineRunner {
             ));
         }
 
-        // Create the task to handle stop request
-        listener_tasks.spawn(Self::start_stop_request_task(
+        // Create the listener task for the stop request
+        let mut stop_listener_task = JoinSet::new();
+
+        stop_listener_task.spawn(Self::start_stop_request_task(
             Arc::clone(&node_processor),
-            pipeline_job_id.clone(),
+            format!("{pipeline_job_id}/{}/stop", node.id),
             Arc::clone(&session),
         ));
 
@@ -469,6 +423,9 @@ impl DockerPipelineRunner {
         // Wait for all task to complete
         listener_tasks.join_all().await;
 
+        // Abort the stop listener task since we don't need it anymore
+        stop_listener_task.abort_all();
+
         Ok(())
     }
 
@@ -493,27 +450,8 @@ impl DockerPipelineRunner {
 
         while let Ok(payload) = subscriber.recv_async().await {
             // Extract the message from the payload
-            println!(
-                "Received message for node {}: {:?}",
-                node_id,
-                payload.payload().to_bytes()
-            );
-
-            let (msg, _): (NodeOutput, usize) =
-                match decode_from_slice(&payload.payload().to_bytes(), config::standard()) {
-                    Ok(msg) => msg,
-                    Err(err) => {
-                        eprintln!("Failed to decode message: {err}");
-                        panic!("Failed to decode message: {err}");
-                    }
-                };
-
-            match msg {
+            match serde_json::from_slice(&payload.payload().to_bytes())? {
                 NodeOutput::Packet(sender_id, hash_map) => {
-                    println!(
-                        "Received packet from {} for node {}: {:?}",
-                        sender_id, node_id, hash_map
-                    );
                     // Process the packet using the node processor
                     node_processor.lock().await.process_packet(
                         &sender_id,
@@ -527,10 +465,6 @@ impl DockerPipelineRunner {
                 }
                 NodeOutput::ProcessingCompleted(sender_id) => {
                     // Notify the processor that the parent node has completed processing
-                    println!(
-                        "Received processing completed message for node {}",
-                        sender_id
-                    );
                     if node_processor
                         .lock()
                         .await
@@ -543,15 +477,14 @@ impl DockerPipelineRunner {
                         session
                             .put(
                                 output_key_exp,
-                                encode_to_vec(
-                                    NodeOutput::ProcessingCompleted(node_id.clone()),
-                                    config::standard(),
-                                )?,
+                                serde_json::to_string(&NodeOutput::ProcessingCompleted(
+                                    node_id.clone(),
+                                ))?,
                             )
                             .await
                             .context(selector::AgentCommunicationFailure {})?;
-                        break;
                     }
+                    break;
                 }
             }
         }
@@ -691,36 +624,29 @@ impl NodeProcessor for PodProcessor {
         let node_id_clone = node_id.to_owned();
         let output_key_exp_clone = output_key_exp.to_owned();
         self.processing_tasks.spawn(async move {
-            println!(
-                "Simulating Executing pod job: {} with pod hash: {}",
-                pod_job.hash, pod_job.pod.hash
-            );
-
             // For now we will just send the input_packet to the success channel
             session
                 .put(
-                    output_key_exp_clone + SUCCESS_KEY_EXP,
-                    encode_to_vec(
-                        NodeOutput::Packet(node_id_clone, output_packet),
-                        config::standard(),
-                    )?,
+                    output_key_exp_clone + "/" + SUCCESS_KEY_EXP,
+                    serde_json::to_string(&NodeOutput::Packet(node_id_clone, output_packet))?,
                 )
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
 
             Ok(())
         });
-
-        println!("Successfully started processor for node: {}", node_id);
         Ok(())
     }
 
     async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) -> bool {
         // For pod we only have one parent, thus execute the exit case
-        while (self.processing_tasks.join_next().await).is_some() {
-            // Wait for all tasks to complete
+        while let Some(result) = self.processing_tasks.join_next().await {
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => {}
+                Err(err) => {}
+            }
         }
-
         true
     }
 
@@ -776,11 +702,11 @@ impl NodeProcessor for MapperProcessor {
                 // Send the packet outwards
                 session
                     .put(
-                        output_key_exp_clone.clone() + SUCCESS_KEY_EXP,
-                        encode_to_vec(
-                            NodeOutput::Packet(node_id_clone.clone(), output_map),
-                            config::standard(),
-                        )?,
+                        format!("{}/{}", output_key_exp_clone, SUCCESS_KEY_EXP),
+                        &serde_json::to_string(&NodeOutput::Packet(
+                            node_id_clone.clone(),
+                            output_map,
+                        ))?,
                     )
                     .await
                     .context(selector::AgentCommunicationFailure {})?;
@@ -791,19 +717,15 @@ impl NodeProcessor for MapperProcessor {
                 // If there was an error, we send it to the failure channel
                 session
                     .put(
-                        output_key_exp_clone + FAILURE_KEY_EXP,
-                        encode_to_vec(
-                            &ProcessingFailure {
-                                node_id: node_id_clone,
-                                error: err.to_string(),
-                            },
-                            config::standard(),
-                        )?,
+                        format!("{}/{}", output_key_exp_clone, FAILURE_KEY_EXP),
+                        serde_json::to_string(&ProcessingFailure {
+                            node_id: node_id_clone.clone(),
+                            error: err.to_string(),
+                        })?,
                     )
                     .await
                     .context(selector::AgentCommunicationFailure {})?;
             }
-
             Ok(())
         });
         Ok(())
@@ -906,17 +828,16 @@ impl NodeProcessor for JoinerProcessor {
             self.processing_tasks.spawn(async move {
                 // Convert Vec<Vec<HashMap<...>>> to Vec<&Vec<HashMap<...>>> for compute_cartesian_product
                 let cartesian_product = Self::compute_cartesian_product(&factors);
-
                 // Post all products to the output channel
                 for output_packet in cartesian_product {
                     let result = {
                         session
                             .put(
-                                output_key_exp_clone.clone() + SUCCESS_KEY_EXP,
-                                encode_to_vec(
-                                    NodeOutput::Packet(node_id_clone.clone(), output_packet),
-                                    config::standard(),
-                                )?,
+                                format!("{}/{}", output_key_exp_clone, SUCCESS_KEY_EXP),
+                                serde_json::to_string(&NodeOutput::Packet(
+                                    node_id_clone.clone(),
+                                    output_packet,
+                                ))?,
                             )
                             .await
                             .context(selector::AgentCommunicationFailure {})?;
@@ -927,14 +848,11 @@ impl NodeProcessor for JoinerProcessor {
                     if let Err(err) = result {
                         session
                             .put(
-                                output_key_exp_clone.clone() + FAILURE_KEY_EXP,
-                                encode_to_vec(
-                                    &ProcessingFailure {
-                                        node_id: node_id_clone.clone(),
-                                        error: err.to_string(),
-                                    },
-                                    config::standard(),
-                                )?,
+                                format!("{}/{}", output_key_exp_clone, FAILURE_KEY_EXP),
+                                serde_json::to_string(&ProcessingFailure {
+                                    node_id: node_id_clone.clone(),
+                                    error: err.to_string(),
+                                })?,
                             )
                             .await
                             .context(selector::AgentCommunicationFailure {})?;
