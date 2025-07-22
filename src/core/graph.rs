@@ -103,7 +103,7 @@ pub struct DOTStyleConfig<'a> {
     reason = "Needed since `Dot::with_attr_getters` doesn't accept results."
 )]
 pub fn make_dot(
-    graph: &DiGraph<String, String>,
+    graph: &DiGraph<String, ()>,
     style: Option<DOTStyleConfig>, // without it default to Nones, don't bold shapes, and don't add size graph attribute
 ) -> Result<String> {
     let (dot_config, is_styled) = style.map_or_else(
@@ -122,34 +122,38 @@ pub fn make_dot(
     let graph_template = env.get_template("graph")?;
     let node_template = env.get_template("node")?;
 
-    let graph_dot = Dot::with_attr_getters(
-        graph,
-        &[
-            Config::NodeNoLabel,
-            Config::EdgeNoLabel,
-            Config::GraphContentOnly,
-        ],
-        &|_graph, _edge| String::new(),
-        &|_graph, node| {
-            node_template
-                .render(&DOTNodeConfig {
-                    label: node.1.clone(),
-                    extra_label: node_extra_label
-                        .and_then(|config| config.get(node.1))
-                        .cloned(),
-                    shape: node_metadata
-                        .and_then(|config| config.get(node.1))
-                        .map(|kernel| match kernel {
-                            Kernel::Pod { .. } => "box".into(),
-                            Kernel::MapOperator { .. } | Kernel::JoinOperator => "circle".into(),
-                        }),
-                    color: node_color.and_then(|config| config.get(node.1)).cloned(),
-                    is_styled,
-                })
-                .expect("Failed to render node.")
-        },
-    )
-    .to_string();
+    let graph_dot = format!(
+        "{:?}",
+        Dot::with_attr_getters(
+            graph,
+            &[
+                Config::NodeNoLabel,
+                Config::EdgeNoLabel,
+                Config::GraphContentOnly,
+            ],
+            &|_graph, _edge| String::new(),
+            &|_graph, node| {
+                node_template
+                    .render(&DOTNodeConfig {
+                        label: node.1.clone(),
+                        extra_label: node_extra_label
+                            .and_then(|config| config.get(node.1))
+                            .cloned(),
+                        shape: node_metadata
+                            .and_then(|config| config.get(node.1))
+                            .map(|kernel| match kernel {
+                                Kernel::Pod { .. } => "box".into(),
+                                Kernel::MapOperator { .. } | Kernel::JoinOperator => {
+                                    "circle".into()
+                                }
+                            }),
+                        color: node_color.and_then(|config| config.get(node.1)).cloned(),
+                        is_styled,
+                    })
+                    .expect("Failed to render node.")
+            },
+        )
+    );
 
     Ok(graph_template.render(&DOTGraphConfig {
         is_styled,
@@ -196,10 +200,10 @@ fn cast_graph<N: Clone, E: Default>(
     Ok(new_graph)
 }
 // todo: checks that metadata only contains referenced nodes
-pub fn make_graph(input_dot: &str) -> Result<DiGraph<String, String>> {
+pub fn make_graph(input_dot: &str) -> Result<DiGraph<String, ()>> {
     let mut graph =
         DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?)
-            .map(|_, node| node.id.clone(), |_, _| String::new());
+            .map(|_, node| node.id.clone(), |_, _| ());
 
     graph = cast_graph(sort_alphabetically(&graph), graph)?;
     graph = cast_graph(

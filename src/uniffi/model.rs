@@ -320,7 +320,7 @@ impl PodResult {
 pub struct Pipeline {
     /// Computational DAG in-memory.
     #[getset(skip)]
-    pub graph: DiGraph<String, String>,
+    pub graph: DiGraph<String, ()>,
     /// Metadata for each kernel referenced in the DAG indexed by node.
     pub metadata: HashMap<String, Kernel>,
     /// key -> N number of node name / input key i.e. provides a rename feature + forking

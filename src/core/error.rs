@@ -18,7 +18,7 @@ impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -28,7 +28,7 @@ impl From<chrono::ParseError> for OrcaError {
     fn from(error: chrono::ParseError) -> Self {
         Self {
             kind: Kind::ChronoParseError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -38,7 +38,7 @@ impl From<PestError> for OrcaError {
     fn from(error: PestError) -> Self {
         Self {
             kind: Kind::DOTError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -48,7 +48,7 @@ impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
         Self {
             kind: Kind::GlobPatternError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -58,7 +58,7 @@ impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self {
             kind: Kind::IoError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -68,7 +68,7 @@ impl From<minijinja::Error> for OrcaError {
     fn from(error: minijinja::Error) -> Self {
         Self {
             kind: Kind::JinjaError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -78,7 +78,7 @@ impl From<path::StripPrefixError> for OrcaError {
     fn from(error: path::StripPrefixError) -> Self {
         Self {
             kind: Kind::PathPrefixError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -88,7 +88,7 @@ impl From<serde_json::Error> for OrcaError {
     fn from(error: serde_json::Error) -> Self {
         Self {
             kind: Kind::SerdeJsonError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -98,7 +98,7 @@ impl From<serde_yaml::Error> for OrcaError {
     fn from(error: serde_yaml::Error) -> Self {
         Self {
             kind: Kind::SerdeYamlError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -108,7 +108,7 @@ impl From<task::JoinError> for OrcaError {
     fn from(error: task::JoinError) -> Self {
         Self {
             kind: Kind::TokioTaskJoinError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }

@@ -1,4 +1,4 @@
 excessive-nesting-threshold = 4
 too-many-arguments-threshold = 10
 allowed-idents-below-min-chars = ["..", "k", "v", "f", "re", "id", "Ok", "'_"]
-large-error-threshold = 325
+large-error-threshold = 129

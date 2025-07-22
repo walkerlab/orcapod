@@ -26,10 +26,10 @@ use tokio_util::task::TaskTracker;
 #[expect(clippy::expect_used, reason = "Valid static regex")]
 pub static RE_AGENT_KEY_EXPR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        "(?x)
+        r"(?x)
             ^
             group/
-                (?<group>[a-z_]+)/
+                (?<group>[a-z_\-]+)/
                     (?<action>request|success|failure)/
                         (?<model_type>[a-z_]+)/
                             (?<ref>[0-9a-f]+)/

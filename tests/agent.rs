@@ -28,7 +28,7 @@ use zenoh;
 
 #[test]
 fn simple() -> Result<()> {
-    let (group, host) = ("test", "alpha");
+    let (group, host) = ("agent_simple", "host");
     let _client = AgentClient::new(group.to_owned(), host.to_owned())?;
     let _agent = Agent::new(
         group.to_owned(),
@@ -55,7 +55,7 @@ async fn parallel_four_cores() -> Result<()> {
         .expect("Current time is earlier than start of epoch (1970-01-01 00:00:00).")
         .as_millis();
     println!("current_timestamp: {current_timestamp}");
-    let (group, host) = ("test", "alpha");
+    let (group, host) = ("agent_parallel-four-cores", "host");
     // api
     let client = AgentClient::new(group.to_owned(), host.to_owned())?;
     let agent = Agent::new(
