@@ -2,8 +2,8 @@ use crate::{
     core::{crypto::hash_buffer, model::serialize_hashmap, util::get},
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{Blob, BlobKind, PathSet, Pod, PodJob, URI},
-        pipeline::{Kernel, Mapper, Node, Pipeline, PipelineJob, PipelineResult},
+        model::{PathSet, Pod, PodJob, URI},
+        pipeline::{self, Kernel, Mapper, Node, Pipeline, PipelineJob, PipelineResult},
     },
 };
 use async_trait::async_trait;
@@ -16,7 +16,6 @@ use std::{
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     path::PathBuf,
-    result,
     sync::Arc,
 };
 use tokio::{
@@ -84,6 +83,10 @@ impl Display for PipelineRun {
  */
 #[derive(Default)]
 pub struct DockerPipelineRunner {
+    /// User label on which group of agents this runner is associated with
+    pub group: String,
+    /// The host name of the runner
+    pub host: String,
     pipeline_runs: HashMap<String, PipelineRun>,
 }
 
@@ -97,8 +100,14 @@ pub struct DockerPipelineRunner {
 */
 impl DockerPipelineRunner {
     /// Create a new Docker pipeline runner
-    pub fn new() -> Self {
-        Self::default()
+    /// # Errors
+    /// Will error out if the environment variable `HOSTNAME` is not set
+    pub fn new(group: String) -> Result<Self> {
+        Ok(Self {
+            group,
+            host: hostname::get()?.to_string_lossy().to_string(),
+            pipeline_runs: HashMap::new(),
+        })
     }
 
     /// # Errors
@@ -116,8 +125,8 @@ impl DockerPipelineRunner {
             node_tasks: JoinSet::new(),
         };
 
-        // Get the pipeline_job_hash which will be use to identify the pipeline run
-        let pipeline_job_hash = pipeline_run.pipeline_job.hash.clone();
+        // The id for the pipeline_run is the pipeline_job hash
+        let pipeline_run_id = pipeline_run.pipeline_job.hash.clone();
 
         let graph = &pipeline_run.pipeline_job.pipeline.graph;
 
@@ -129,7 +138,7 @@ impl DockerPipelineRunner {
         );
 
         let subscriber = session
-            .declare_subscriber(format!("{pipeline_job_hash}/*/status/ready"))
+            .declare_subscriber(self.get_base_key_exp(&pipeline_run_id) + "/*/status/ready")
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -143,7 +152,7 @@ impl DockerPipelineRunner {
                 .spawn(Self::spawn_node_processing_task(
                     node.clone(),
                     pipeline_run.pipeline_job.pipeline.clone(),
-                    pipeline_job_hash.clone(),
+                    self.get_base_key_exp(&pipeline_run_id),
                     namespace.to_owned(),
                     namespace_lookup.clone(),
                     Arc::clone(&session),
@@ -157,9 +166,14 @@ impl DockerPipelineRunner {
                 .node_tasks
                 .spawn(Self::create_capture_task_for_node(
                     node.id.clone(),
-                    pipeline_run.pipeline_job.hash.clone(),
                     Arc::clone(&pipeline_run.outputs),
                     Arc::clone(&session),
+                    format!(
+                        "{}/{}/outputs/{}",
+                        self.get_base_key_exp(&pipeline_run_id),
+                        node.id,
+                        SUCCESS_KEY_EXP,
+                    ),
                 ));
         }
 
@@ -177,7 +191,11 @@ impl DockerPipelineRunner {
         }
 
         // Submit the input_packets to the correct key_exp
-        let input_node_key_exp = format!("{pipeline_job_hash}/{INPUT_KEY_EXP}");
+        let input_node_key_exp = format!(
+            "{}/{}",
+            self.get_base_key_exp(&pipeline_run_id),
+            INPUT_KEY_EXP,
+        );
         for packet in &pipeline_run.pipeline_job.input_packets {
             // Send the packet to the input node key_exp
             session
@@ -203,9 +221,9 @@ impl DockerPipelineRunner {
 
         // Insert into the list of pipeline runs
         self.pipeline_runs
-            .insert(pipeline_job_hash.clone(), pipeline_run);
+            .insert(pipeline_run_id.clone(), pipeline_run);
 
-        Ok(pipeline_job_hash)
+        Ok(pipeline_run_id)
     }
 
     /// Given a pipeline run, wait for all its tasks to complete and return the `PipelineResult`
@@ -247,6 +265,11 @@ impl DockerPipelineRunner {
     /// # Errors
     /// Will error out if the pipeline run is not found or if any of the tasks fail to stop correctly
     pub async fn stop(&mut self, pipeline_run_id: &str) -> Result<()> {
+        let stop_key_exp = format!(
+            "{}/{}/stop",
+            self.get_base_key_exp(pipeline_run_id),
+            pipeline_run_id
+        );
         // To stop the pipeline run, we need to send a stop message to all the tasks
         // Get the pipeline run first
         let pipeline_run =
@@ -262,10 +285,7 @@ impl DockerPipelineRunner {
 
         // Send the stop message into the stop key_exp, the msg is just an empty vector
         session
-            .put(
-                format!("{}/stop", pipeline_run.pipeline_job.hash),
-                Vec::new(),
-            )
+            .put(stop_key_exp, Vec::new())
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -276,15 +296,13 @@ impl DockerPipelineRunner {
     #[expect(clippy::type_complexity, reason = "Needed for async")]
     async fn create_capture_task_for_node(
         node_id: String,
-        pipeline_run_id: String,
         outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>,
         session: Arc<zenoh::Session>,
+        key_exp_to_sub: String,
     ) -> Result<()> {
         // Create a zenoh session
         let subscriber = session
-            .declare_subscriber(format!(
-                "{pipeline_run_id}/{node_id}/outputs/{SUCCESS_KEY_EXP}"
-            ))
+            .declare_subscriber(key_exp_to_sub)
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -293,7 +311,7 @@ impl DockerPipelineRunner {
             let msg: NodeOutput = serde_json::from_slice(&payload.payload().to_bytes())?;
 
             match msg {
-                NodeOutput::Packet(sender_id, hash_map) => {
+                NodeOutput::Packet(_, hash_map) => {
                     // Store the output packet in the outputs map
                     let mut outputs_lock = outputs.write().await;
                     outputs_lock
@@ -323,7 +341,7 @@ impl DockerPipelineRunner {
     async fn spawn_node_processing_task(
         node: Node,
         pipeline: Pipeline,
-        pipeline_job_id: String,
+        base_key_exp: String,
         namespace: String,
         namespace_lookup: HashMap<String, PathBuf>,
         session: Arc<zenoh::Session>,
@@ -352,7 +370,7 @@ impl DockerPipelineRunner {
             .get_parents_for_node(&node)
             .map(|parent_node| {
                 format!(
-                    "{pipeline_job_id}/{}/outputs/{SUCCESS_KEY_EXP}",
+                    "{base_key_exp}/{}/outputs/{SUCCESS_KEY_EXP}",
                     parent_node.id
                 )
             })
@@ -360,7 +378,7 @@ impl DockerPipelineRunner {
 
         // If there was no parent node, then this is root node, therefore we need to subscribe to the input node
         if key_exps_to_subscribe_to.is_empty() {
-            key_exps_to_subscribe_to.push(format!("{pipeline_job_id}/{INPUT_KEY_EXP}"));
+            key_exps_to_subscribe_to.push(format!("{base_key_exp}/{INPUT_KEY_EXP}"));
         }
 
         // Create a subscriber for each of the parent nodes (Should only be 1, unless it is a joiner node)
@@ -374,7 +392,7 @@ impl DockerPipelineRunner {
                 subscriber,
                 Arc::clone(&node_processor),
                 node.id.clone(),
-                pipeline_job_id.clone(),
+                base_key_exp.clone(),
                 namespace.clone(),
                 namespace_lookup.clone(),
                 Arc::clone(&session),
@@ -386,26 +404,26 @@ impl DockerPipelineRunner {
 
         stop_listener_task.spawn(Self::start_stop_request_task(
             Arc::clone(&node_processor),
-            format!("{pipeline_job_id}/{}/stop", node.id),
+            format!("{base_key_exp}/{}/stop", node.id),
             Arc::clone(&session),
         ));
 
         // Wait for all tasks to be spawned and reply with ready message
         // This is to ensure that the pipeline run knows when all tasks are ready to receive inputs
 
-        let mut num_of_ready_subcribers: usize = 0;
+        let mut num_of_ready_subscribers: usize = 0;
         // Build the subscriber
         let status_subscriber = session
             .declare_subscriber(format!(
-                "{pipeline_job_id}/{}/subscriber/status/ready",
+                "{base_key_exp}/{}/subscriber/status/ready",
                 node.id
             ))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
         while status_subscriber.recv_async().await.is_ok() {
-            num_of_ready_subcribers += 1;
-            if num_of_ready_subcribers == key_exps_to_subscribe_to.len() {
+            num_of_ready_subscribers += 1;
+            if num_of_ready_subscribers == key_exps_to_subscribe_to.len() {
                 // +1 for the stop request task
                 break; // All tasks are ready, we can start sending inputs
             }
@@ -413,10 +431,7 @@ impl DockerPipelineRunner {
 
         // Send a ready message so the pipeline knows when to start sending inputs
         session
-            .put(
-                format!("{pipeline_job_id}/{}/status/ready", node.id),
-                &node.id,
-            )
+            .put(format!("{base_key_exp}/{}/status/ready", node.id), &node.id)
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -433,7 +448,7 @@ impl DockerPipelineRunner {
         subscriber: Subscriber<FifoChannelHandler<Sample>>,
         node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
         node_id: String,
-        pipeline_job_id: String,
+        base_key_exp: String,
         namespace: String,
         namespace_lookup: HashMap<String, PathBuf>,
         session: Arc<zenoh::Session>,
@@ -442,7 +457,7 @@ impl DockerPipelineRunner {
         // back to our spawner task
         session
             .put(
-                format!("{pipeline_job_id}/{node_id}/subscriber/status/ready"),
+                format!("{base_key_exp}/{node_id}/subscriber/status/ready"),
                 &node_id,
             )
             .await
@@ -458,7 +473,7 @@ impl DockerPipelineRunner {
                         &node_id,
                         &hash_map,
                         Arc::clone(&session),
-                        &format!("{}/{}/outputs", pipeline_job_id, node_id.clone()),
+                        &format!("{base_key_exp}/{}/outputs", node_id.clone()),
                         &namespace,
                         &namespace_lookup,
                     )?;
@@ -473,7 +488,7 @@ impl DockerPipelineRunner {
                     {
                         // This was the last parent, thus we need to send the processing complete message
                         let output_key_exp =
-                            format!("{pipeline_job_id}/{node_id}/outputs/{SUCCESS_KEY_EXP}");
+                            format!("{base_key_exp}/{node_id}/outputs/{SUCCESS_KEY_EXP}");
                         session
                             .put(
                                 output_key_exp,
@@ -494,11 +509,11 @@ impl DockerPipelineRunner {
 
     async fn start_stop_request_task(
         node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
-        pipeline_run_id: String,
+        base_key_exp: String,
         session: Arc<zenoh::Session>,
     ) -> Result<()> {
         let subscriber = session
-            .declare_subscriber(pipeline_run_id.clone() + "/stop")
+            .declare_subscriber(format!("{base_key_exp}/stop"))
             .await
             .context(selector::AgentCommunicationFailure {})?;
         while subscriber.recv_async().await.is_ok() {
@@ -506,6 +521,10 @@ impl DockerPipelineRunner {
             node_processor.lock().await.stop();
         }
         Ok::<(), OrcaError>(())
+    }
+
+    fn get_base_key_exp(&self, pipeline_run_id: &str) -> String {
+        format!("{}/{}/{}", self.group, self.host, pipeline_run_id)
     }
 }
 
@@ -640,13 +659,7 @@ impl NodeProcessor for PodProcessor {
 
     async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) -> bool {
         // For pod we only have one parent, thus execute the exit case
-        while let Some(result) = self.processing_tasks.join_next().await {
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => {}
-                Err(err) => {}
-            }
-        }
+        while let Some(result) = self.processing_tasks.join_next().await {}
         true
     }
 
@@ -702,7 +715,7 @@ impl NodeProcessor for MapperProcessor {
                 // Send the packet outwards
                 session
                     .put(
-                        format!("{}/{}", output_key_exp_clone, SUCCESS_KEY_EXP),
+                        format!("{output_key_exp_clone}/{SUCCESS_KEY_EXP}"),
                         &serde_json::to_string(&NodeOutput::Packet(
                             node_id_clone.clone(),
                             output_map,
@@ -717,7 +730,7 @@ impl NodeProcessor for MapperProcessor {
                 // If there was an error, we send it to the failure channel
                 session
                     .put(
-                        format!("{}/{}", output_key_exp_clone, FAILURE_KEY_EXP),
+                        format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
                         serde_json::to_string(&ProcessingFailure {
                             node_id: node_id_clone.clone(),
                             error: err.to_string(),
@@ -833,7 +846,7 @@ impl NodeProcessor for JoinerProcessor {
                     let result = {
                         session
                             .put(
-                                format!("{}/{}", output_key_exp_clone, SUCCESS_KEY_EXP),
+                                format!("{output_key_exp_clone}/{SUCCESS_KEY_EXP}"),
                                 serde_json::to_string(&NodeOutput::Packet(
                                     node_id_clone.clone(),
                                     output_packet,
@@ -848,7 +861,7 @@ impl NodeProcessor for JoinerProcessor {
                     if let Err(err) = result {
                         session
                             .put(
-                                format!("{}/{}", output_key_exp_clone, FAILURE_KEY_EXP),
+                                format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
                                 serde_json::to_string(&ProcessingFailure {
                                     node_id: node_id_clone.clone(),
                                     error: err.to_string(),

@@ -1,5 +1,4 @@
 use crate::uniffi::error::{Kind, OrcaError};
-use bincode::error::{DecodeError, EncodeError};
 use bollard::errors::Error as BollardError;
 use glob;
 use serde_json;
@@ -17,26 +16,6 @@ impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError {
-                source: error,
-                backtrace: Some(Backtrace::capture()),
-            },
-        }
-    }
-}
-impl From<DecodeError> for OrcaError {
-    fn from(error: DecodeError) -> Self {
-        Self {
-            kind: Kind::DecodeError {
-                source: error,
-                backtrace: Some(Backtrace::capture()),
-            },
-        }
-    }
-}
-impl From<EncodeError> for OrcaError {
-    fn from(error: EncodeError) -> Self {
-        Self {
-            kind: Kind::EncodingError {
                 source: error,
                 backtrace: Some(Backtrace::capture()),
             },
@@ -147,8 +126,6 @@ impl fmt::Debug for OrcaError {
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChannelReceiveError { backtrace, .. }
-            | Kind::DecodeError { backtrace, .. }
-            | Kind::EncodingError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
