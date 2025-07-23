@@ -3,12 +3,13 @@ use crate::{
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{PathSet, Pod, PodJob, URI},
-        pipeline::{self, Kernel, Mapper, Node, Pipeline, PipelineJob, PipelineResult},
+        pipeline::{Kernel, Mapper, Node, Pipeline, PipelineJob, PipelineResult},
     },
 };
 use async_trait::async_trait;
+use derive_more::derive;
 use itertools::Itertools as _;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::value};
 use serde_yaml::Serializer;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
@@ -463,20 +464,31 @@ impl DockerPipelineRunner {
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
+        let node_base_output_key_exp = format!("{base_key_exp}/{node_id}/outputs");
         while let Ok(payload) = subscriber.recv_async().await {
             // Extract the message from the payload
             match serde_json::from_slice(&payload.payload().to_bytes())? {
                 NodeOutput::Packet(sender_id, hash_map) => {
                     // Process the packet using the node processor
-                    node_processor.lock().await.process_packet(
+                    let result = node_processor.lock().await.process_packet(
                         &sender_id,
                         &node_id,
                         &hash_map,
                         Arc::clone(&session),
-                        &format!("{base_key_exp}/{}/outputs", node_id.clone()),
+                        &node_base_output_key_exp,
                         &namespace,
                         &namespace_lookup,
-                    )?;
+                    );
+
+                    if let Err(err) = result {
+                        try_to_forward_err_msg(
+                            Arc::clone(&session),
+                            err,
+                            &node_base_output_key_exp,
+                            &node_id,
+                        )
+                        .await;
+                    }
                 }
                 NodeOutput::ProcessingCompleted(sender_id) => {
                     // Notify the processor that the parent node has completed processing
@@ -517,7 +529,7 @@ impl DockerPipelineRunner {
             .await
             .context(selector::AgentCommunicationFailure {})?;
         while subscriber.recv_async().await.is_ok() {
-            // Received a requst to stop, therefore we need to tell the node_processor to shutdown
+            // Received a request to stop, therefore we need to tell the node_processor to shutdown
             node_processor.lock().await.stop();
         }
         Ok::<(), OrcaError>(())
@@ -541,7 +553,7 @@ trait NodeProcessor: Send + Sync {
         node_id: &str,
         packet: &HashMap<String, PathSet>,
         session: Arc<zenoh::Session>,
-        output_key_exp: &str,
+        base_output_key_exp: &str,
         namespace: &str,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<()>;
@@ -562,11 +574,40 @@ trait NodeProcessor: Send + Sync {
     fn stop(&mut self);
 }
 
+/// Util function to handle forwarding error messages to the failure channel
+async fn try_to_forward_err_msg(
+    session: Arc<zenoh::Session>,
+    err: OrcaError,
+    node_base_output_key_exp: &str,
+    node_id: &str,
+) {
+    match async {
+        session
+            .put(
+                format!("{node_base_output_key_exp}/{FAILURE_KEY_EXP}"),
+                serde_json::to_string(&ProcessingFailure {
+                    node_id: node_id.to_owned(),
+                    error: err.to_string(),
+                })?,
+            )
+            .await
+            .context(selector::AgentCommunicationFailure {})?;
+        Ok::<(), OrcaError>(())
+    }
+    .await
+    {
+        Ok(()) => {}
+        Err(send_err) => {
+            eprintln!("Failed to send failure message: {send_err}");
+        }
+    }
+}
+
 /// Processor for Pods
 /// Currently missing implementation to call agents for actual pod processing
 struct PodProcessor {
     pod: Arc<Pod>,
-    processing_tasks: JoinSet<Result<(), OrcaError>>,
+    processing_tasks: JoinSet<()>,
 }
 
 impl PodProcessor {
@@ -591,13 +632,10 @@ impl NodeProcessor for PodProcessor {
         node_id: &str,
         packet: &HashMap<String, PathSet>,
         session: Arc<zenoh::Session>,
-        output_key_exp: &str,
+        base_output_key_exp: &str,
         namespace: &str,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<()> {
-        // Process the packet using the pod
-        // Create the pod_job
-
         // We need a unique hash for this given input packet process by the node
         // therefore we need to generate a hash that has the pod_id + input_packet
         let node_id_bytes = node_id.as_bytes().to_vec();
@@ -641,25 +679,42 @@ impl NodeProcessor for PodProcessor {
             .collect::<HashMap<_, _>>();
 
         let node_id_clone = node_id.to_owned();
-        let output_key_exp_clone = output_key_exp.to_owned();
+        let output_key_exp_clone = base_output_key_exp.to_owned();
         self.processing_tasks.spawn(async move {
             // For now we will just send the input_packet to the success channel
-            session
-                .put(
-                    output_key_exp_clone + "/" + SUCCESS_KEY_EXP,
-                    serde_json::to_string(&NodeOutput::Packet(node_id_clone, output_packet))?,
-                )
-                .await
-                .context(selector::AgentCommunicationFailure {})?;
+            let results = async {
+                session
+                    .put(
+                        output_key_exp_clone.clone() + "/" + SUCCESS_KEY_EXP,
+                        serde_json::to_string(&NodeOutput::Packet(
+                            node_id_clone.clone(),
+                            output_packet,
+                        ))?,
+                    )
+                    .await
+                    .context(selector::AgentCommunicationFailure {})?;
+                Ok::<(), OrcaError>(())
+            };
 
-            Ok(())
+            match results.await {
+                Ok(()) => {}
+                Err(err) => {
+                    try_to_forward_err_msg(
+                        session,
+                        err,
+                        &format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
+                        &node_id_clone,
+                    )
+                    .await;
+                }
+            }
         });
         Ok(())
     }
 
     async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) -> bool {
         // For pod we only have one parent, thus execute the exit case
-        while let Some(result) = self.processing_tasks.join_next().await {}
+        while self.processing_tasks.join_next().await.is_some() {}
         true
     }
 
@@ -672,7 +727,7 @@ impl NodeProcessor for PodProcessor {
 /// This processor renames the `input_keys` from the input packet to the `output_keys` defined by the map
 struct MapperProcessor {
     mapper: Arc<Mapper>,
-    processing_tasks: JoinSet<Result<(), OrcaError>>,
+    processing_tasks: JoinSet<()>,
 }
 
 impl MapperProcessor {
@@ -692,17 +747,17 @@ impl NodeProcessor for MapperProcessor {
         node_id: &str,
         packet: &HashMap<String, PathSet>,
         session: Arc<zenoh::Session>,
-        output_key_exp: &str,
+        base_output_key_exp: &str,
         _namespace: &str,
         _namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<()> {
         let mapping = self.mapper.mapping.clone();
         let packet_clone = packet.clone();
         let node_id_clone = node_id.to_owned();
-        let output_key_exp_clone = output_key_exp.to_owned();
+        let output_key_exp_clone = base_output_key_exp.to_owned();
 
         self.processing_tasks.spawn(async move {
-            let result = {
+            let result = async {
                 // Apply the mapping to the input packet
                 let output_map = mapping
                     .iter()
@@ -724,22 +779,18 @@ impl NodeProcessor for MapperProcessor {
                     .await
                     .context(selector::AgentCommunicationFailure {})?;
                 Ok::<(), OrcaError>(())
-            };
+            }
+            .await;
 
             if let Err(err) = result {
-                // If there was an error, we send it to the failure channel
-                session
-                    .put(
-                        format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
-                        serde_json::to_string(&ProcessingFailure {
-                            node_id: node_id_clone.clone(),
-                            error: err.to_string(),
-                        })?,
-                    )
-                    .await
-                    .context(selector::AgentCommunicationFailure {})?;
+                try_to_forward_err_msg(
+                    session,
+                    err,
+                    &format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
+                    &node_id_clone,
+                )
+                .await;
             }
-            Ok(())
         });
         Ok(())
     }
@@ -747,7 +798,7 @@ impl NodeProcessor for MapperProcessor {
     async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) -> bool {
         // For mapper we only have one parent, thus execute the exit case
         while (self.processing_tasks.join_next().await).is_some() {
-            // Wait for all tasks to complete
+            // The only error that should be forwarded here is the failure to send the output packet
         }
 
         true
@@ -761,11 +812,12 @@ impl NodeProcessor for MapperProcessor {
 /// Processor for Joiner nodes
 /// This processor combines packets from multiple parent nodes into a single output packet
 /// It uses a cartesian product to combine packets from different parents
+#[derive(Debug)]
 struct JoinerProcessor {
     /// Cache for all packets received by the node
     input_packet_cache: HashMap<String, Vec<HashMap<String, PathSet>>>,
     completed_parents: Vec<String>,
-    processing_tasks: JoinSet<Result<(), OrcaError>>,
+    processing_tasks: JoinSet<()>,
 }
 
 impl JoinerProcessor {
@@ -807,7 +859,7 @@ impl NodeProcessor for JoinerProcessor {
         node_id: &str,
         packet: &HashMap<String, PathSet>,
         session: Arc<zenoh::Session>,
-        output_key_exp: &str,
+        base_output_key_exp: &str,
         _namespace: &str,
         _namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<()> {
@@ -820,6 +872,7 @@ impl NodeProcessor for JoinerProcessor {
 
         // Check if we have all the other parents needed to compute the cartesian product
         if self.input_packet_cache.values().all(|v| !v.is_empty()) {
+            // Print we have all the parents
             // Get all the cached packets from other parents
             let other_parent_ids = self
                 .input_packet_cache
@@ -836,15 +889,16 @@ impl NodeProcessor for JoinerProcessor {
 
             // Compute the cartesian product of the factors
             let node_id_clone = node_id.to_owned();
-            let output_key_exp_clone = output_key_exp.to_owned();
+            let output_key_exp_clone = base_output_key_exp.to_owned();
 
             self.processing_tasks.spawn(async move {
                 // Convert Vec<Vec<HashMap<...>>> to Vec<&Vec<HashMap<...>>> for compute_cartesian_product
                 let cartesian_product = Self::compute_cartesian_product(&factors);
                 // Post all products to the output channel
+                let session_clone = Arc::clone(&session);
                 for output_packet in cartesian_product {
-                    let result = {
-                        session
+                    let result = async {
+                        session_clone
                             .put(
                                 format!("{output_key_exp_clone}/{SUCCESS_KEY_EXP}"),
                                 serde_json::to_string(&NodeOutput::Packet(
@@ -855,24 +909,20 @@ impl NodeProcessor for JoinerProcessor {
                             .await
                             .context(selector::AgentCommunicationFailure {})?;
                         Ok::<(), OrcaError>(())
-                    };
+                    }
+                    .await;
 
                     // If the result is an error, we will just send it to the error channel
                     if let Err(err) = result {
-                        session
-                            .put(
-                                format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
-                                serde_json::to_string(&ProcessingFailure {
-                                    node_id: node_id_clone.clone(),
-                                    error: err.to_string(),
-                                })?,
-                            )
-                            .await
-                            .context(selector::AgentCommunicationFailure {})?;
+                        try_to_forward_err_msg(
+                            Arc::clone(&session_clone),
+                            err,
+                            &output_key_exp_clone,
+                            &node_id_clone,
+                        )
+                        .await;
                     }
                 }
-
-                Ok(())
             });
         }
         Ok(())
@@ -904,70 +954,132 @@ impl NodeProcessor for JoinerProcessor {
 #[cfg(test)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[expect(clippy::panic_in_result_fn, reason = "Unit test")]
+/// This test 3 cases for the joiner node:
+/// The notation is as follows: (parent_id: data_file)
+/// 1. Insufficient parents: It should not output anything until all parents has produce a packet (0: [A] 1: [A] 2: []) -> No output
+/// 2. Sufficient parents: It should output a single packet with the cartesian product of the parents (0: [A] 1: [A] 2: [A]) -> Output: (0: A, 1: A, 2: A)
+/// 3. Additional packet after initial condition is met: It should output a new packet with the cartesian product of the parents (0: [A] 1: [A] 2: [A, B]) -> Output: (0: A, 1: A, 2: B)
+/// 4. Add an additional packet where more than 1 packet will be generated: (0: [A, B] 1: [A] 2: [A, B]) -> Output: (0: B, 1: A, 2: A), (0: B, 1: A, 2: B),
 async fn joiner() -> Result<()> {
-    // let parent_ids = vec!["0".to_owned(), "1".to_owned(), "2".to_owned()];
+    use std::{thread::sleep, time::Duration};
 
-    // let mut joiner_process = JoinerProcessor::new(parent_ids);
+    let parent_ids = vec!["0".to_owned(), "1".to_owned(), "2".to_owned()];
 
-    // // Make each parent has 1 packet
-    // for idx in 0..2 {
-    //     let packet = make_test_packet(format!("data_{idx}.txt").into());
-    //     joiner_process.process_packet(idx, "joiner", packet, session, output_key_exp, namespace, namespace_lookup);
-    // }
+    let mut joiner_processor = JoinerProcessor::new(parent_ids);
+    let session = Arc::new(
+        zenoh::open(zenoh::Config::default())
+            .await
+            .context(selector::AgentCommunicationFailure {})?,
+    );
 
-    // // Confirm that there should be no output yet
+    let base_output_key_exp = "joiner_unit_test".to_owned();
 
-    // // Now we send the missing parent package
-    // // This will yield one unique combination
-    // joiner_process
-    //     .process_packet("2", make_test_packet("data_1.txt".to_owned().into()))
-    //     .await?;
+    // Create a buffer and a listener for the output channel
+    let success_msg = Arc::new(Mutex::new(Vec::new()));
+    let success_sub = session
+        .declare_subscriber(format!("{base_output_key_exp}/{SUCCESS_KEY_EXP}"))
+        .await
+        .context(selector::AgentCommunicationFailure {})?;
 
-    // // Confirm that the output is sent to the child channel
-    // assert!(
-    //     child_rx.len() == 1,
-    //     "Should have only one message in the channel",
-    // );
-    // assert!(
-    //     child_rx.recv().await.is_some(),
-    //     "Should have received a message"
-    // );
+    // Create the async test to receive messages from the output channel
+    let mut listener_task = JoinSet::new();
+    let success_msg_clone = Arc::clone(&success_msg);
+    listener_task.spawn(async move {
+        while let Ok(msg) = success_sub.recv() {
+            success_msg_clone.lock().await.push(msg);
+        }
+    });
 
-    // // Insert another one
-    // joiner_process
-    //     .process_packet("2", make_test_packet("data_2.txt".to_owned().into()))
-    //     .await?;
+    // Make each parent has 1 packet
+    for idx in 0..2 {
+        let packet = make_test_packet(format!("key_{idx}"), "data_A.txt".to_string().into());
+        joiner_processor.process_packet(
+            &format!("{idx}"),
+            &idx.to_string(),
+            &packet,
+            Arc::clone(&session),
+            &base_output_key_exp,
+            "",
+            &HashMap::new(),
+        )?;
+    }
 
-    // // The joiner node should send another one
-    // assert!(
-    //     child_rx.len() == 1,
-    //     "Should have only one message in the channel",
-    // );
-    // assert!(
-    //     child_rx.recv().await.is_some(),
-    //     "Should have received a message"
-    // );
+    // Confirm that there should be no output yet
+    assert!(
+        success_msg.lock().await.is_empty(),
+        "Should have no messages in the channel",
+    );
 
-    // // Now insert to packet for parent 0, which should yield 2 packets in total
-    // // This is because of the cartesian product
-    // joiner_process
-    //     .process_packet("0", make_test_packet("data_2.txt".to_owned().into()))
-    //     .await?;
+    // Now we send the missing parent package
+    // This will yield one unique combination
+    let packet_2_a = make_test_packet("key_2".to_owned(), "data_A.txt".to_owned().into());
+    joiner_processor.process_packet(
+        "2",
+        "2",
+        &packet_2_a,
+        Arc::clone(&session),
+        &base_output_key_exp,
+        "",
+        &HashMap::new(),
+    )?;
 
-    // assert!(
-    //     child_rx.len() == 2,
-    //     "Should have only two messages in the channel",
-    // );
-    // assert!(
-    //     child_rx.recv().await.is_some(),
-    //     "Should have received a message"
-    // );
+    // Wait for the joiner to process and the listener to process the message
+    sleep(Duration::from_millis(100));
+
+    // Confirm that the output is sent to the child channel
+    assert_eq!(
+        success_msg.lock().await.len(),
+        1,
+        "Should have only one message in the channel",
+    );
+
+    let packet_2_b = make_test_packet("key_2".to_owned(), "data_B.txt".to_owned().into());
+    joiner_processor.process_packet(
+        "2",
+        "2",
+        &packet_2_b,
+        Arc::clone(&session),
+        &base_output_key_exp,
+        "",
+        &HashMap::new(),
+    )?;
+
+    // Wait for the joiner to process and the listener to process the message
+    sleep(Duration::from_millis(100));
+
+    // The joiner node should send another one
+    assert_eq!(
+        success_msg.lock().await.len(),
+        2,
+        "Should have only two messages in the channel",
+    );
+
+    let packet_0_b = make_test_packet("key_0".to_owned(), "data_B.txt".to_owned().into());
+    joiner_processor.process_packet(
+        "0",
+        "0",
+        &packet_0_b,
+        Arc::clone(&session),
+        &base_output_key_exp,
+        "",
+        &HashMap::new(),
+    )?;
+
+    // Wait for the joiner to process and the listener to process the message
+    sleep(Duration::from_millis(100));
+
+    // Should be a total of 6 messages in the channel
+    assert_eq!(
+        success_msg.lock().await.len(),
+        4,
+        "Should have 4 messages in the channel",
+    );
 
     Ok(())
 }
 
 #[cfg(test)]
-fn make_test_packet(path: PathBuf) -> HashMap<String, PathSet> {
+fn make_test_packet(key: String, path: PathBuf) -> HashMap<String, PathSet> {
     use crate::uniffi::model::{Blob, BlobKind};
 
     let path_set = PathSet::Unary(Blob {
@@ -979,5 +1091,5 @@ fn make_test_packet(path: PathBuf) -> HashMap<String, PathSet> {
         checksum: String::new(),
     });
 
-    HashMap::from([("key".to_owned(), path_set)])
+    HashMap::from([(key, path_set)])
 }
