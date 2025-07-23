@@ -7,9 +7,8 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use derive_more::derive;
 use itertools::Itertools as _;
-use serde::{Deserialize, Serialize, de::value};
+use serde::{Deserialize, Serialize};
 use serde_yaml::Serializer;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
@@ -41,6 +40,8 @@ struct ProcessingFailure {
     error: String,
 }
 
+/// Internal representation of a pipeline run, this should not be made public due to the fact that it contains
+/// internal states and tasks
 #[expect(
     clippy::type_complexity,
     reason = "too complex, but necessary for async handling"
@@ -72,16 +73,8 @@ impl Display for PipelineRun {
         write!(f, "PipelineRun({})", self.pipeline_job.hash)
     }
 }
-/**
- * Runner for pipelines
- *
- * General Algorithm:
- * 1. All nodes receive inputs via a MPSC channel, where parents nodes will send their output packets
- * 2. There are two "functional nodes processor" in the pipeline,
- *    which is the `input_node` and `output_node`
- * 3. Each node will process the inputs its receives and will only send it children input channels
- *    if they are successfully processed. Failures are just printed for now (Will be replaced by logging)
- */
+
+/// Runner that uses a docker agent to run pipelines
 #[derive(Default)]
 pub struct DockerPipelineRunner {
     /// User label on which group of agents this runner is associated with
@@ -91,14 +84,13 @@ pub struct DockerPipelineRunner {
     pipeline_runs: HashMap<String, PipelineRun>,
 }
 
-/**
- * This is an implementation of a pipeline runner that uses Zenoh to communicate between the tasks
- * The runtime is tokio
- *
- * These are the key expressions of the components of the pipeline:
- * - Input Node: `pipeline_job_hash/input_node/outputs` (This is where the `pipeline_job` packets get fed to)
- * - Nodes: `pipeline_job_hash/node_id/outputs/(success|failure)` (This is where the node outputs are sent to)
-*/
+/// This is an implementation of a pipeline runner that uses Zenoh to communicate between the tasks
+/// The runtime is tokio
+///
+/// These are the key expressions of the components of the pipeline:
+/// Input Node: `pipeline_job_hash/input_node/outputs` (This is where the `pipeline_job` packets get fed to)
+/// Nodes: `pipeline_job_hash/node_id/outputs/(success|failure)` (This is where the node outputs are sent to)
+///
 impl DockerPipelineRunner {
     /// Create a new Docker pipeline runner
     /// # Errors
@@ -111,6 +103,12 @@ impl DockerPipelineRunner {
         })
     }
 
+    /// Will start a new pipeline run with the given `PipelineJob`
+    /// This will start the async tasks for each node in the pipeline
+    /// including the one that captures the outputs from the leaf nodes
+    ///
+    /// Upon receiving the ready message from all the nodes, it will send the input packets to the input node
+    ///
     /// # Errors
     /// Will error out if the pipeline job fails to start
     pub async fn start(
@@ -178,10 +176,10 @@ impl DockerPipelineRunner {
                 ));
         }
 
+        // Wait for all nodes to be ready before sending inputs
         let num_of_nodes = graph.node_count();
         let mut ready_nodes = 0;
 
-        // Wait for all nodes to be ready before sending inputs
         while (subscriber.recv_async().await).is_ok() {
             // Message is empty, just increment the counter
             ready_nodes += 1;
@@ -224,6 +222,7 @@ impl DockerPipelineRunner {
         self.pipeline_runs
             .insert(pipeline_run_id.clone(), pipeline_run);
 
+        // Return the pipeline run id
         Ok(pipeline_run_id)
     }
 
@@ -263,6 +262,9 @@ impl DockerPipelineRunner {
     }
 
     /// Stop the pipeline run and all its tasks
+    /// This will send a stop message to a channel that all node manager task are subscribed to.
+    /// Upon receiving the stop message, each node manager will force abort all of its task and exit.
+    ///
     /// # Errors
     /// Will error out if the pipeline run is not found or if any of the tasks fail to stop correctly
     pub async fn stop(&mut self, pipeline_run_id: &str) -> Result<()> {
@@ -294,6 +296,7 @@ impl DockerPipelineRunner {
         Ok(())
     }
 
+    /// This will capture the outputs of the given nodes and store it in the `outputs` map
     #[expect(clippy::type_complexity, reason = "Needed for async")]
     async fn create_capture_task_for_node(
         node_id: String,
@@ -335,6 +338,7 @@ impl DockerPipelineRunner {
     /// - Create the zenoh session
     /// - Create a join set to spawn and handle incoming messages tasks
     /// - Create a subscriber for each of the parent nodes (Should only be 1, unless it is a joiner node)
+    /// - Create an abort listener task that will listen for stop requests
     /// - For each subscriber, handle the incoming message appropriately
     ///
     /// # Errors
@@ -445,6 +449,7 @@ impl DockerPipelineRunner {
         Ok(())
     }
 
+    /// This is the actual handler for incoming messages for the node
     async fn start_async_processor_task(
         subscriber: Subscriber<FifoChannelHandler<Sample>>,
         node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
@@ -519,6 +524,7 @@ impl DockerPipelineRunner {
         Ok::<(), OrcaError>(())
     }
 
+    /// This task will listen for stop requests on the given key expression
     async fn start_stop_request_task(
         node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
         base_key_exp: String,
@@ -992,7 +998,7 @@ async fn joiner() -> Result<()> {
 
     // Make each parent has 1 packet
     for idx in 0..2 {
-        let packet = make_test_packet(format!("key_{idx}"), "data_A.txt".to_string().into());
+        let packet = make_test_packet(format!("key_{idx}"), "data_A.txt".to_owned().into());
         joiner_processor.process_packet(
             &format!("{idx}"),
             &idx.to_string(),
@@ -1078,6 +1084,7 @@ async fn joiner() -> Result<()> {
     Ok(())
 }
 
+/// Helper function to create a test packet with a given key and path
 #[cfg(test)]
 fn make_test_packet(key: String, path: PathBuf) -> HashMap<String, PathSet> {
     use crate::uniffi::model::{Blob, BlobKind};

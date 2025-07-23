@@ -37,7 +37,6 @@ async fn basic_run() -> Result<()> {
         pipeline_result.output_packets.len() == 1,
         "Expected exactly one output packet."
     );
-    println!("{:?}", pipeline_result.output_packets);
 
     Ok(())
 }
