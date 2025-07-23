@@ -90,12 +90,15 @@ impl AgentClient {
         clippy::excessive_nesting,
         clippy::indexing_slicing,
         clippy::expect_used,
+        clippy::cast_sign_loss,
         clippy::significant_drop_tightening,
         reason = "debug"
     )]
     pub(crate) fn new_pipeline_run(&self, pipeline_job: &Arc<PipelineJob>) -> PipelineRun {
         let pipeline_run = PipelineRun {
             pipeline_job: Arc::clone(pipeline_job),
+            created: Utc::now().timestamp() as u64,
+            terminated: Arc::new(Mutex::new(None)),
             status: Arc::new(Mutex::new(PipelineStatus::Running)),
             state: Arc::new(Mutex::new(HashMap::new())),
             services: TaskTracker::new(),
@@ -107,6 +110,8 @@ impl AgentClient {
                 let pipeline_result = agent_client
                     .get_pipeline_result(inner_pipeline_run.clone().into())
                     .await?;
+                let mut terminated = inner_pipeline_run.terminated.lock().expect("debug");
+                *terminated = Some(pipeline_result.terminated);
                 let mut status = inner_pipeline_run.status.lock().expect("debug");
                 *status = pipeline_result.status;
                 Ok::<_, OrcaError>(())
@@ -116,7 +121,12 @@ impl AgentClient {
             let agent_client = Arc::new(self.clone());
             let pipeline_hash = pipeline_job.hash.clone();
             let state = Arc::clone(&pipeline_run.state);
-            let pipeline_metadata = pipeline_job.pipeline.metadata.clone();
+            let pipeline_nodes = pipeline_job
+                .pipeline
+                .graph
+                .node_weights()
+                .map(|node| node.name.clone())
+                .collect::<HashSet<_>>();
             async move {
                 let subscriber = agent_client
                     .session
@@ -187,8 +197,7 @@ impl AgentClient {
                         }
                     }
                     let inner_state = state.lock().expect("debug");
-                    if inner_state.keys().collect::<HashSet<_>>()
-                        == pipeline_metadata.keys().collect::<HashSet<_>>()
+                    if inner_state.keys().cloned().collect::<HashSet<_>>() == pipeline_nodes
                         && !inner_state.values().any(|v| {
                             matches!(v.state, NodeState::Idle)
                                 || matches!(v.state, NodeState::Active)

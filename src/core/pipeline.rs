@@ -2,7 +2,6 @@ use crate::{
     core::{
         operator::{JoinOperator, MapOperator, Operator},
         orchestrator::agent::RE_AGENT_KEY_EXPR,
-        util::get,
     },
     uniffi::{
         error::{OrcaError, Result, selector},
@@ -13,6 +12,7 @@ use crate::{
         pipeline::PipelineStatus,
     },
 };
+use chrono::Utc;
 use futures_util::{
     TryFutureExt as _,
     future::{FutureExt as _, join_all},
@@ -24,6 +24,7 @@ use rand::{self, RngCore as _};
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -35,6 +36,32 @@ use tokio::{
     time::sleep as async_sleep,
 };
 use tokio_util::task::TaskTracker;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PipelineNode {
+    pub name: String,
+    pub kernel: Kernel,
+}
+
+impl Ord for PipelineNode {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
+}
+
+impl PartialOrd for PipelineNode {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for PipelineNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for PipelineNode {}
 
 #[derive(Debug, Clone)]
 pub struct NodeInfo {
@@ -73,6 +100,7 @@ enum ActualKernel {
 #[expect(
     unused_variables,
     clippy::too_many_lines,
+    clippy::cast_sign_loss,
     clippy::excessive_nesting,
     reason = "debug"
 )]
@@ -83,6 +111,7 @@ pub async fn process_pipeline_job(
     pod_job_success_topic: &str,
     pod_job_failure_topic: &str,
     pipeline_job: PipelineJob,
+    created: u64,
     namespace_lookup: HashMap<String, PathBuf>,
 ) -> Result<PipelineResult> {
     let pipeline_job_input_packet = &pipeline_job.input_packet;
@@ -155,16 +184,18 @@ pub async fn process_pipeline_job(
                         let inner_namespace_lookup = namespace_lookup.clone();
                         let inner_input_nodes = input_nodes.clone();
                         async move {
-                            let parents = if inner_input_nodes.contains(child) {
+                            let parents = if inner_input_nodes.contains(&child.name) {
                                 vec![]
                             } else {
                                 inner_pipeline
                                     .graph
                                     .neighbors_directed(child_index, Direction::Incoming)
-                                    .map(|parent_index| inner_pipeline.graph[parent_index].clone())
+                                    .map(|parent_index| {
+                                        inner_pipeline.graph[parent_index].name.clone()
+                                    })
                                     .collect::<Vec<String>>()
                             };
-                            let kernel = match get(&inner_pipeline.metadata, child)? {
+                            let kernel = match &child.kernel {
                                 Kernel::Pod { r#ref } => ActualKernel::Pod(Arc::clone(r#ref)),
                                 Kernel::JoinOperator => ActualKernel::JoinOperator(
                                     Mutex::new(JoinOperator::new(parents.len())).into(),
@@ -179,7 +210,7 @@ pub async fn process_pipeline_job(
                                 inner_pipeline_job_output_dir,
                                 format!("status/pipeline_job/{}", &inner_pipeline_job_hash,),
                                 parents,
-                                child.to_owned(),
+                                child.name.clone(),
                                 kernel.into(),
                                 &inner_namespace_lookup,
                             )
@@ -216,17 +247,22 @@ pub async fn process_pipeline_job(
         .await
         .context(selector::NoRemainingServices {})???;
 
+    let terminated = Utc::now().timestamp() as u64;
     if node_states
         .iter()
         .all(|node_state| matches!(node_state, NodeState::Completed))
     {
         return Ok(PipelineResult {
             pipeline_job: pipeline_job.into(),
+            created,
+            terminated,
             status: PipelineStatus::Completed,
         });
     }
     Ok(PipelineResult {
         pipeline_job: pipeline_job.into(),
+        created,
+        terminated,
         status: PipelineStatus::Failed,
     })
 

@@ -1,5 +1,5 @@
 use crate::{
-    core::util::get,
+    core::{pipeline::PipelineNode, util::get},
     uniffi::{
         error::{Result, selector},
         model::Kernel,
@@ -92,7 +92,7 @@ struct DOTNodeConfig {
 pub struct DOTStyleConfig<'a> {
     pub title_text: Option<String>, // without omit
     pub node_extra_label: Option<&'a HashMap<String, String>>, // without omit
-    pub node_metadata: Option<&'a HashMap<String, Kernel>>, // without no shapes
+    pub enable_node_shapes: bool,   // without no shapes
     pub node_color: Option<&'a HashMap<String, String>>, // without omit
     pub caption_text: Option<String>, // without omit
 }
@@ -103,7 +103,7 @@ pub struct DOTStyleConfig<'a> {
     reason = "Needed since `Dot::with_attr_getters` doesn't accept results."
 )]
 pub fn make_dot(
-    graph: &DiGraph<String, ()>,
+    graph: &DiGraph<PipelineNode, ()>,
     style: Option<DOTStyleConfig>, // without it default to Nones, don't bold shapes, and don't add size graph attribute
 ) -> Result<String> {
     let (dot_config, is_styled) = style.map_or_else(
@@ -112,7 +112,7 @@ pub fn make_dot(
     );
     let title_text = dot_config.title_text;
     let caption_text = dot_config.caption_text;
-    let node_metadata = dot_config.node_metadata;
+    let enable_node_shapes = dot_config.enable_node_shapes;
     let node_color = dot_config.node_color;
     let node_extra_label = dot_config.node_extra_label;
 
@@ -132,22 +132,20 @@ pub fn make_dot(
                 Config::GraphContentOnly,
             ],
             &|_graph, _edge| String::new(),
-            &|_graph, node| {
+            &|_graph, (_, node)| {
                 node_template
                     .render(&DOTNodeConfig {
-                        label: node.1.clone(),
+                        label: node.name.clone(),
                         extra_label: node_extra_label
-                            .and_then(|config| config.get(node.1))
+                            .and_then(|config| config.get(&node.name))
                             .cloned(),
-                        shape: node_metadata
-                            .and_then(|config| config.get(node.1))
-                            .map(|kernel| match kernel {
-                                Kernel::Pod { .. } => "box".into(),
-                                Kernel::MapOperator { .. } | Kernel::JoinOperator => {
-                                    "circle".into()
-                                }
-                            }),
-                        color: node_color.and_then(|config| config.get(node.1)).cloned(),
+                        shape: enable_node_shapes.then(|| match node.kernel {
+                            Kernel::Pod { .. } => "box".into(),
+                            Kernel::MapOperator { .. } | Kernel::JoinOperator => "circle".into(),
+                        }),
+                        color: node_color
+                            .and_then(|config| config.get(&node.name))
+                            .cloned(),
                         is_styled,
                     })
                     .expect("Failed to render node.")
@@ -200,10 +198,29 @@ fn cast_graph<N: Clone, E: Default>(
     Ok(new_graph)
 }
 // todo: checks that metadata only contains referenced nodes
-pub fn make_graph(input_dot: &str) -> Result<DiGraph<String, ()>> {
+#[expect(
+    clippy::needless_pass_by_value,
+    clippy::panic_in_result_fn,
+    clippy::panic,
+    reason = "
+        - Drop metadata and encourage usage from the graph.
+        - `node_map` does not allow returning results.
+    "
+)]
+pub fn make_graph(
+    input_dot: &str,
+    metadata: HashMap<String, Kernel>,
+) -> Result<DiGraph<PipelineNode, ()>> {
     let mut graph =
-        DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?)
-            .map(|_, node| node.id.clone(), |_, _| ());
+        DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?).map(
+            |_, node| PipelineNode {
+                name: node.id.clone(),
+                kernel: get(&metadata, &node.id)
+                    .unwrap_or_else(|error| panic!("{error}"))
+                    .clone(),
+            },
+            |_, _| (),
+        );
 
     graph = cast_graph(sort_alphabetically(&graph), graph)?;
     graph = cast_graph(

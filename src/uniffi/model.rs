@@ -6,6 +6,7 @@ use crate::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
         },
+        pipeline::PipelineNode,
         util::get,
     },
     uniffi::{
@@ -320,9 +321,7 @@ impl PodResult {
 pub struct Pipeline {
     /// Computational DAG in-memory.
     #[getset(skip)]
-    pub graph: DiGraph<String, ()>,
-    /// Metadata for each kernel referenced in the DAG indexed by node.
-    pub metadata: HashMap<String, Kernel>,
+    pub graph: DiGraph<PipelineNode, ()>,
     /// key -> N number of node name / input key i.e. provides a rename feature + forking
     pub input_spec: HashMap<String, Vec<InputSpecURI>>,
     /// if we omit, then they all have to be exposed using the same it currently has (however, this can create collisions, letting user manually do it ensures no collisions but the downside is they could make it less usable by underexposing...), key -> N number of node name / output key i.e. provides a rename feature
@@ -339,15 +338,14 @@ impl Pipeline {
     #[uniffi::constructor]
     pub fn new(
         graph_dot: &str,
-        metadata: &HashMap<String, Kernel>,
+        metadata: HashMap<String, Kernel>,
         input_spec: &HashMap<String, Vec<InputSpecURI>>,
         output_spec: &HashMap<String, OutputSpecURI>,
     ) -> Result<Self> {
         // todo: need to somehow create/save the join operator but don't want to expose manually creating it to python
-        let graph = make_graph(graph_dot)?;
+        let graph = make_graph(graph_dot, metadata)?;
         Ok(Self {
             graph,
-            metadata: metadata.clone(),
             input_spec: input_spec.clone(),
             output_spec: output_spec.clone(),
         })
@@ -362,7 +360,7 @@ impl Pipeline {
         make_dot(
             &self.graph,
             with_style.then(|| DOTStyleConfig {
-                node_metadata: Some(&self.metadata),
+                enable_node_shapes: true,
                 ..DOTStyleConfig::default()
             }),
         )
@@ -448,6 +446,10 @@ pub struct PipelineResult {
     pub pipeline_job: Arc<PipelineJob>,
     /// Status of pipeline run when terminated.
     pub status: PipelineStatus,
+    /// Time in epoch when created in seconds.
+    pub created: u64,
+    /// Time in epoch when terminated in seconds.
+    pub terminated: u64,
 }
 
 // --- util types ---

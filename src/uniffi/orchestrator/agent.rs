@@ -8,6 +8,7 @@ use crate::{
         store::{Store as _, filestore::LocalFileStore},
     },
 };
+use chrono::Utc;
 use colored::Colorize as _;
 use derive_more::Display;
 use futures_executor::block_on;
@@ -108,12 +109,17 @@ impl AgentClient {
     }
     /// Wait for pipeline result to be ready.
     ///
+    /// # Panics
+    ///
+    /// Will panic if pipeline run is no longer active and terminated is unset.
+    ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pipeline result.
     #[expect(
         clippy::indexing_slicing,
         clippy::excessive_nesting,
+        clippy::expect_used,
         reason = "Subscribe key expression ensures we will have enough elements."
     )]
     pub async fn get_pipeline_result(
@@ -124,6 +130,8 @@ impl AgentClient {
         Ok(match &pipeline_run_status {
             PipelineStatus::Completed | PipelineStatus::Failed => PipelineResult {
                 pipeline_job: Arc::clone(&pipeline_run.pipeline_job),
+                created: pipeline_run.created,
+                terminated: pipeline_run.terminated().expect("debug"),
                 status: pipeline_run_status,
             },
             PipelineStatus::Running => {
@@ -208,7 +216,11 @@ impl Agent {
     /// # Errors
     ///
     /// Will stop and return an error if encounters an error while processing any pod job request.
-    #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
+    #[expect(
+        clippy::excessive_nesting,
+        clippy::cast_sign_loss,
+        reason = "Nesting manageable."
+    )]
     #[uniffi::method(default(available_store = None))]
     pub async fn start(
         &self,
@@ -262,6 +274,7 @@ impl Agent {
                     "success/pod_job/",
                     "failure/pod_job/",
                     pipeline_job,
+                    Utc::now().timestamp() as u64,
                     inner_namespace_lookup,
                 )
                 .await

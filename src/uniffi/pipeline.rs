@@ -47,6 +47,11 @@ pub enum PipelineStatus {
 pub struct PipelineRun {
     /// Original compute request.
     pub pipeline_job: Arc<PipelineJob>,
+    /// Time in epoch when created in seconds.
+    pub created: u64,
+    /// Time in epoch when terminated in seconds.
+    #[getset(skip)]
+    pub terminated: Arc<Mutex<Option<u64>>>,
     /// Status of pipeline run.
     #[getset(skip)]
     pub status: Arc<Mutex<PipelineStatus>>,
@@ -59,9 +64,14 @@ pub struct PipelineRun {
 #[uniffi::export]
 impl PipelineRun {
     /// # Panics
-    #[expect(clippy::unwrap_used, reason = "debug")]
+    #[expect(clippy::expect_used, clippy::unwrap_in_result, reason = "debug")]
+    pub fn terminated(&self) -> Option<u64> {
+        *self.terminated.lock().expect("debug")
+    }
+    /// # Panics
+    #[expect(clippy::expect_used, reason = "debug")]
     pub fn status(&self) -> PipelineStatus {
-        self.status.lock().unwrap().clone()
+        self.status.lock().expect("debug").clone()
     }
     /// Generates summary of compute pipeline status.
     ///
@@ -89,15 +99,18 @@ impl PipelineRun {
         let (node_extra_label, node_color) = self
             .pipeline_job
             .pipeline
-            .metadata
-            .keys()
+            .graph
+            .node_weights()
             .map(|node| {
                 let extra_label;
                 let color;
-                if let Some(node_info) = self.state.lock().expect("debug").get(node) {
-                    extra_label = (node.clone(), format!("p={}", node_info.completed_packets));
+                if let Some(node_info) = self.state.lock().expect("debug").get(&node.name) {
+                    extra_label = (
+                        node.name.clone(),
+                        format!("p={}", node_info.completed_packets),
+                    );
                     color = (
-                        node.clone(),
+                        node.name.clone(),
                         match &node_info.state {
                             NodeState::Idle => todo!("Should not be possible"),
                             NodeState::Cancelled => "chocolate4".into(),
@@ -106,7 +119,8 @@ impl PipelineRun {
                             NodeState::Failed(error_msg) => {
                                 let _ = writeln!(
                                     error_msgs,
-                                    "{node}: {}",
+                                    "{}: {}",
+                                    node.name,
                                     error_msg
                                         .split_once("stack backtrace")
                                         .map(|(prefix, _)| prefix)
@@ -119,8 +133,8 @@ impl PipelineRun {
                         },
                     );
                 } else {
-                    extra_label = (node.clone(), "p=0".into());
-                    color = (node.clone(), "black".into());
+                    extra_label = (node.name.clone(), "p=0".into());
+                    color = (node.name.clone(), "black".into());
                 }
                 (extra_label, color)
             })
@@ -135,7 +149,7 @@ impl PipelineRun {
                     Local::now().format("%Y-%m-%d %H:%M:%S")
                 )),
                 node_extra_label: Some(&node_extra_label),
-                node_metadata: Some(&self.pipeline_job.pipeline.metadata),
+                enable_node_shapes: true,
                 node_color: Some(&node_color),
                 caption_text: Some(format!(
                     "{}Summary: {summary_msg}",
