@@ -228,7 +228,7 @@ pub async fn process_pipeline_job(
         }
     });
 
-    async_sleep(Duration::from_secs(5)).await; // allow all subscribers to start
+    async_sleep(Duration::from_millis(500)).await; // allow all subscribers to start
 
     for (node, packets) in input_node_packets {
         let input_topic = format!("status/pipeline_job/{}/input/{}", &pipeline_job.hash, node);
@@ -444,7 +444,6 @@ async fn start_subscriptions(
                             }
                         }
                     }
-                    async_sleep(Duration::from_secs(1)).await; // waiting for tasks to finishing shutting down
                     if active_parents.is_empty()
                         && child_active_packets.is_empty()
                         && response_rx.is_empty()

@@ -16,8 +16,8 @@ use futures_util::future::join_all;
 use getset::CloneGetters;
 use serde_json::Value;
 use snafu::{OptionExt as _, ResultExt as _};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
-use tokio::{task::JoinSet, time::sleep as async_sleep};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::task::JoinSet;
 use uniffi;
 use zenoh;
 
@@ -99,7 +99,6 @@ impl AgentClient {
     /// Will fail if there is an issue publishing the pipeline job.
     pub async fn start_pipeline_job(&self, pipeline_job: Arc<PipelineJob>) -> Result<PipelineRun> {
         let pipeline_run = self.new_pipeline_run(&pipeline_job);
-        async_sleep(Duration::from_secs(1)).await; // Give a chance for pipeline run listeners to start.
         self.publish(
             &format!("request/pipeline_job/{}", pipeline_run.pipeline_job.hash),
             &pipeline_run.pipeline_job,

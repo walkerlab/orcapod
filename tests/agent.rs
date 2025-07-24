@@ -49,7 +49,6 @@ async fn parallel_four_cores() -> Result<()> {
     pull_image(image_reference)?;
     let margin_millis = 2000;
     let run_duration_secs = 5;
-    let service_readiness_delay_secs = 1;
     let current_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Current time is earlier than start of epoch (1970-01-01 00:00:00).")
@@ -93,18 +92,14 @@ async fn parallel_four_cores() -> Result<()> {
             if ["success", "failure"].contains(&topic_kind) {
                 let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
                 assert!(
-                    u128::from(pod_result.created * 1000)
-                        <= current_timestamp
-                            + margin_millis
-                            + u128::from(service_readiness_delay_secs),
+                    u128::from(pod_result.created * 1000) <= current_timestamp + margin_millis,
                     "Started pod run too late."
                 );
                 assert!(
                     u128::from(pod_result.terminated * 1000)
                         <= current_timestamp
                             + 2 * margin_millis
-                            + u128::from(run_duration_secs) * 1000
-                            + u128::from(service_readiness_delay_secs),
+                            + u128::from(run_duration_secs * 1000),
                     "Took too long to finish pod run."
                 );
                 async_sleep(Duration::from_secs(1)).await; // give agent a chance to save pod result first
@@ -131,7 +126,6 @@ async fn parallel_four_cores() -> Result<()> {
         async_sleep(Duration::from_secs(60)).await;
         panic!("Test took too long. Killing...");
     });
-    async_sleep(Duration::from_secs(service_readiness_delay_secs)).await;
     // submit requests
     client
         .start_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 3, 1)?)

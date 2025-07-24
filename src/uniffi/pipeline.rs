@@ -28,7 +28,7 @@ use uniffi;
 // get_pipeline_result: long running waiting until pipeline run becomes a pipeline result
 
 /// Status of a particular compute pipeline run.
-#[derive(uniffi::Enum, Debug, Serialize, Deserialize, Clone)]
+#[derive(uniffi::Enum, Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum PipelineStatus {
     /// Run has completed successfully.
     Completed,
