@@ -124,7 +124,12 @@ fn offline_container_image_basic() -> Result<()> {
 #[test]
 fn remote_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
-        let pod_job = pod_job_custom("alpine:3.14", &str_to_vec("sleep 5"), namespace_lookup)?;
+        let pod_job = pod_job_custom(
+            "alpine:3.14",
+            &str_to_vec("sleep 5"),
+            HashMap::new(),
+            namespace_lookup,
+        )?;
         Ok((
             orchestrator.start_blocking(namespace_lookup, &pod_job)?,
             pod_job.pod.command.clone(),
@@ -140,6 +145,7 @@ async fn remote_container_image_failed() -> Result<()> {
     let pod_job = pod_job_custom(
         "alpine:3.14",
         &str_to_vec("sleep crash"),
+        HashMap::new(),
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;
     let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job).await?;

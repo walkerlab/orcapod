@@ -160,6 +160,7 @@ pub fn pod_result_style(
 pub fn pod_job_custom(
     image_reference: &str,
     command: &[String],
+    output_spec: HashMap<String, PathInfo, RandomState>,
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(
@@ -168,7 +169,7 @@ pub fn pod_job_custom(
             command.to_owned(),
             HashMap::new(),
             PathBuf::from("/tmp/output"),
-            HashMap::new(),
+            output_spec,
             "https://github.com/place/holder".to_owned(),
             0.1,          // 100 millicores as frac cores
             10_u64 << 20, // 10 MiB in bytes
@@ -201,11 +202,12 @@ pub fn pod_jobs_stresser(
                 return Ok(pod_job_custom(
                     image_reference,
                     &str_to_vec(&format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief")),
+                    HashMap::new(),
                     &NAMESPACE_LOOKUP_READ_ONLY,
                 )?
                 .into());
             }
-            Ok(pod_job_custom(image_reference, &str_to_vec("sleep crash"), &NAMESPACE_LOOKUP_READ_ONLY)?.into())
+            Ok(pod_job_custom(image_reference, &str_to_vec("sleep crash"), HashMap::new(), &NAMESPACE_LOOKUP_READ_ONLY)?.into())
         })
         .collect::<Result<Vec<_>>>()
 }

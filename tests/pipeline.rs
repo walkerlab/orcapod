@@ -254,16 +254,19 @@ async fn adder() -> Result<()> {
             PipelineStatus::Running,
             "Pipeline not running."
         );
+        async_sleep(Duration::from_secs(10)).await; // wait until some progress
         assert!(
-            pipeline_run.summarize_dot()?.contains("Pipeline running"),
-            "Pipeline summary report incorrect."
+            pipeline_run.summarize_dot()?.contains("green"),
+            "No pipeline node has successfully completed."
         );
 
         let pipeline_run_pointer = Arc::new(pipeline_run);
         let pipeline_result = client
             .get_pipeline_result(Arc::clone(&pipeline_run_pointer))
             .await?;
-        let pipeline_result_again = client.get_pipeline_result(pipeline_run_pointer).await?;
+        let pipeline_result_again = client
+            .get_pipeline_result(Arc::clone(&pipeline_run_pointer))
+            .await?;
 
         async_sleep(Duration::from_secs(1)).await; // give watch console stream a chance to catch up
 
@@ -275,6 +278,12 @@ async fn adder() -> Result<()> {
             pipeline_result.status,
             PipelineStatus::Completed,
             "Pipeline failed."
+        );
+        assert!(
+            pipeline_run_pointer
+                .summarize_dot()?
+                .contains("Pipeline not active"),
+            "Pipeline summary report incorrect."
         );
         let actual_runtime = pipeline_result.terminated - pipeline_result.created;
         let expected_runtime = 15 + margin_millis;

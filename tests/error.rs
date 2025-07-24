@@ -15,7 +15,7 @@ use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
-        model::{Kernel, Pipeline},
+        model::{Kernel, PathInfo, Pipeline},
         orchestrator::{
             Orchestrator as _,
             agent::{AgentClient, Response},
@@ -51,7 +51,7 @@ fn external_bollard() -> Result<()> {
 fn external_chrono() {
     assert!(
         DateTime::parse_from_rfc3339("Whoops").is_err_and(contains_debug),
-        "Did not raise a glob error."
+        "Did not raise a chrono error."
     );
 }
 
@@ -59,7 +59,7 @@ fn external_chrono() {
 fn external_dot() {
     assert!(
         DOTGraph::try_from("graph {").is_err_and(contains_debug),
-        "Did not raise a glob error."
+        "Did not raise a DOT error."
     );
 }
 
@@ -77,7 +77,7 @@ fn external_minijinja() {
     assert!(
         env.get_template("does_not_exist")
             .is_err_and(contains_debug),
-        "Did not raise a glob error."
+        "Did not raise a minijinja error."
     );
 }
 
@@ -141,6 +141,31 @@ async fn internal_agent_communication_failure() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn internal_incomplete_output() -> Result<()> {
+    let orch = LocalDockerOrchestrator::new()?;
+    let pod_job = pod_job_custom(
+        "alpine:3.14",
+        &["echo".into()],
+        HashMap::from([(
+            "missing".into(),
+            PathInfo {
+                path: PathBuf::from("file.txt"),
+                match_pattern: String::new(),
+            },
+        )]),
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    )?;
+    let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job).await?;
+    let pod_result = orch.get_result(&NAMESPACE_LOOKUP_READ_ONLY, &pod_run).await;
+    orch.delete(&pod_run).await?;
+    assert!(
+        pod_result.is_err_and(contains_debug),
+        "Did not raise an incomplete output packet error."
+    );
+    Ok(())
+}
+
 #[test]
 fn internal_invalid_filepath() {
     assert!(
@@ -170,7 +195,7 @@ fn internal_pipeline_cyclic() {
             &HashMap::new()
         )
         .is_err_and(contains_debug),
-        "Did not raise a key missing error."
+        "Did not raise a cyclic pipeline error."
     );
 }
 
@@ -180,6 +205,7 @@ async fn internal_start_pod_jobs() -> Result<()> {
     let mut pod_job = pod_job_custom(
         "alpine:3.14",
         &str_to_vec("sleep 5"),
+        HashMap::new(),
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;
     pod_job.hash = "bad?hash".into();
