@@ -244,7 +244,6 @@ async fn adder() -> Result<()> {
     // submit request
     services.spawn(async move {
         let pipeline_run = client.start_pipeline_job(pipeline_job.into()).await?;
-
         assert_eq!(
             pipeline_run.status(),
             PipelineStatus::Running,
@@ -260,11 +259,12 @@ async fn adder() -> Result<()> {
         let pipeline_result = client
             .get_pipeline_result(Arc::clone(&pipeline_run_pointer))
             .await?;
+        // give pipeline run a chance to update its status
+        // give watch console stream a chance to catch up
+        async_sleep(Duration::from_secs(1)).await;
         let pipeline_result_again = client
             .get_pipeline_result(Arc::clone(&pipeline_run_pointer))
             .await?;
-
-        async_sleep(Duration::from_secs(1)).await; // give watch console stream a chance to catch up
 
         assert_eq!(
             pipeline_result, pipeline_result_again,
