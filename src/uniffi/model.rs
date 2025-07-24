@@ -328,6 +328,13 @@ pub struct Pipeline {
     pub output_spec: HashMap<String, OutputSpecURI>,
 }
 
+impl PartialEq for Pipeline {
+    fn eq(&self, other: &Self) -> bool {
+        // todo: change this to hash once implemented
+        self.input_spec == other.input_spec
+    }
+}
+
 #[uniffi::export]
 impl Pipeline {
     /// Construct a new pipeline instance.
@@ -372,7 +379,9 @@ impl Pipeline {
     clippy::field_scoped_visibility_modifiers,
     reason = "Temporary until we add hash to PipelineJob."
 )]
-#[derive(uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone)]
+#[derive(
+    uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone, PartialEq,
+)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
@@ -440,7 +449,7 @@ impl PipelineJob {
 }
 
 /// Result from a compute pipeline job run.
-#[derive(uniffi::Record, Debug, Serialize, Deserialize)]
+#[derive(uniffi::Record, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PipelineResult {
     /// A pipeline job that originated the pipeline result.
     pub pipeline_job: Arc<PipelineJob>,
@@ -586,7 +595,7 @@ pub enum Kernel {
 }
 
 /// Index from pipeline node into input specification.
-#[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize)]
+#[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct InputSpecURI {
     /// Node reference name in pipeline.
     pub node: String,

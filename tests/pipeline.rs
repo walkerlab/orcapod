@@ -171,6 +171,10 @@ async fn adder() -> Result<()> {
             },
         )]),
     )?;
+    assert!(
+        pipeline.make_dot(true)?.contains("bold"),
+        "Pipeline DAG does not include style."
+    );
     let pipeline_job = PipelineJob::new(
         pipeline.into(),
         &[
@@ -243,10 +247,29 @@ async fn adder() -> Result<()> {
 
     // submit request
     let pipeline_run = client.start_pipeline_job(pipeline_job.into()).await?;
-    let pipeline_result = client.get_pipeline_result(pipeline_run.into()).await?;
+
+    assert_eq!(
+        pipeline_run.status(),
+        PipelineStatus::Running,
+        "Pipeline not running."
+    );
+    assert!(
+        pipeline_run.summarize_dot()?.contains("Pipeline running"),
+        "Pipeline summary report incorrect."
+    );
+
+    let pipeline_run_pointer = Arc::new(pipeline_run);
+    let pipeline_result = client
+        .get_pipeline_result(Arc::clone(&pipeline_run_pointer))
+        .await?;
+    let pipeline_result_again = client.get_pipeline_result(pipeline_run_pointer).await?;
 
     async_sleep(Duration::from_secs(1)).await; // give watch console stream a chance to catch up
 
+    assert_eq!(
+        pipeline_result, pipeline_result_again,
+        "Pipeline results inconsistent."
+    );
     assert_eq!(
         pipeline_result.status,
         PipelineStatus::Completed,
