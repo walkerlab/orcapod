@@ -6,12 +6,16 @@
 )]
 
 pub mod fixture;
+use chrono::DateTime;
+use dot_parser::ast::Graph as DOTGraph;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_custom, pod_job_style, str_to_vec};
 use glob::glob;
+use minijinja::Environment;
 use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
+        model::{Kernel, Pipeline},
         orchestrator::{
             Orchestrator as _,
             agent::{AgentClient, Response},
@@ -44,9 +48,35 @@ fn external_bollard() -> Result<()> {
 }
 
 #[test]
+fn external_chrono() {
+    assert!(
+        DateTime::parse_from_rfc3339("Whoops").is_err_and(contains_debug),
+        "Did not raise a glob error."
+    );
+}
+
+#[test]
+fn external_dot() {
+    assert!(
+        DOTGraph::try_from("graph {").is_err_and(contains_debug),
+        "Did not raise a glob error."
+    );
+}
+
+#[test]
 fn external_glob() {
     assert!(
         glob("a**/b").is_err_and(contains_debug),
+        "Did not raise a glob error."
+    );
+}
+
+#[test]
+fn external_minijinja() {
+    let env = Environment::new();
+    assert!(
+        env.get_template("does_not_exist")
+            .is_err_and(contains_debug),
         "Did not raise a glob error."
     );
 }
@@ -127,8 +157,25 @@ fn internal_key_missing() {
     );
 }
 
+#[test]
+fn internal_pipeline_cyclic() {
+    assert!(
+        Pipeline::new(
+            "digraph { a -> b -> a }",
+            HashMap::from([
+                ("a".into(), Kernel::JoinOperator),
+                ("b".into(), Kernel::JoinOperator)
+            ]),
+            &HashMap::new(),
+            &HashMap::new()
+        )
+        .is_err_and(contains_debug),
+        "Did not raise a key missing error."
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn submit_pod_jobs() -> Result<()> {
+async fn internal_start_pod_jobs() -> Result<()> {
     let client = AgentClient::new("error_submit-pod-jobs".into(), "host".into())?;
     let mut pod_job = pod_job_custom(
         "alpine:3.14",

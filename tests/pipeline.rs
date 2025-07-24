@@ -2,6 +2,7 @@
     missing_docs,
     clippy::panic_in_result_fn,
     clippy::panic,
+    clippy::expect_used,
     clippy::indexing_slicing,
     clippy::too_many_lines,
     reason = "OK in tests."
@@ -244,43 +245,48 @@ async fn adder() -> Result<()> {
         },
         &test_dirs.namespace_lookup(),
     )?;
-
     // submit request
-    let pipeline_run = client.start_pipeline_job(pipeline_job.into()).await?;
+    services.spawn(async move {
+        let pipeline_run = client.start_pipeline_job(pipeline_job.into()).await?;
 
-    assert_eq!(
-        pipeline_run.status(),
-        PipelineStatus::Running,
-        "Pipeline not running."
-    );
-    assert!(
-        pipeline_run.summarize_dot()?.contains("Pipeline running"),
-        "Pipeline summary report incorrect."
-    );
+        assert_eq!(
+            pipeline_run.status(),
+            PipelineStatus::Running,
+            "Pipeline not running."
+        );
+        assert!(
+            pipeline_run.summarize_dot()?.contains("Pipeline running"),
+            "Pipeline summary report incorrect."
+        );
 
-    let pipeline_run_pointer = Arc::new(pipeline_run);
-    let pipeline_result = client
-        .get_pipeline_result(Arc::clone(&pipeline_run_pointer))
-        .await?;
-    let pipeline_result_again = client.get_pipeline_result(pipeline_run_pointer).await?;
+        let pipeline_run_pointer = Arc::new(pipeline_run);
+        let pipeline_result = client
+            .get_pipeline_result(Arc::clone(&pipeline_run_pointer))
+            .await?;
+        let pipeline_result_again = client.get_pipeline_result(pipeline_run_pointer).await?;
 
-    async_sleep(Duration::from_secs(1)).await; // give watch console stream a chance to catch up
+        async_sleep(Duration::from_secs(1)).await; // give watch console stream a chance to catch up
 
-    assert_eq!(
-        pipeline_result, pipeline_result_again,
-        "Pipeline results inconsistent."
-    );
-    assert_eq!(
-        pipeline_result.status,
-        PipelineStatus::Completed,
-        "Pipeline failed."
-    );
-    let actual_runtime = pipeline_result.terminated - pipeline_result.created;
-    let expected_runtime = 15 + margin_millis;
-    assert!(
-        actual_runtime <= expected_runtime,
-        "Pipeline took too long (expected={expected_runtime}, actual={actual_runtime})."
-    );
+        assert_eq!(
+            pipeline_result, pipeline_result_again,
+            "Pipeline results inconsistent."
+        );
+        assert_eq!(
+            pipeline_result.status,
+            PipelineStatus::Completed,
+            "Pipeline failed."
+        );
+        let actual_runtime = pipeline_result.terminated - pipeline_result.created;
+        let expected_runtime = 15 + margin_millis;
+        assert!(
+            actual_runtime <= expected_runtime,
+            "Pipeline took too long (expected={expected_runtime}, actual={actual_runtime})."
+        );
+        Ok(())
+    });
 
-    Ok(())
+    services
+        .join_next()
+        .await
+        .expect("Services unexpectedly empty")?
 }
