@@ -46,6 +46,7 @@ async def main(client, agent, test_dir, namespace_lookup, pod_jobs):
             available_store=LocalFileStore(directory=f"{test_dir}/store"),
         ),
     )
+    await asyncio.sleep(5)  # ensure service ready
 
     try:
         await client.start_pod_jobs(pod_jobs=pod_jobs)
