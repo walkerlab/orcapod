@@ -158,7 +158,7 @@ pub fn pod_job_custom(
             HashMap::new(),
             "https://github.com/place/holder".to_owned(),
             0.1,          // 100 millicores as frac cores
-            10_u64 << 20, // 10 MiB in bytes
+            50_u64 << 20, // 10 MiB in bytes
             None,
         )?
         .into(),
@@ -168,7 +168,7 @@ pub fn pod_job_custom(
             path: PathBuf::from("."),
         },
         1.0,          // 1000 millicores as frac cores
-        10_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
+        50_u64 << 20, // 2GiB in bytes, KiB=<<10, MiB=<<20, GiB=<<30
         None,
         namespace_lookup,
     )
