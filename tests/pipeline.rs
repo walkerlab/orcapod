@@ -62,10 +62,6 @@ async fn adder() -> Result<()> {
                 .await
         }
     });
-    services.spawn(async {
-        async_sleep(Duration::from_secs(60)).await;
-        panic!("Test took too long. Killing...");
-    });
     // setup pod
     let image_reference = "alpine:3.14";
     pull_image(image_reference)?;
@@ -292,6 +288,10 @@ async fn adder() -> Result<()> {
             "Pipeline took too long (expected={expected_runtime}, actual={actual_runtime})."
         );
         Ok(())
+    });
+    services.spawn(async {
+        async_sleep(Duration::from_secs(60)).await;
+        panic!("Test took too long. Killing...");
     });
 
     services

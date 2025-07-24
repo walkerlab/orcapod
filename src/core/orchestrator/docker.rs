@@ -233,11 +233,15 @@ impl LocalDockerOrchestrator {
                     ) {
                         (ContainerStateStatusEnum::RUNNING, _) => PodStatus::Running,
                         (
-                            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
+                            ContainerStateStatusEnum::EXITED
+                            | ContainerStateStatusEnum::REMOVING
+                            | ContainerStateStatusEnum::DEAD,
                             0,
                         ) => PodStatus::Completed,
                         (
-                            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
+                            ContainerStateStatusEnum::EXITED
+                            | ContainerStateStatusEnum::REMOVING
+                            | ContainerStateStatusEnum::DEAD,
                             exit_code,
                         ) => PodStatus::Failed { exit_code },
                         (_, exit_code) => {
