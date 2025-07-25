@@ -4,13 +4,18 @@
     missing_docs,
     clippy::missing_panics_doc,
     clippy::unwrap_in_result,
+    clippy::too_many_lines,
     reason = "OK in tests."
 )]
 
+use indoc::{formatdoc, indoc};
 use names::{Generator, Name};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Blob, BlobKind, Packet, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
+    model::{
+        Annotation, Blob, BlobKind, InputSpecURI, Kernel, OutputSpecURI, Packet, PathInfo, PathSet,
+        Pipeline, PipelineJob, Pod, PodJob, PodResult, URI,
+    },
     orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
@@ -74,6 +79,53 @@ pub fn pod_style() -> Result<Pod> {
             description: "This is an example pod.".to_owned(),
             version: "1.0.0".to_owned(),
         }),
+        None,
+    )
+}
+
+pub fn pod_adder(duration_seconds: u8, last_command: &str) -> Result<Pod> {
+    Pod::new(
+        "alpine:3.14".into(),
+        vec![
+            "sh".into(),
+            "-c".into(),
+            formatdoc! {"
+                echo 'Adding two numbers'
+                echo $(($(cat /tmp/input/left.txt) + $(cat /tmp/input/right.txt))) > /tmp/output/answer.txt
+                sleep {duration_seconds}
+                {last_command}
+            "}.trim().replace('\n', " && "),
+        ],
+        HashMap::from([
+            (
+                "left".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("/tmp/input/left.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            ),
+            (
+                "right".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("/tmp/input/right.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            ),
+        ]),
+        PathBuf::from("/tmp/output"),
+        HashMap::from([
+            (
+                "answer".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("answer.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            ),
+        ]),
+        "https://github.com/place/holder".to_owned(),
+        0.1,          // 100 millicores as frac cores
+        10_u64 << 20, // 10 MiB in bytes
+        None,
         None,
     )
 }
@@ -210,6 +262,153 @@ pub fn pod_jobs_stresser(
             Ok(pod_job_custom(image_reference, &str_to_vec("sleep crash"), HashMap::new(), &NAMESPACE_LOOKUP_READ_ONLY)?.into())
         })
         .collect::<Result<Vec<_>>>()
+}
+
+pub fn pipeline_job_adder(
+    pod_duration_seconds: u8,
+    fail_pods: &[&str],
+    data_dir_filepath: &Path,
+    namespace_lookup: &HashMap<String, PathBuf, RandomState>,
+) -> Result<PipelineJob> {
+    fs::create_dir_all(data_dir_filepath.join("input"))?;
+    for i in 1..16 {
+        fs::write(
+            data_dir_filepath.join(format!("input/{i}.txt")),
+            i.to_string(),
+        )?;
+    }
+
+    let pod_adder_success = Arc::new(pod_adder(pod_duration_seconds, "exit 0")?);
+    let pod_adder_failure = Arc::new(pod_adder(pod_duration_seconds, "exit 1")?);
+    PipelineJob::new(
+        Pipeline::new(
+            indoc! {"
+                digraph {
+                    add_a -> map_left_a
+                    add_b -> map_right_a
+                    add_c -> map_left_b
+                    add_d -> map_right_b
+                    { map_left_a map_right_a } -> cartesian_a -> add_e -> map_left_c
+                    { map_left_b map_right_b } -> cartesian_b -> add_f -> map_right_c
+                    { map_left_c map_right_c } -> cartesian_c -> add_g
+                }
+            "},
+            ["a", "b", "c"]
+                .into_iter()
+                .flat_map(|k| ["left", "right"].into_iter().map(move |side| (k, side)))
+                .map(|(k, side)| {
+                    (
+                        format!("map_{side}_{k}"),
+                        Kernel::MapOperator {
+                            map: HashMap::from([("answer".into(), (*side).into())]),
+                        },
+                    )
+                })
+                .chain(
+                    ["a", "b", "c"]
+                        .iter()
+                        .map(|k| (format!("cartesian_{k}"), Kernel::JoinOperator)),
+                )
+                .chain(["a", "b", "c", "d", "e", "f", "g"].iter().map(|k| {
+                    let pod_name = format!("add_{k}");
+                    let pod_ref = if fail_pods.contains(&pod_name.as_str()) {
+                        Arc::clone(&pod_adder_failure)
+                    } else {
+                        Arc::clone(&pod_adder_success)
+                    };
+                    (pod_name, Kernel::Pod { r#ref: pod_ref })
+                }))
+                .collect(),
+            &["a", "b", "c", "d"]
+                .into_iter()
+                .flat_map(|k| ["left", "right"].into_iter().map(move |side| (k, side)))
+                .map(|(k, side)| {
+                    (
+                        format!("{side}_add_{k}"),
+                        vec![InputSpecURI {
+                            node: format!("add_{k}"),
+                            key: (*side).into(),
+                        }],
+                    )
+                })
+                .collect(),
+            &HashMap::from([(
+                "answer".into(),
+                OutputSpecURI {
+                    node: "add_g".into(),
+                    key: "answer".into(),
+                },
+            )]),
+        )?
+        .into(),
+        &[
+            (
+                "left_add_a".into(),
+                (1..4)
+                    .map(|i| PathSet::Unary {
+                        blob: Blob {
+                            kind: BlobKind::File,
+                            location: URI {
+                                namespace: "default".into(),
+                                path: data_dir_filepath.join(format!("input/{i}.txt")),
+                            },
+                            checksum: String::new(),
+                        },
+                    })
+                    .collect(),
+            ),
+            (
+                "right_add_a".into(),
+                (4..6)
+                    .map(|i| PathSet::Unary {
+                        blob: Blob {
+                            kind: BlobKind::File,
+                            location: URI {
+                                namespace: "default".into(),
+                                path: data_dir_filepath.join(format!("input/{i}.txt")),
+                            },
+                            checksum: String::new(),
+                        },
+                    })
+                    .collect(),
+            ),
+        ]
+        .into_iter()
+        .chain(
+            [
+                "left_add_b",
+                "right_add_b",
+                "left_add_c",
+                "right_add_c",
+                "left_add_d",
+                "right_add_d",
+            ]
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                (
+                    (*k).into(),
+                    vec![PathSet::Unary {
+                        blob: Blob {
+                            kind: BlobKind::File,
+                            location: URI {
+                                namespace: "default".into(),
+                                path: data_dir_filepath.join(format!("input/{}.txt", i + 6)),
+                            },
+                            checksum: String::new(),
+                        },
+                    }],
+                )
+            }),
+        )
+        .collect(),
+        &URI {
+            namespace: "default".into(),
+            path: PathBuf::from(data_dir_filepath.file_name().expect("Relative directory."))
+                .join("output/pipeline_adder"),
+        },
+        namespace_lookup,
+    )
 }
 
 pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestContainerImage> {
