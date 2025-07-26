@@ -1,9 +1,9 @@
 use crate::{
     core::orchestrator::agent::{EventPayload, start_service},
     uniffi::{
-        error::{OrcaError, Result, selector},
-        model::{PodJob, PodResult},
-        orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
+        error::{Kind, OrcaError, Result, selector},
+        model::{PodJob, PodResult, PodResultStatus},
+        orchestrator::{Orchestrator, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
 };
@@ -13,7 +13,7 @@ use futures_util::future::join_all;
 use getset::CloneGetters;
 use serde_json::Value;
 use snafu::{OptionExt as _, ResultExt as _};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc};
 use tokio::task::JoinSet;
 use uniffi;
 use zenoh;
@@ -152,19 +152,32 @@ impl Agent {
             namespace_lookup.clone(),
             |pod_job: &PodJob| EventPayload::Request(pod_job.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {
+                println!("Processing pod job: {}", pod_job.hash);
                 let pod_run = agent
                     .orchestrator
                     .start(&inner_namespace_lookup, &pod_job)
-                    .await?;
+                    .await
+                    .unwrap();
                 let pod_result = agent.orchestrator.get_result(&pod_run).await?;
                 agent.orchestrator.delete(&pod_run).await?;
                 Ok(pod_result)
             },
             async |client, pod_result| {
                 let response_topic = match &pod_result.status {
-                    Status::Completed => &format!("success/pod_job/{}", pod_result.pod_job.hash),
-                    Status::Running | Status::Failed(_) | Status::Unset => {
+                    PodResultStatus::Completed => {
+                        &format!("success/pod_job/{}", pod_result.pod_job.hash)
+                    }
+                    PodResultStatus::Failed(_) => {
                         &format!("failure/pod_job/{}", pod_result.pod_job.hash)
+                    }
+                    PodResultStatus::Unset => {
+                        return Err(OrcaError {
+                            kind: Kind::PodJobProcessingError {
+                                hash: pod_result.pod_job.hash.clone(),
+                                reason: "PodResultStatus should not be unset".to_owned(),
+                                backtrace: Some(Backtrace::capture()),
+                            },
+                        });
                     }
                 };
                 client.publish(response_topic, &pod_result).await
@@ -197,6 +210,7 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
         }
+
         services
             .join_next()
             .await

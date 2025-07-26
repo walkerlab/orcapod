@@ -18,6 +18,8 @@ use tokio::sync::oneshot;
 use tokio::task;
 use uniffi;
 
+use crate::uniffi::orchestrator::Status;
+
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -49,6 +51,11 @@ pub(crate) enum Kind {
     InvalidFilepath {
         path: PathBuf,
         source: io::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Failed to get items at idx {idx}."))]
+    InvalidIndex {
+        idx: usize,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display(
@@ -90,8 +97,32 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("Pod job {hash} failed to process with reason: {reason}."))]
+    PodJobProcessingError {
+        hash: String,
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Failed to convert status {status:?} to PodResultStatus with reason: {reason}."
+    ))]
+    StatusConversionFailure {
+        status: Status,
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Unsupported path type: {path:?}."))]
+    UnsupportedPathType {
+        path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Failed to send message because: {reason}"))]
     SendError {
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Pod job submission failed with reason: {reason}."))]
+    PodJobSubmissionFailed {
         reason: String,
         backtrace: Option<Backtrace>,
     },

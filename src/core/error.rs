@@ -116,6 +116,7 @@ impl fmt::Debug for OrcaError {
             | Kind::FailedToParseDot { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
+            | Kind::InvalidIndex { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::NoAnnotationFound { backtrace, .. }
@@ -124,6 +125,10 @@ impl fmt::Debug for OrcaError {
             | Kind::NoMatchingPodRun { backtrace, .. }
             | Kind::NoRemainingServices { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
+            | Kind::PodJobSubmissionFailed { backtrace, .. }
+            | Kind::PodJobProcessingError { backtrace, .. }
+            | Kind::StatusConversionFailure { backtrace, .. }
+            | Kind::UnsupportedPathType { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChannelReceiveError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }

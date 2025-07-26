@@ -1,12 +1,16 @@
 use crate::{
     core::{
-        crypto::{hash_blob, hash_buffer},
+        crypto::{hash_blob, hash_buffer, hash_dir, hash_file},
         model::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
         },
+        util::get,
     },
-    uniffi::{error::Result, orchestrator::Status},
+    uniffi::{
+        error::{Kind, OrcaError, Result},
+        orchestrator::Status,
+    },
 };
 use derive_more::Display;
 use getset::CloneGetters;
@@ -183,8 +187,85 @@ impl PodJob {
             ..pod_job_no_hash
         })
     }
+
+    /// Util function to get the `output_packet` from a given `pod_job`, assuming it results already computed
+    /// # Errors
+    /// Will return `Err` if the output packet cannot be constructed, e.g. if the pod job has not been run yet or the output directory is not set.
+    pub fn get_output_packet(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+    ) -> Result<HashMap<String, PathSet>> {
+        self.pod
+            .output_spec
+            .iter()
+            .map(|(key, value)| {
+                // Construct the full path and figure out if it is a file or directory
+                let namespace_path = get(namespace_lookup, &self.output_dir.namespace)?;
+                let rel_path = self.output_dir.path.join(&value.path);
+                let abs_path = namespace_path.join(&rel_path);
+
+                // Check if if it is a file or directory
+                let path_set = if abs_path.is_file() {
+                    PathSet::Unary(Blob {
+                        kind: BlobKind::File,
+                        location: URI {
+                            namespace: self.output_dir.namespace.clone(),
+                            path: rel_path,
+                        },
+                        checksum: hash_file(&abs_path)?,
+                    })
+                } else if abs_path.is_dir() {
+                    PathSet::Unary(Blob {
+                        kind: BlobKind::Directory,
+                        location: URI {
+                            namespace: self.output_dir.namespace.clone(),
+                            path: rel_path,
+                        },
+                        checksum: hash_dir(&abs_path)?,
+                    })
+                } else {
+                    return Err(OrcaError {
+                        kind: Kind::UnsupportedPathType {
+                            path: abs_path,
+                            backtrace: Some(snafu::Backtrace::capture()),
+                        },
+                    });
+                };
+                Ok((key.clone(), path_set))
+            })
+            .collect::<Result<_>>()
+    }
 }
 
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+/// Status of a pod result.
+pub enum PodResultStatus {
+    /// Pod Job completed successfully.
+    Completed,
+    /// Pod Job failed with an exit code.
+    Failed(i16),
+    /// Mainly used for default values, not a valid status.
+    #[default]
+    Unset,
+}
+
+impl TryFrom<Status> for PodResultStatus {
+    type Error = OrcaError;
+
+    fn try_from(status: Status) -> Result<Self, Self::Error> {
+        match status {
+            Status::Completed => Ok(Self::Completed),
+            Status::Failed(code) => Ok(Self::Failed(code)),
+            Status::Running | Status::Unset => Err(OrcaError {
+                kind: Kind::StatusConversionFailure {
+                    status,
+                    reason: "Cannot convert Running or Unset status to PodResultStatus".to_owned(),
+                    backtrace: Some(snafu::Backtrace::capture()),
+                },
+            }),
+        }
+    }
+}
 /// Result from a compute job run.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct PodResult {
@@ -199,7 +280,7 @@ pub struct PodResult {
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
-    pub status: Status,
+    pub status: PodResultStatus,
     /// Time in epoch when created in seconds.
     pub created: u64,
     /// Time in epoch when terminated in seconds.
@@ -216,7 +297,7 @@ impl PodResult {
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
         assigned_name: String,
-        status: Status,
+        status: PodResultStatus,
         created: u64,
         terminated: u64,
     ) -> Result<Self> {

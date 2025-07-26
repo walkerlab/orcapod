@@ -1,8 +1,12 @@
 use crate::{
     core::{crypto::hash_buffer, model::serialize_hashmap, util::get},
     uniffi::{
-        error::{OrcaError, Result, selector},
-        model::{PathSet, Pod, PodJob, URI},
+        error::{Kind, OrcaError, Result, selector},
+        model::{PathSet, Pod, PodJob, PodResult, PodResultStatus, URI},
+        orchestrator::{
+            agent::{Agent, AgentClient, Response},
+            docker::LocalDockerOrchestrator,
+        },
         pipeline::{Kernel, Mapper, Node, Pipeline, PipelineJob, PipelineResult},
     },
 };
@@ -52,6 +56,8 @@ struct PipelineRun {
     pipeline_job: PipelineJob, // The pipeline job that this run is associated with
     node_tasks: JoinSet<Result<()>>, // JoinSet of tasks for each node in the pipeline
     outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>, // String is the node key, while hash
+    orchestrator_agent: Arc<Agent>, // This is placed in pipeline due to the current design requiring a namespace to operate on
+    orchestrator_agent_task: JoinSet<Result<()>>, // JoinSet of tasks for the orchestrator agent
 }
 
 impl PartialEq for PipelineRun {
@@ -75,7 +81,6 @@ impl Display for PipelineRun {
 }
 
 /// Runner that uses a docker agent to run pipelines
-#[derive(Default)]
 pub struct DockerPipelineRunner {
     /// User label on which group of agents this runner is associated with
     pub group: String,
@@ -96,9 +101,10 @@ impl DockerPipelineRunner {
     /// # Errors
     /// Will error out if the environment variable `HOSTNAME` is not set
     pub fn new(group: String) -> Result<Self> {
+        let host = hostname::get()?.to_string_lossy().to_string();
         Ok(Self {
             group,
-            host: hostname::get()?.to_string_lossy().to_string(),
+            host,
             pipeline_runs: HashMap::new(),
         })
     }
@@ -117,12 +123,30 @@ impl DockerPipelineRunner {
         namespace: &str, // Name space to save pod_results to
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<String> {
+        // Create the orchestrator
+        let orchestrator_agent = Agent::new(
+            self.group.clone(),
+            self.host.clone(),
+            LocalDockerOrchestrator::new()?.into(),
+        )?;
+
         // Create a new pipeline run
         let mut pipeline_run = PipelineRun {
             pipeline_job,
             outputs: Arc::new(RwLock::new(HashMap::new())),
             node_tasks: JoinSet::new(),
+            orchestrator_agent: orchestrator_agent.into(),
+            orchestrator_agent_task: JoinSet::new(),
         };
+
+        let orchestrator_agent_clone = Arc::clone(&pipeline_run.orchestrator_agent);
+        let namespace_lookup_clone = namespace_lookup.clone();
+        // Start the orchestrator agent service
+        pipeline_run.orchestrator_agent_task.spawn(async move {
+            orchestrator_agent_clone
+                .start(&namespace_lookup_clone, None)
+                .await
+        });
 
         // The id for the pipeline_run is the pipeline_job hash
         let pipeline_run_id = pipeline_run.pipeline_job.hash.clone();
@@ -155,6 +179,7 @@ impl DockerPipelineRunner {
                     namespace.to_owned(),
                     namespace_lookup.clone(),
                     Arc::clone(&session),
+                    Arc::clone(&pipeline_run.orchestrator_agent.client),
                 ));
         }
 
@@ -163,7 +188,7 @@ impl DockerPipelineRunner {
         for node in pipeline_run.pipeline_job.pipeline.get_leaf_nodes() {
             pipeline_run
                 .node_tasks
-                .spawn(Self::create_capture_task_for_node(
+                .spawn(Self::create_output_capture_task_for_node(
                     node.id.clone(),
                     Arc::clone(&pipeline_run.outputs),
                     Arc::clone(&session),
@@ -298,7 +323,7 @@ impl DockerPipelineRunner {
 
     /// This will capture the outputs of the given nodes and store it in the `outputs` map
     #[expect(clippy::type_complexity, reason = "Needed for async")]
-    async fn create_capture_task_for_node(
+    async fn create_output_capture_task_for_node(
         node_id: String,
         outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>,
         session: Arc<zenoh::Session>,
@@ -350,11 +375,12 @@ impl DockerPipelineRunner {
         namespace: String,
         namespace_lookup: HashMap<String, PathBuf>,
         session: Arc<zenoh::Session>,
+        client: Arc<AgentClient>,
     ) -> Result<()> {
         // Create the correct processor for the node based on the kernel type
         let node_processor: Arc<Mutex<Box<dyn NodeProcessor>>> = Arc::new(Mutex::new(
             match get(&pipeline.kernel_lut, &node.kernel_hash)? {
-                Kernel::Pod(pod) => Box::new(PodProcessor::new(Arc::clone(pod))),
+                Kernel::Pod(pod) => Box::new(PodProcessor::new(Arc::clone(pod), client)),
                 Kernel::Mapper(mapper) => Box::new(MapperProcessor::new(Arc::clone(mapper))),
                 Kernel::Joiner => {
                     // Need to get the parent node id for this joiner node
@@ -614,24 +640,143 @@ async fn try_to_forward_err_msg(
 struct PodProcessor {
     pod: Arc<Pod>,
     processing_tasks: JoinSet<()>,
+    client: Arc<AgentClient>,
 }
 
 impl PodProcessor {
-    fn new(pod: Arc<Pod>) -> Self {
+    fn new(pod: Arc<Pod>, client: Arc<AgentClient>) -> Self {
         Self {
             pod,
             processing_tasks: JoinSet::new(),
+            client,
         }
+    }
+
+    /// Will handle the creation of the pod job, submission to the agent, listening for completion, and extracting the `output_packet` if successful
+    async fn start_pod_job_task(
+        node_id: String,
+        pod: Arc<Pod>,
+        packet: HashMap<String, PathSet>,
+        client: Arc<AgentClient>,
+        session: Arc<zenoh::Session>,
+        base_output_key_exp: String,
+        namespace: String,
+        namespace_lookup: &HashMap<String, PathBuf>,
+    ) -> Result<()> {
+        // For now we will just send the input_packet to the success channel
+        let node_id_bytes = node_id.as_bytes().to_vec();
+        let input_packet_hash = {
+            let mut buf = node_id_bytes;
+            let mut serializer = Serializer::new(&mut buf);
+            serialize_hashmap(&packet, &mut serializer)?;
+            hash_buffer(buf)
+        };
+        let output_dir = URI {
+            namespace: namespace.clone(),
+            path: PathBuf::from(format!("pod_runs/{node_id}/{input_packet_hash}")),
+        };
+
+        let cpu_limit = pod.recommended_cpus;
+        let memory_limit = pod.recommended_memory;
+
+        // Create the pod job
+        let pod_job = PodJob::new(
+            None,
+            Arc::clone(&pod),
+            packet,
+            output_dir,
+            cpu_limit,
+            memory_limit,
+            None,
+            namespace_lookup,
+        )?;
+
+        // Create listener for pod_job
+        let target_key_exp = format!(
+            "group/{}/{}/*/pod_job/{}",
+            client.group, client.host, pod_job.hash
+        );
+
+        // Create the subscriber
+        let pod_job_subscriber = session
+            .declare_subscriber(target_key_exp)
+            .await
+            .context(selector::AgentCommunicationFailure {})?;
+
+        // Create the async task to listen for the pod job completion
+        let pod_job_listener_task = tokio::spawn(async move {
+            // Wait for the pod job to complete and extract the result
+
+            let sample = pod_job_subscriber
+                .recv_async()
+                .await
+                .context(selector::AgentCommunicationFailure {})?;
+            // Extract the pod_result from the payload
+            let pod_result: PodResult = serde_json::from_slice(&sample.payload().to_bytes())?;
+            Ok::<_, OrcaError>(pod_result)
+        });
+
+        // Submit it to the client and get the response to make sure it was successful
+        let responses = client.submit_pod_jobs(vec![pod_job.into()]).await;
+        let response = responses
+            .first()
+            .context(selector::InvalidIndex { idx: 0_usize })?;
+
+        match response {
+            Response::Ok => (),
+            Response::Err(err) => {
+                return Err(OrcaError {
+                    kind: Kind::PodJobSubmissionFailed {
+                        reason: err.clone(),
+                        backtrace: Some(snafu::Backtrace::capture()),
+                    },
+                });
+            }
+        }
+
+        // Get the pod result from the listener task
+        let pod_result = pod_job_listener_task.await??;
+        // Get the output packet for the pod result
+        let output_packet = match pod_result.status {
+            PodResultStatus::Completed => {
+                // Get the output packet
+                pod_result.pod_job.get_output_packet(namespace_lookup)?
+            }
+            PodResultStatus::Failed(exit_code) => {
+                // Processing failed, thus return the error
+                return Err(OrcaError {
+                    kind: Kind::PodJobProcessingError {
+                        hash: pod_result.pod_job.hash.clone(),
+                        reason: format!("Pod processing failed with exit code {exit_code}"),
+                        backtrace: Some(snafu::Backtrace::capture()),
+                    },
+                });
+            }
+            PodResultStatus::Unset => {
+                // This should not happen, but if it does, we will return an error
+                return Err(OrcaError {
+                    kind: Kind::PodJobProcessingError {
+                        hash: pod_result.pod_job.hash.clone(),
+                        reason: "Pod processing status is unset".to_owned(),
+                        backtrace: Some(snafu::Backtrace::capture()),
+                    },
+                });
+            }
+        };
+
+        session
+            .put(
+                base_output_key_exp.clone() + "/" + SUCCESS_KEY_EXP,
+                serde_json::to_string(&NodeOutput::Packet(node_id.clone(), output_packet))?,
+            )
+            .await
+            .context(selector::AgentCommunicationFailure {})?;
+        Ok::<(), OrcaError>(())
     }
 }
 
 #[async_trait]
 impl NodeProcessor for PodProcessor {
-    #[expect(
-        clippy::unwrap_used,
-        clippy::unwrap_in_result,
-        reason = "Hard code for now, will be replaced by agent"
-    )]
     fn process_packet(
         &mut self,
         _sender_node_id: &str,
@@ -644,72 +789,35 @@ impl NodeProcessor for PodProcessor {
     ) -> Result<()> {
         // We need a unique hash for this given input packet process by the node
         // therefore we need to generate a hash that has the pod_id + input_packet
-        let node_id_bytes = node_id.as_bytes().to_vec();
-        let packet_copy = packet.clone();
-        let input_packet_hash = {
-            let mut buf = node_id_bytes;
-            let mut serializer = Serializer::new(&mut buf);
-            serialize_hashmap(&packet_copy, &mut serializer)?;
-            hash_buffer(buf)
-        };
-        let output_dir = URI {
-            namespace: namespace.to_owned(),
-            path: PathBuf::from(format!("pod_runs/{}/{}", self.pod.hash, input_packet_hash)),
-        };
+        let pod_clone = Arc::clone(&self.pod);
+        let client_clone = Arc::clone(&self.client);
+        let node_id_owned = node_id.to_owned();
+        let packet_owned = packet.clone();
+        let base_output_key_exp_owned = base_output_key_exp.to_owned();
+        let namespace_owned = namespace.to_owned();
+        let namespace_lookup_owned = namespace_lookup.clone();
 
-        let cpu_limit = self.pod.recommended_cpus;
-        let memory_limit = self.pod.recommended_memory;
-
-        // Create the pod job
-        let pod_job = PodJob::new(
-            None,
-            Arc::clone(&self.pod),
-            packet.clone(),
-            output_dir,
-            cpu_limit,
-            memory_limit,
-            None,
-            namespace_lookup,
-        )?;
-
-        // Simulate pod execution by just printing out pod_job_hash and pod hash
-        // This will be replaced by sending the pod_job to the orchestrator via the agent
-
-        // Build the output_packet, in reality, this will be extracted from the pod_result
-
-        let output_packet = self
-            .pod
-            .output_spec
-            .keys()
-            .map(|output_key| (output_key.clone(), packet.values().next().cloned().unwrap()))
-            .collect::<HashMap<_, _>>();
-
-        let node_id_clone = node_id.to_owned();
-        let output_key_exp_clone = base_output_key_exp.to_owned();
         self.processing_tasks.spawn(async move {
-            // For now we will just send the input_packet to the success channel
-            let results = async {
-                session
-                    .put(
-                        output_key_exp_clone.clone() + "/" + SUCCESS_KEY_EXP,
-                        serde_json::to_string(&NodeOutput::Packet(
-                            node_id_clone.clone(),
-                            output_packet,
-                        ))?,
-                    )
-                    .await
-                    .context(selector::AgentCommunicationFailure {})?;
-                Ok::<(), OrcaError>(())
-            };
+            let results = Self::start_pod_job_task(
+                node_id_owned.clone(),
+                pod_clone,
+                packet_owned,
+                client_clone,
+                Arc::clone(&session),
+                base_output_key_exp_owned.clone(),
+                namespace_owned.clone(),
+                &namespace_lookup_owned,
+            )
+            .await;
 
-            match results.await {
+            match results {
                 Ok(()) => {}
                 Err(err) => {
                     try_to_forward_err_msg(
                         session,
                         err,
-                        &format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
-                        &node_id_clone,
+                        &format!("{base_output_key_exp_owned}/{FAILURE_KEY_EXP}"),
+                        &node_id_owned,
                     )
                     .await;
                 }
@@ -806,7 +914,6 @@ impl NodeProcessor for MapperProcessor {
         while (self.processing_tasks.join_next().await).is_some() {
             // The only error that should be forwarded here is the failure to send the output packet
         }
-
         true
     }
 
