@@ -1,5 +1,6 @@
 use crate::uniffi::error::{Kind, OrcaError};
 use bollard::errors::Error as BollardError;
+use dot_parser::ast::PestError;
 use glob;
 use serde_json;
 use serde_yaml;
@@ -16,6 +17,16 @@ impl From<BollardError> for OrcaError {
         Self {
             kind: Kind::BollardError {
                 source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<PestError> for OrcaError {
+    fn from(error: PestError) -> Self {
+        Self {
+            kind: Kind::DOTError {
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -102,7 +113,6 @@ impl fmt::Debug for OrcaError {
         match &self.kind {
             Kind::AgentCommunicationFailure { backtrace, .. }
             | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
-            | Kind::FailedToParseDot { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
@@ -113,8 +123,8 @@ impl fmt::Debug for OrcaError {
             | Kind::NoMatchingPodRun { backtrace, .. }
             | Kind::NoRemainingServices { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
-            | Kind::MissingInputSpecKey { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
+            | Kind::DOTError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }

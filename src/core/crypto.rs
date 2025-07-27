@@ -5,6 +5,8 @@ use crate::{
         model::{Blob, BlobKind},
     },
 };
+use hex;
+use rand::{self, RngCore as _};
 use serde_yaml;
 use sha2::{Digest as _, Sha256};
 use snafu::ResultExt as _;
@@ -88,7 +90,7 @@ pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
 /// Will return error if hashing fails on file or directory.
 pub(crate) fn hash_blob(
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
-    blob: Blob,
+    blob: &Blob,
 ) -> Result<Blob> {
     let blob_path = get(namespace_lookup, &blob.location.namespace)?.join(&blob.location.path);
     Ok(Blob {
@@ -96,6 +98,12 @@ pub(crate) fn hash_blob(
             BlobKind::File => hash_file(blob_path)?,
             BlobKind::Directory => hash_dir(blob_path)?,
         },
-        ..blob
+        ..blob.clone()
     })
+}
+
+pub(crate) fn make_random_hash() -> String {
+    let mut bytes = [0; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
 }

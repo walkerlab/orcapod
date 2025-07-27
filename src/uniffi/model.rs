@@ -1,15 +1,18 @@
 use crate::{
     core::{
-        crypto::{hash_blob, hash_buffer},
+        crypto::{hash_blob, hash_buffer, make_random_hash},
+        graph::make_graph,
         model::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
         },
+        pipeline::PipelineNode,
     },
     uniffi::{error::Result, orchestrator::Status},
 };
 use derive_more::Display;
 use getset::CloneGetters;
+use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
@@ -17,11 +20,11 @@ use uniffi;
 /// Available models.
 #[derive(uniffi::Enum, Debug)]
 pub enum ModelType {
-    /// A reusable, containerized computational unit.
+    /// See [`Pod`].
     Pod,
-    /// A compute job that specifies resource requests and input/output targets.
+    /// See [`PodJob`].
     PodJob,
-    /// Result from a compute job run.
+    /// See [`PodResult`].
     PodResult,
 }
 
@@ -44,12 +47,12 @@ pub struct Pod {
     pub image: String,
     /// Space-delimited shell command to begin computation.
     pub command: String,
-    /// Exposed, internal input streams.
+    /// Exposed, internal input specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_spec: HashMap<String, PathInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    /// Exposed, internal output streams.
+    /// Exposed, internal output specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub output_spec: HashMap<String, PathInfo>,
     /// Link to source associated with image binary.
@@ -118,7 +121,7 @@ pub struct PodJob {
     /// A pod to base the pod job on.
     #[serde(deserialize_with = "deserialize_pod")]
     pub pod: Arc<Pod>,
-    /// Attached, external input streams.
+    /// Attached, external input packet.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_packet: HashMap<String, PathSet>,
     /// Attached, external output directory.
@@ -151,17 +154,17 @@ impl PodJob {
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
         input_packet = input_packet
-            .into_iter()
+            .iter()
             .map(|(stream_name, stream_input)| match stream_input {
                 PathSet::Unary(blob) => Ok((
-                    stream_name,
+                    stream_name.clone(),
                     PathSet::Unary(hash_blob(namespace_lookup, blob)?),
                 )),
                 PathSet::Collection(blobs) => Ok((
-                    stream_name,
+                    stream_name.clone(),
                     PathSet::Collection(
                         blobs
-                            .into_iter()
+                            .iter()
                             .map(|blob| hash_blob(namespace_lookup, blob))
                             .collect::<Result<Vec<_>>>()?,
                     ),
@@ -232,6 +235,123 @@ impl PodResult {
         Ok(Self {
             hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
             ..pod_result_no_hash
+        })
+    }
+}
+
+/// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize, Serialize)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct Pipeline {
+    /// Computational DAG in-memory.
+    #[getset(skip)]
+    pub graph: DiGraph<PipelineNode, ()>,
+    /// Exposed, internal input specification. Each input may be fed into more than one node/key if desired.
+    pub input_spec: HashMap<String, Vec<SpecURI>>,
+    /// Exposed, internal output specification. Each output is associated with only one node/key.
+    pub output_spec: HashMap<String, SpecURI>,
+}
+
+impl PartialEq for Pipeline {
+    fn eq(&self, other: &Self) -> bool {
+        // todo: replace with hash once implemented
+        self.input_spec == other.input_spec && self.output_spec == other.output_spec
+    }
+}
+
+#[uniffi::export]
+impl Pipeline {
+    /// Construct a new pipeline instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `Pipeline` instance.
+    #[uniffi::constructor]
+    pub fn new(
+        graph_dot: &str,
+        metadata: HashMap<String, Kernel>,
+        input_spec: &HashMap<String, Vec<SpecURI>>,
+        output_spec: &HashMap<String, SpecURI>,
+    ) -> Result<Self> {
+        let graph = make_graph(graph_dot, metadata)?;
+        Ok(Self {
+            graph,
+            input_spec: input_spec.clone(),
+            output_spec: output_spec.clone(),
+        })
+    }
+}
+
+/// A compute pipeline job that supplies input/output targets.
+#[expect(
+    clippy::field_scoped_visibility_modifiers,
+    reason = "Temporary until a proper hash is implemented."
+)]
+#[derive(
+    uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone, PartialEq,
+)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct PipelineJob {
+    /// todo: replace with a consistent hash
+    #[getset(skip)]
+    pub(crate) hash: String,
+    /// A pipeline to base the pipeline job on.
+    pub pipeline: Arc<Pipeline>,
+    /// Attached, external input packet. Applies cartesian product by default on keys from the same node.
+    pub input_packet: HashMap<String, Vec<PathSet>>,
+    /// Attached, external output directory.
+    pub output_dir: URI,
+}
+
+#[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
+#[uniffi::export]
+impl PipelineJob {
+    /// Construct a new pipeline job instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `PipelineJob` instance.
+    #[uniffi::constructor]
+    pub fn new(
+        pipeline: Arc<Pipeline>,
+        input_packet: &HashMap<String, Vec<PathSet>>,
+        output_dir: &URI,
+        namespace_lookup: &HashMap<String, PathBuf>,
+    ) -> Result<Self> {
+        let input_packet_with_checksum = input_packet
+            .iter()
+            .map(|(path_set_key, path_sets)| {
+                Ok((
+                    path_set_key.clone(),
+                    path_sets
+                        .iter()
+                        .map(|path_set| {
+                            Ok(match path_set {
+                                PathSet::Unary(blob) => {
+                                    PathSet::Unary(hash_blob(namespace_lookup, blob)?)
+                                }
+                                PathSet::Collection(blobs) => PathSet::Collection(
+                                    blobs
+                                        .iter()
+                                        .map(|blob| hash_blob(namespace_lookup, blob))
+                                        .collect::<Result<_>>()?,
+                                ),
+                            })
+                        })
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+
+        Ok(Self {
+            hash: make_random_hash(),
+            pipeline,
+            input_packet: input_packet_with_checksum,
+            output_dir: output_dir.clone(),
         })
     }
 }
@@ -311,6 +431,30 @@ pub enum BlobKind {
     File,
     /// A single directory.
     Directory,
+}
+/// A node in a computational pipeline.
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize)]
+pub enum Kernel {
+    /// Pod reference.
+    Pod {
+        /// See [`Pod`].
+        r#ref: Arc<Pod>,
+    },
+    /// Cartesian product operation. See [`crate::core::operator::JoinOperator`].
+    JoinOperator,
+    /// Rename a path set key operation.
+    MapOperator {
+        /// See [`crate::core::operator::MapOperator`].
+        map: HashMap<String, String>,
+    },
+}
+/// Index from pipeline node into pod specification.
+#[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SpecURI {
+    /// Node reference name in pipeline.
+    pub node: String,
+    /// Specification key.
+    pub key: String,
 }
 
 // --- utils ----

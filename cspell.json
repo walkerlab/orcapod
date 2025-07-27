@@ -78,7 +78,6 @@
         "strsim",
         "getrandom",
         "wasi",
-        "rfind",
         "patchelf"
     ],
     "useGitignore": false,
