@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # build: maturin develop --uv
-# debugger: select "Python: Debug File" + F5
+# debugger: select "Python: Debug smoke test" + F5
 # script: /path/to/this/test/file.py /path/to/directory (must exist, will create subdirectory)
 import shutil
 from pathlib import Path

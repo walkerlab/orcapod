@@ -15,7 +15,11 @@
         "numpy",
         "graphviz",
         "uniffi",
-        "cffi"
+        "cffi",
+        "zenoh",
+        "PodJob",
+        "stresser",
+        "petgraph"
     ],
     "ignoreWords": [
         "relpath",
@@ -74,8 +78,8 @@
         "strsim",
         "getrandom",
         "wasi",
-        "petgraph",
-        "rfind"
+        "rfind",
+        "patchelf"
     ],
     "useGitignore": false,
     "ignorePaths": [

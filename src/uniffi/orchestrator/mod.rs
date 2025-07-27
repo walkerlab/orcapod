@@ -3,7 +3,7 @@ use crate::uniffi::{
     model::{PodJob, PodResult, URI},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
 use uniffi;
 /// Options for sourcing compute environment images.
 #[derive(uniffi::Enum)]
@@ -65,7 +65,7 @@ pub struct PodRun {
 /// API for standard behavior of any container orchestration engine supported.
 #[uniffi::export]
 #[async_trait::async_trait]
-pub trait Orchestrator: Send + Sync {
+pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// How to synchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -157,6 +157,7 @@ pub trait Orchestrator: Send + Sync {
     /// Will return `Err` if there is an issue creating a pod result.
     async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
 }
-
+/// Orchestration execution agent daemon and client.
+pub mod agent;
 /// Orchestration implementation for Docker backend.
 pub mod docker;

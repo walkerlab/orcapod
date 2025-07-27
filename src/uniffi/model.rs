@@ -275,8 +275,7 @@ pub struct PathInfo {
     /// Naming pattern for the stream.
     pub match_pattern: String,
 }
-/// A set of BLOBs, either a single BLOB or a collection of BLOBs.
-/// Mainly use for input
+/// A single BLOB or a collection of BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PathSet {
