@@ -37,7 +37,7 @@ pub enum PodStatus {
 }
 /// Run metadata
 #[derive(uniffi::Record, Debug)]
-pub struct RunInfo {
+pub struct PodRunInfo {
     /// Environment utilized.
     pub image: String,
     /// Time in epoch when created in seconds.
@@ -112,7 +112,7 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<PodRunInfo>;
     /// How to synchronously wait for pod result to be ready.
     ///
     /// # Errors
@@ -161,7 +161,7 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    async fn get_info(&self, pod_run: &PodRun) -> Result<PodRunInfo>;
     /// How to asynchronously wait for pod result to be ready.
     ///
     /// # Errors

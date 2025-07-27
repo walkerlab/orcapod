@@ -113,15 +113,13 @@ pub fn pod_adder(duration_seconds: u8, last_command: &str) -> Result<Pod> {
             ),
         ]),
         PathBuf::from("/tmp/output"),
-        HashMap::from([
-            (
-                "answer".to_owned(),
-                PathInfo {
-                    path: PathBuf::from("answer.txt"),
-                    match_pattern: r".*\.txt".to_owned(),
-                },
-            ),
-        ]),
+        HashMap::from([(
+            "answer".to_owned(),
+            PathInfo {
+                path: PathBuf::from("answer.txt"),
+                match_pattern: r".*\.txt".to_owned(),
+            },
+        )]),
         "https://github.com/place/holder".to_owned(),
         0.1,          // 100 millicores as frac cores
         10_u64 << 20, // 10 MiB in bytes

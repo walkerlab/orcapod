@@ -3,7 +3,7 @@ use crate::{
     uniffi::{
         error::{Result, selector},
         model::{PathSet, PodJob},
-        orchestrator::{PodStatus, RunInfo, docker::LocalDockerOrchestrator},
+        orchestrator::{PodRunInfo, PodStatus, docker::LocalDockerOrchestrator},
     },
 };
 use bollard::{
@@ -175,7 +175,7 @@ impl LocalDockerOrchestrator {
     pub(crate) async fn list_containers(
         &self,
         filters: HashMap<String, Vec<String>>, // https://docs.rs/bollard/latest/bollard/container/struct.ListContainersOptions.html#structfield.filters
-    ) -> Result<impl Iterator<Item = (String, RunInfo)>> {
+    ) -> Result<impl Iterator<Item = (String, PodRunInfo)>> {
         Ok(join_all(
             self.api
                 .list_containers(Some(ListContainersOptions {
@@ -207,7 +207,7 @@ impl LocalDockerOrchestrator {
                     .timestamp();
             Some((
                 container_name,
-                RunInfo {
+                PodRunInfo {
                     image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
                     created: container_summary.created? as u64,
                     terminated: (terminated_timestamp > 0).then_some(terminated_timestamp as u64),

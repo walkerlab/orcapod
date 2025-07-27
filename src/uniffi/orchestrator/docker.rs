@@ -6,7 +6,7 @@ use crate::{
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{PodJob, PodResult},
-        orchestrator::{ImageKind, Orchestrator, PodRun, PodStatus, RunInfo},
+        orchestrator::{ImageKind, Orchestrator, PodRun, PodRunInfo, PodStatus},
     },
 };
 use async_trait;
@@ -60,7 +60,7 @@ impl Orchestrator for LocalDockerOrchestrator {
     fn delete_blocking(&self, pod_run: &PodRun) -> Result<()> {
         ASYNC_RUNTIME.block_on(self.delete(pod_run))
     }
-    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo> {
+    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<PodRunInfo> {
         ASYNC_RUNTIME.block_on(self.get_info(pod_run))
     }
     fn get_result_blocking(
@@ -179,7 +179,7 @@ impl Orchestrator for LocalDockerOrchestrator {
             .await?;
         Ok(())
     }
-    async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo> {
+    async fn get_info(&self, pod_run: &PodRun) -> Result<PodRunInfo> {
         let labels = vec![
             "org.orcapod=true".to_owned(),
             format!(
@@ -219,7 +219,7 @@ impl Orchestrator for LocalDockerOrchestrator {
             },
         }
 
-        let mut result_info: RunInfo;
+        let mut result_info: PodRunInfo;
         while {
             result_info = self.get_info(pod_run).await?;
             matches!(&result_info.status, PodStatus::Running)
