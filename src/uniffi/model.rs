@@ -254,13 +254,6 @@ pub struct Pipeline {
     pub output_spec: HashMap<String, SpecURI>,
 }
 
-impl PartialEq for Pipeline {
-    fn eq(&self, other: &Self) -> bool {
-        // todo: replace with hash once implemented
-        self.input_spec == other.input_spec && self.output_spec == other.output_spec
-    }
-}
-
 #[uniffi::export]
 impl Pipeline {
     /// Construct a new pipeline instance.
@@ -289,9 +282,7 @@ impl Pipeline {
     clippy::field_scoped_visibility_modifiers,
     reason = "Temporary until a proper hash is implemented."
 )]
-#[derive(
-    uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone, PartialEq,
-)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
@@ -301,7 +292,7 @@ pub struct PipelineJob {
     pub(crate) hash: String,
     /// A pipeline to base the pipeline job on.
     pub pipeline: Arc<Pipeline>,
-    /// Attached, external input packet. Applies cartesian product by default on keys from the same node.
+    /// Attached, external input packet. Applies cartesian product by default on keys pointing to the same node.
     pub input_packet: HashMap<String, Vec<PathSet>>,
     /// Attached, external output directory.
     pub output_dir: URI,
