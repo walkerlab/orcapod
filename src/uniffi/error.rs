@@ -39,6 +39,12 @@ pub(crate) enum Kind {
     },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
+    #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
+    IncompletePacket {
+        kind: String,
+        missing_keys: Vec<String>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("{source} ({path:?})."))]
     InvalidFilepath {
         path: PathBuf,

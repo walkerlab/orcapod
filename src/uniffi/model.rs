@@ -7,6 +7,7 @@ use crate::{
             to_yaml,
         },
         pipeline::PipelineNode,
+        validation::validate_packet,
     },
     uniffi::{error::Result, orchestrator::Status},
 };
@@ -153,6 +154,7 @@ impl PodJob {
         env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        validate_packet("input".into(), &pod.input_spec, &input_packet)?;
         input_packet = input_packet
             .iter()
             .map(|(stream_name, stream_input)| match stream_input {
@@ -313,6 +315,7 @@ impl PipelineJob {
         output_dir: &URI,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        validate_packet("input".into(), &pipeline.input_spec, input_packet)?;
         let input_packet_with_checksum = input_packet
             .iter()
             .map(|(path_set_key, path_sets)| {

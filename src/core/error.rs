@@ -114,6 +114,7 @@ impl fmt::Debug for OrcaError {
             Kind::AgentCommunicationFailure { backtrace, .. }
             | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
             | Kind::GeneratedNamesOverflow { backtrace, .. }
+            | Kind::IncompletePacket { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
             | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
