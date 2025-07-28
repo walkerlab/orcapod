@@ -28,7 +28,7 @@ static RE_PODJOB_ACTION: LazyLock<Regex> = LazyLock::new(|| {
                 group\/(?<group>[a-z_]+)\/
                     (?<action>request|reservation|success|failure)\/
                         pod_job\/(?<pod_job_hash>[0-9a-f]+)\/
-                            host\/(?<host>[a-z_]+)\/
+                            host\/(?<host>[0-9a-z_]+)\/
                                 timestamp\/(?<timestamp>.*?)
             $
             ",
@@ -154,6 +154,16 @@ where
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
             while let Ok(sample) = subscriber.recv_async().await {
+                println!(
+                    "Received message on key expression: {}",
+                    sample.key_expr().as_str(),
+                );
+
+                println!(
+                    "Received payload: {:?}",
+                    RE_PODJOB_ACTION.captures(sample.key_expr().as_str())
+                );
+
                 if let (Ok(input), Some(metadata)) = (
                     serde_json::from_slice::<RequestI>(&sample.payload().to_bytes()),
                     RE_PODJOB_ACTION.captures(sample.key_expr().as_str()),
@@ -165,6 +175,7 @@ where
                         subgroup: metadata["pod_job_hash"].to_string(),
                     };
                     let _event_payload = event_classifier(&input);
+                    println!("Sending it to request task.");
                     tasks.spawn({
                         let inner_request_task = request_task.clone();
                         let inner_inner_agent = Arc::clone(&inner_agent);

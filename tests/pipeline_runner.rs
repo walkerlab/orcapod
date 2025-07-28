@@ -13,8 +13,30 @@ use orcapod::uniffi::{error::Result, pipeline_runner::runner::DockerPipelineRunn
 use crate::fixture::TestDirs;
 use fixture::pipeline_job;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn basic_run() -> Result<()> {
+    // create a zenoh session to print out all communication message
+    let session = zenoh::open(zenoh::Config::default())
+        .await
+        .expect("Failed to open zenoh session");
+
+    tokio::spawn(async move {
+        // Subscribe to all messages in the 'test' group
+        let sub = session
+            .declare_subscriber("**")
+            .await
+            .expect("Failed to declare subscriber");
+
+        while let Ok(sample) = sub.recv_async().await {
+            // Print the key expression and payload of each message
+            println!(
+                "Received message: {}: {:?}",
+                sample.key_expr().as_str(),
+                sample.payload();
+            );
+        }
+    });
+
     let pipeline_job = pipeline_job()?;
 
     // Create the runner

@@ -46,7 +46,7 @@ pub struct AgentClient {
     /// Connecting agent's assigned name used for reference.
     pub host: String,
     #[getset(skip)]
-    pub(crate) session: zenoh::Session,
+    pub(crate) session: Arc<zenoh::Session>,
 }
 
 #[uniffi::export]
@@ -67,7 +67,8 @@ impl AgentClient {
                         .await
                         .context(selector::AgentCommunicationFailure {})?,
                 )
-            })?,
+            })?
+            .into(),
         })
     }
     /// Submit many pod jobs to be processed in parallel.
@@ -156,13 +157,13 @@ impl Agent {
                 let pod_run = agent
                     .orchestrator
                     .start(&inner_namespace_lookup, &pod_job)
-                    .await
-                    .unwrap();
+                    .await?;
                 let pod_result = agent.orchestrator.get_result(&pod_run).await?;
-                agent.orchestrator.delete(&pod_run).await?;
+                //agent.orchestrator.delete(&pod_run).await?;
                 Ok(pod_result)
             },
             async |client, pod_result| {
+                println!("Finished processing pod job: {}", pod_result.pod_job.hash);
                 let response_topic = match &pod_result.status {
                     PodResultStatus::Completed => {
                         &format!("success/pod_job/{}", pod_result.pod_job.hash)
@@ -210,6 +211,10 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
         }
+        // Create a service that responds to pod_job_worker availability requests.
+        services.spawn(start_service(
+
+        ))
 
         services
             .join_next()

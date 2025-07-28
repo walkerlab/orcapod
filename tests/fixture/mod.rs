@@ -10,8 +10,9 @@
 use names::{Generator, Name};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
-    orchestrator::Status,
+    model::{
+        Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, PodResultStatus, URI,
+    },
     pipeline::{Kernel, Mapper, Pipeline, PipelineJob},
     store::{ModelID, ModelInfo, Store},
 };
@@ -137,7 +138,7 @@ pub fn pod_result_style(
         }),
         pod_job_style(namespace_lookup)?.into(),
         "simple-endeavour".to_owned(),
-        Status::Completed,
+        PodResultStatus::Completed,
         1_737_922_307,
         1_737_925_907,
     )

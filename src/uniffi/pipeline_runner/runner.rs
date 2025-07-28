@@ -139,6 +139,9 @@ impl DockerPipelineRunner {
             orchestrator_agent_task: JoinSet::new(),
         };
 
+        // Get the preexisting zenoh session from agent
+        let session = Arc::clone(&pipeline_run.orchestrator_agent.client.session);
+
         let orchestrator_agent_clone = Arc::clone(&pipeline_run.orchestrator_agent);
         let namespace_lookup_clone = namespace_lookup.clone();
         // Start the orchestrator agent service
@@ -152,13 +155,6 @@ impl DockerPipelineRunner {
         let pipeline_run_id = pipeline_run.pipeline_job.hash.clone();
 
         let graph = &pipeline_run.pipeline_job.pipeline.graph;
-
-        // Create the subscriber to listen to node ready status before sending inputs
-        let session = Arc::new(
-            zenoh::open(zenoh::Config::default())
-                .await
-                .context(selector::AgentCommunicationFailure {})?,
-        );
 
         let subscriber = session
             .declare_subscriber(self.get_base_key_exp(&pipeline_run_id) + "/*/status/ready")
@@ -692,10 +688,7 @@ impl PodProcessor {
         )?;
 
         // Create listener for pod_job
-        let target_key_exp = format!(
-            "group/{}/{}/*/pod_job/{}",
-            client.group, client.host, pod_job.hash
-        );
+        let target_key_exp = format!("group/{}/*/pod_job/{}/**", client.group, pod_job.hash);
 
         // Create the subscriber
         let pod_job_subscriber = session
@@ -706,7 +699,6 @@ impl PodProcessor {
         // Create the async task to listen for the pod job completion
         let pod_job_listener_task = tokio::spawn(async move {
             // Wait for the pod job to complete and extract the result
-
             let sample = pod_job_subscriber
                 .recv_async()
                 .await
@@ -735,7 +727,11 @@ impl PodProcessor {
         }
 
         // Get the pod result from the listener task
-        let pod_result = pod_job_listener_task.await??;
+        println!("Trying to get pod job result...");
+        let temp = pod_job_listener_task.await?;
+        println!("Waiting for pod job to complete... {:?}", temp);
+        let pod_result = temp?;
+
         // Get the output packet for the pod result
         let output_packet = match pod_result.status {
             PodResultStatus::Completed => {
