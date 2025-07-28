@@ -22,11 +22,11 @@ fn input_packet_checksum() -> Result<()> {
     let pipeline = Pipeline::new(
         indoc! {"
             digraph {
-                a
+                A
             }
         "},
         HashMap::from([(
-            "a".into(),
+            "A".into(),
             Kernel::Pod {
                 r#ref: pod_custom(
                     "alpine:3.14",
@@ -45,7 +45,7 @@ fn input_packet_checksum() -> Result<()> {
         &HashMap::from([(
             "pipeline_key_1".into(),
             vec![SpecURI {
-                node: "a".into(),
+                node: "A".into(),
                 key: "node_key_1".into(),
             }],
         )]),

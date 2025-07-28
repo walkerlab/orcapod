@@ -6,6 +6,7 @@
 )]
 
 pub mod fixture;
+use dot_parser::ast::Graph as DOTGraph;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style};
 use glob::glob;
 use orcapod::{
@@ -41,6 +42,14 @@ fn external_bollard() -> Result<()> {
         "Did not raise a bollard error."
     );
     Ok(())
+}
+
+#[test]
+fn external_dot() {
+    assert!(
+        DOTGraph::try_from("graph {").is_err_and(contains_debug),
+        "Did not raise a DOT error."
+    );
 }
 
 #[test]
