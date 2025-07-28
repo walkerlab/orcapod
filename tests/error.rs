@@ -6,7 +6,7 @@
 )]
 
 pub mod fixture;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_custom, pod_job_style};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style};
 use glob::glob;
 use orcapod::{
     core::crypto::hash_file,
@@ -127,7 +127,11 @@ fn internal_key_missing() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn submit_pod_jobs() -> Result<()> {
     let client = AgentClient::new("error".into(), "host".into())?;
-    let mut pod_job = pod_job_custom("alpine:3.14", "sleep 5", &NAMESPACE_LOOKUP_READ_ONLY)?;
+    let mut pod_job = pod_job_custom(
+        &pod_custom("alpine:3.14", "sleep 5", HashMap::new())?,
+        HashMap::new(),
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    )?;
     pod_job.hash = "bad?hash".into();
     let responses = client.submit_pod_jobs(vec![pod_job.into()]).await;
     assert!(
