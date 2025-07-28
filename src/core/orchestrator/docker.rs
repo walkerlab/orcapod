@@ -245,11 +245,15 @@ impl LocalDockerOrchestrator {
                     ) {
                         (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
                         (
-                            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
+                            ContainerStateStatusEnum::EXITED
+                            | ContainerStateStatusEnum::REMOVING
+                            | ContainerStateStatusEnum::DEAD,
                             0,
                         ) => Status::Completed,
                         (
-                            ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::REMOVING,
+                            ContainerStateStatusEnum::EXITED
+                            | ContainerStateStatusEnum::REMOVING
+                            | ContainerStateStatusEnum::DEAD,
                             code,
                         ) => Status::Failed(code),
                         (_, code) => {
@@ -274,7 +278,7 @@ impl LocalDockerOrchestrator {
                                     .map_or_else(String::new, |mode| format!(":{mode}"))
                             ))
                         })
-                        .collect::<Option<Vec<_>>>()?,
+                        .collect::<Option<_>>()?,
                     labels: container_spec.config.as_ref()?.labels.as_ref()?.clone(),
                     cpu_limit: container_spec.host_config.as_ref()?.nano_cpus? as f32
                         / 10_f32.powi(9), // ncpu, ucores=3, mcores=6, cores=9
