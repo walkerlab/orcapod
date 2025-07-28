@@ -13,6 +13,7 @@ use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
+        model::PathInfo,
         orchestrator::{
             Orchestrator as _,
             agent::{AgentClient, Response},
@@ -113,6 +114,30 @@ async fn internal_agent_communication_failure() -> Result<()> {
             .await
             .is_err_and(contains_debug),
         "Did not raise an agent communication failure error."
+    );
+    Ok(())
+}
+
+#[test]
+fn internal_incomplete_packet() -> Result<()> {
+    assert!(
+        pod_job_custom(
+            &pod_custom(
+                "alpine:3.14",
+                "echo",
+                HashMap::from([(
+                    "key_1".into(),
+                    PathInfo {
+                        path: "/tmp/input.txt".into(),
+                        match_pattern: r".*\.txt".into()
+                    }
+                )])
+            )?,
+            HashMap::new(),
+            &NAMESPACE_LOOKUP_READ_ONLY
+        )
+        .is_err_and(contains_debug),
+        "Did not raise an incomplete packet error."
     );
     Ok(())
 }
