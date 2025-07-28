@@ -15,7 +15,8 @@ pub fn validate_packet<SV, PV>(
         .cloned()
         .collect::<Vec<_>>();
 
-    (!missing_keys.is_empty())
+    missing_keys
+        .is_empty()
         .then_some(())
         .context(selector::IncompletePacket { kind, missing_keys })?;
 
