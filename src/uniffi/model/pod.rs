@@ -5,13 +5,14 @@ use crate::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
         },
+        util::get,
         validation::validate_packet,
     },
     uniffi::{
-        error::Result,
+        error::{OrcaError, Result},
         model::{
             Annotation,
-            packet::{Packet, PathInfo, PathSet, URI},
+            packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         },
         orchestrator::PodStatus,
     },
@@ -192,6 +193,9 @@ pub struct PodResult {
     /// A pod job that originated the pod result.
     #[serde(deserialize_with = "deserialize_pod_job")]
     pub pod_job: Arc<PodJob>,
+    /// Produced, external output packet.
+    #[serde(serialize_with = "serialize_hashmap")]
+    pub output_packet: Packet,
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
@@ -215,11 +219,58 @@ impl PodResult {
         status: PodStatus,
         created: u64,
         terminated: u64,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        let output_packet = pod_job
+            .pod
+            .output_spec
+            .iter()
+            .filter_map(|(packet_key, path_info)| {
+                let location = URI {
+                    namespace: pod_job.output_dir.namespace.clone(),
+                    path: pod_job.output_dir.path.join(&path_info.path),
+                };
+
+                let local_location = match get(namespace_lookup, &location.namespace) {
+                    Ok(root_path) => root_path.join(&location.path),
+                    Err(error) => return Some(Err(error)),
+                };
+
+                match local_location.try_exists() {
+                    Ok(false) => None,
+                    Err(error) => Some(Err(OrcaError::from(error))),
+                    Ok(true) => Some(Ok((
+                        packet_key,
+                        Blob {
+                            kind: if local_location.is_file() {
+                                BlobKind::File
+                            } else {
+                                BlobKind::Directory
+                            },
+                            location,
+                            checksum: String::new(),
+                        },
+                    ))),
+                }
+            })
+            .map(|result| {
+                let (packet_key, blob) = result?;
+                Ok((
+                    packet_key.clone(),
+                    PathSet::Unary(hash_blob(namespace_lookup, &blob)?),
+                ))
+            })
+            .collect::<Result<_>>()?;
+
+        if matches!(status, PodStatus::Completed) {
+            validate_packet("output".into(), &pod_job.pod.output_spec, &output_packet)?;
+        }
+
         let pod_result_no_hash = Self {
             annotation,
             hash: String::new(),
             pod_job,
+            output_packet,
             assigned_name,
             status,
             created,

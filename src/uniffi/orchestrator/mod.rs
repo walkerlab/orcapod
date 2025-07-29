@@ -113,7 +113,11 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod result.
-    fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult>;
+    fn get_result_blocking(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult>;
     /// How to asynchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -158,7 +162,11 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod result.
-    async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
+    async fn get_result(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult>;
 }
 /// Orchestration execution agent daemon and client.
 pub mod agent;

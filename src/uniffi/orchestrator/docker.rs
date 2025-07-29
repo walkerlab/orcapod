@@ -63,8 +63,12 @@ impl Orchestrator for LocalDockerOrchestrator {
     fn get_info_blocking(&self, pod_run: &PodRun) -> Result<PodRunInfo> {
         ASYNC_RUNTIME.block_on(self.get_info(pod_run))
     }
-    fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult> {
-        ASYNC_RUNTIME.block_on(self.get_result(pod_run))
+    fn get_result_blocking(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult> {
+        ASYNC_RUNTIME.block_on(self.get_result(namespace_lookup, pod_run))
     }
     #[expect(
         clippy::try_err,
@@ -197,7 +201,11 @@ impl Orchestrator for LocalDockerOrchestrator {
         clippy::wildcard_enum_match_arm,
         reason = "Favor readability due to complexity in external dependency."
     )]
-    async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
+    async fn get_result(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult> {
         match self
             .api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
@@ -230,6 +238,7 @@ impl Orchestrator for LocalDockerOrchestrator {
                 .context(selector::InvalidPodResultTerminatedDatetime {
                     pod_job_hash: pod_run.pod_job.hash.clone(),
                 })?,
+            namespace_lookup,
         )
     }
 }
