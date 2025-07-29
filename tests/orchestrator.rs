@@ -9,7 +9,9 @@ use futures_util::future::join_all;
 use orcapod::uniffi::{
     error::{OrcaError, Result},
     model::packet::URI,
-    orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
+    orchestrator::{
+        ImageKind, Orchestrator as _, PodRun, PodStatus, docker::LocalDockerOrchestrator,
+    },
 };
 use std::{collections::HashMap, path::PathBuf};
 
@@ -29,7 +31,7 @@ where
     let (pod_run, expected_command, _container_image) = start(&namespace_lookup, &orchestrator)?;
     assert_eq!(
         orchestrator.get_info_blocking(&pod_run)?.status,
-        Status::Running,
+        PodStatus::Running,
         "Unexpected state."
     );
     assert_eq!(
@@ -46,7 +48,7 @@ where
     let pod_result_1 = orchestrator.get_result_blocking(&pod_run)?;
     assert_eq!(
         orchestrator.get_info_blocking(&pod_run)?.status,
-        Status::Completed,
+        PodStatus::Completed,
         "Unexpected state."
     );
     assert_eq!(
@@ -139,7 +141,7 @@ async fn remote_container_image_failed() -> Result<()> {
     orch.delete(&pod_run).await?;
 
     assert!(
-        matches!(pod_result.status, Status::Failed(1)),
+        matches!(pod_result.status, PodStatus::Failed(1)),
         "Expected to fail but did not."
     );
     Ok(())
@@ -169,7 +171,7 @@ async fn verify_pod_result_not_running() -> Result<()> {
     let statuses = results
         .into_iter()
         .map(|result| Ok(result?.status))
-        .filter(|status| !matches!(status, Ok(Status::Completed)))
+        .filter(|status| !matches!(status, Ok(PodStatus::Completed)))
         .collect::<Result<Vec<_>>>()?;
 
     println!("statuses: {statuses:?}");

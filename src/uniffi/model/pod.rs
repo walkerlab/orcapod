@@ -11,9 +11,9 @@ use crate::{
         error::Result,
         model::{
             Annotation,
-            packet::{PathInfo, PathSet, URI},
+            packet::{Packet, PathInfo, PathSet, URI},
         },
-        orchestrator::Status,
+        orchestrator::PodStatus,
     },
 };
 use derive_more::Display;
@@ -115,7 +115,7 @@ pub struct PodJob {
     pub pod: Arc<Pod>,
     /// Attached, external input packet.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_packet: HashMap<String, PathSet>,
+    pub input_packet: Packet,
     /// Attached, external output directory.
     pub output_dir: URI,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -138,7 +138,7 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_packet: HashMap<String, PathSet>,
+        mut input_packet: Packet,
         output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
@@ -195,7 +195,7 @@ pub struct PodResult {
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
-    pub status: Status,
+    pub status: PodStatus,
     /// Time in epoch when created in seconds.
     pub created: u64,
     /// Time in epoch when terminated in seconds.
@@ -212,7 +212,7 @@ impl PodResult {
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
         assigned_name: String,
-        status: Status,
+        status: PodStatus,
         created: u64,
         terminated: u64,
     ) -> Result<Self> {

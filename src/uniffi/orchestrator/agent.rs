@@ -3,7 +3,7 @@ use crate::{
     uniffi::{
         error::{OrcaError, Result, selector},
         model::pod::{PodJob, PodResult},
-        orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
+        orchestrator::{Orchestrator, PodStatus, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
 };
@@ -163,8 +163,8 @@ impl Agent {
             },
             async |client, pod_result| {
                 let response_topic = match &pod_result.status {
-                    Status::Completed => &format!("success/pod_job/{}", pod_result.pod_job.hash),
-                    Status::Running | Status::Failed(_) | Status::Unset => {
+                    PodStatus::Completed => &format!("success/pod_job/{}", pod_result.pod_job.hash),
+                    PodStatus::Running | PodStatus::Failed(_) | PodStatus::Unset => {
                         &format!("failure/pod_job/{}", pod_result.pod_job.hash)
                     }
                 };

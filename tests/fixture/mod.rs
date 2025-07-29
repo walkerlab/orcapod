@@ -12,10 +12,10 @@ use orcapod::uniffi::{
     error::Result,
     model::{
         Annotation,
-        packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+        packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         pod::{Pod, PodJob, PodResult},
     },
-    orchestrator::Status,
+    orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{
@@ -140,7 +140,7 @@ pub fn pod_result_style(
         }),
         pod_job_style(namespace_lookup)?.into(),
         "simple-endeavour".to_owned(),
-        Status::Completed,
+        PodStatus::Completed,
         1_737_922_307,
         1_737_925_907,
     )
@@ -167,7 +167,7 @@ pub fn pod_custom(
 
 pub fn pod_job_custom(
     pod: &Pod,
-    input_packet: HashMap<String, PathSet, RandomState>,
+    input_packet: Packet,
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(

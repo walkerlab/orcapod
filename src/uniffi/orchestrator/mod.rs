@@ -19,7 +19,7 @@ pub enum ImageKind {
 }
 /// Status of a particular compute run.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
-pub enum Status {
+pub enum PodStatus {
     /// Run is ongoing.
     Running,
     /// Run has completed successfully.
@@ -32,7 +32,7 @@ pub enum Status {
 }
 /// Run metadata
 #[derive(uniffi::Record, Debug)]
-pub struct RunInfo {
+pub struct PodRunInfo {
     /// Environment utilized.
     pub image: String,
     /// Time in epoch when created in seconds.
@@ -44,7 +44,7 @@ pub struct RunInfo {
     /// Command used to start run.
     pub command: String,
     /// Current run status.
-    pub status: Status,
+    pub status: PodStatus,
     /// Mounted volume binds to the environment.
     pub mounts: Vec<String>,
     /// Label metadata set by orchestrator.
@@ -107,7 +107,7 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<PodRunInfo>;
     /// How to synchronously wait for pod result to be ready.
     ///
     /// # Errors
@@ -152,7 +152,7 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    async fn get_info(&self, pod_run: &PodRun) -> Result<PodRunInfo>;
     /// How to asynchronously wait for pod result to be ready.
     ///
     /// # Errors
