@@ -47,7 +47,7 @@ async fn parallel_four_cores() -> Result<()> {
     // config
     let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
     pull_image(image_reference)?;
-    let margin_millis = 10000;
+    let margin_millis = 2000;
     let run_duration_secs = 5;
     let service_readiness_delay_secs = 1;
     let current_timestamp = SystemTime::now()
