@@ -18,7 +18,8 @@
         "cffi",
         "zenoh",
         "PodJob",
-        "stresser"
+        "stresser",
+        "petgraph"
     ],
     "ignoreWords": [
         "relpath",
@@ -77,8 +78,6 @@
         "strsim",
         "getrandom",
         "wasi",
-        "petgraph",
-        "rfind",
         "patchelf"
     ],
     "useGitignore": false,

@@ -1,6 +1,6 @@
 use crate::uniffi::{
     error::{OrcaError, Result, selector},
-    model::{PodJob, PodResult},
+    model::pod::{PodJob, PodResult},
     orchestrator::agent::{Agent, AgentClient},
     store::ModelID,
 };
@@ -25,7 +25,7 @@ static RE_PODJOB_ACTION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
             ^
-                group\/(?<group>[a-z_]+)\/
+                group\/(?<group>[a-z_\-]+)\/
                     (?<action>request|reservation|success|failure)\/
                         pod_job\/(?<pod_job_hash>[0-9a-f]+)\/
                             host\/(?<host>[a-z_]+)\/

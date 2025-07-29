@@ -1,6 +1,9 @@
 use crate::uniffi::{
     error::Result,
-    model::{ModelType, Pod, PodJob, PodResult},
+    model::{
+        ModelType,
+        pod::{Pod, PodJob, PodResult},
+    },
 };
 use uniffi;
 /// Options for identifying a model.

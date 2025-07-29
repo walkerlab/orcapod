@@ -11,7 +11,7 @@ pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
 use orcapod::uniffi::{
     error::Result,
-    model::PodResult,
+    model::pod::PodResult,
     orchestrator::{
         agent::{Agent, AgentClient},
         docker::LocalDockerOrchestrator,
@@ -28,7 +28,7 @@ use zenoh;
 
 #[test]
 fn simple() -> Result<()> {
-    let (group, host) = ("test", "alpha");
+    let (group, host) = ("agent_simple", "host");
     let _client = AgentClient::new(group.to_owned(), host.to_owned())?;
     let _agent = Agent::new(
         group.to_owned(),
@@ -47,15 +47,14 @@ async fn parallel_four_cores() -> Result<()> {
     // config
     let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
     pull_image(image_reference)?;
-    let margin_millis = 10000;
+    let margin_millis = 2000;
     let run_duration_secs = 5;
-    let service_readiness_delay_secs = 1;
     let current_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Current time is earlier than start of epoch (1970-01-01 00:00:00).")
         .as_millis();
     println!("current_timestamp: {current_timestamp}");
-    let (group, host) = ("test", "alpha");
+    let (group, host) = ("agent_parallel-four-cores", "host");
     // api
     let client = AgentClient::new(group.to_owned(), host.to_owned())?;
     let agent = Agent::new(
@@ -93,18 +92,14 @@ async fn parallel_four_cores() -> Result<()> {
             if ["success", "failure"].contains(&topic_kind) {
                 let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
                 assert!(
-                    u128::from(pod_result.created * 1000)
-                        <= current_timestamp
-                            + margin_millis
-                            + u128::from(service_readiness_delay_secs),
+                    u128::from(pod_result.created * 1000) <= current_timestamp + margin_millis,
                     "Started pod run too late."
                 );
                 assert!(
                     u128::from(pod_result.terminated * 1000)
                         <= current_timestamp
                             + 2 * margin_millis
-                            + u128::from(run_duration_secs) * 1000
-                            + u128::from(service_readiness_delay_secs),
+                            + u128::from(run_duration_secs * 1000),
                     "Took too long to finish pod run."
                 );
                 async_sleep(Duration::from_secs(1)).await; // give agent a chance to save pod result first
@@ -129,7 +124,6 @@ async fn parallel_four_cores() -> Result<()> {
         async_sleep(Duration::from_secs(60)).await;
         panic!("Test took too long. Killing...");
     });
-    async_sleep(Duration::from_secs(service_readiness_delay_secs)).await;
     // submit requests
     client
         .submit_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 3, 1)?)
