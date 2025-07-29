@@ -1,6 +1,6 @@
 use crate::uniffi::{
     error::{OrcaError, Result, selector},
-    model::{PodJob, PodResult},
+    model::pod::{PodJob, PodResult},
     orchestrator::agent::{Agent, AgentClient},
     store::ModelID,
 };

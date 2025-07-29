@@ -1,6 +1,6 @@
 use crate::{
     core::{pipeline::PipelineNode, util::get},
-    uniffi::{error::Result, model::Kernel},
+    uniffi::{error::Result, model::pipeline::Kernel},
 };
 use dot_parser::ast::Graph as DOTGraph;
 use petgraph::{

@@ -10,7 +10,11 @@
 use names::{Generator, Name};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
+    model::{
+        Annotation,
+        packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+        pod::{Pod, PodJob, PodResult},
+    },
     orchestrator::Status,
     store::{ModelID, ModelInfo, Store},
 };

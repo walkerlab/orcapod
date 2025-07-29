@@ -1,6 +1,9 @@
 use crate::uniffi::{
     error::Result,
-    model::{ModelType, Pod, PodJob, PodResult},
+    model::{
+        ModelType,
+        pod::{Pod, PodJob, PodResult},
+    },
     store::{ModelID, ModelInfo, Store},
 };
 use derive_more::Display;

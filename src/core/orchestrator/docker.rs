@@ -2,7 +2,7 @@ use crate::{
     core::util::get,
     uniffi::{
         error::{Result, selector},
-        model::{PathSet, PodJob},
+        model::{packet::PathSet, pod::PodJob},
         orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
     },
 };

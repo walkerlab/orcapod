@@ -5,7 +5,7 @@ use crate::{
     },
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{PodJob, PodResult},
+        model::pod::{PodJob, PodResult},
         orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
     },
 };

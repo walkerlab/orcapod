@@ -11,7 +11,10 @@ use fixture::pod_custom;
 use indoc::indoc;
 use orcapod::uniffi::{
     error::Result,
-    model::{Blob, BlobKind, Kernel, PathInfo, PathSet, Pipeline, PipelineJob, SpecURI, URI},
+    model::{
+        packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+        pipeline::{Kernel, Pipeline, PipelineJob, SpecURI},
+    },
 };
 use std::collections::HashMap;
 

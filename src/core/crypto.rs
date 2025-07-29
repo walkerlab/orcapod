@@ -2,7 +2,7 @@ use crate::{
     core::util::get,
     uniffi::{
         error::{Result, selector},
-        model::{Blob, BlobKind},
+        model::packet::{Blob, BlobKind},
     },
 };
 use hex;

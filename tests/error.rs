@@ -13,7 +13,7 @@ use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
-        model::PathInfo,
+        model::packet::PathInfo,
         orchestrator::{
             Orchestrator as _,
             agent::{AgentClient, Response},

@@ -11,7 +11,7 @@ pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
 use orcapod::uniffi::{
     error::Result,
-    model::PodResult,
+    model::pod::PodResult,
     orchestrator::{
         agent::{Agent, AgentClient},
         docker::LocalDockerOrchestrator,
