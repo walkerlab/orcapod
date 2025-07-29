@@ -2,7 +2,7 @@ use crate::{
     core::util::get_type_name,
     uniffi::{
         error::Result,
-        model::{Pod, PodJob},
+        model::pod::{Pod, PodJob},
     },
 };
 use heck::ToSnakeCase as _;

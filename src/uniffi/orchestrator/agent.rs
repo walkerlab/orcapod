@@ -2,7 +2,7 @@ use crate::{
     core::orchestrator::agent::{EventPayload, start_service},
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{PodJob, PodResult},
+        model::pod::{PodJob, PodResult},
         orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },

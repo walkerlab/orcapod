@@ -18,7 +18,8 @@
         "cffi",
         "zenoh",
         "PodJob",
-        "stresser"
+        "stresser",
+        "petgraph"
     ],
     "ignoreWords": [
         "relpath",

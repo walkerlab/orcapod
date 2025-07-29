@@ -4,6 +4,7 @@
 )]
 
 use bollard::errors::Error as BollardError;
+use dot_parser::ast::PestError;
 use glob;
 use serde_json;
 use serde_yaml;
@@ -38,6 +39,12 @@ pub(crate) enum Kind {
     },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
+    #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
+    IncompletePacket {
+        kind: String,
+        missing_keys: Vec<String>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("{source} ({path:?})."))]
     InvalidFilepath {
         path: PathBuf,
@@ -85,6 +92,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     BollardError {
         source: BollardError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    DOTError {
+        source: Box<PestError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
