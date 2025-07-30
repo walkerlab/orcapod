@@ -22,6 +22,7 @@ inner_attr_to_each! {
     pub(crate) mod operator;
 }
 
+#[cfg(feature = "test")]
 inner_attr_to_each! {
     #![cfg_attr(
         feature = "test",
