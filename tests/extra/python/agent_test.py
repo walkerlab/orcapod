@@ -31,7 +31,7 @@ async def verify(group, pod_job_count):
         with session.declare_subscriber(
             f"group/{group}/success/pod_job/**", count
         ) as subscriber:
-            await asyncio.sleep(20)
+            await asyncio.sleep(20)  # wait for results
 
     if counter != pod_job_count:
         raise Exception(f"Unexpected successful pod job count: {counter}.")
@@ -48,7 +48,7 @@ async def main(client, agent, test_dir, namespace_lookup, pod_jobs):
     await asyncio.sleep(5)  # ensure service ready
 
     try:
-        await client.submit_pod_jobs(pod_jobs=pod_jobs)
+        await client.start_pod_jobs(pod_jobs=pod_jobs)
         await verify(client.group(), len(pod_jobs))
     finally:
         shutil.rmtree(test_dir)

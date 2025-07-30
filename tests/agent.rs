@@ -126,7 +126,7 @@ async fn parallel_four_cores() -> Result<()> {
     });
     // submit requests
     client
-        .submit_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 3, 1)?)
+        .start_pod_jobs(pod_jobs_stresser(image_reference, run_duration_secs, 3, 1)?)
         .await;
 
     services

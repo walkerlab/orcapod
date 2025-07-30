@@ -159,7 +159,7 @@ fn internal_key_missing() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn submit_pod_jobs() -> Result<()> {
+async fn start_pod_jobs() -> Result<()> {
     let client = AgentClient::new("error".into(), "host".into())?;
     let mut pod_job = pod_job_custom(
         &pod_custom("alpine:3.14", &str_to_vec("sleep 5"), HashMap::new())?,
@@ -167,7 +167,7 @@ async fn submit_pod_jobs() -> Result<()> {
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;
     pod_job.hash = "bad?hash".into();
-    let responses = client.submit_pod_jobs(vec![pod_job.into()]).await;
+    let responses = client.start_pod_jobs(vec![pod_job.into()]).await;
     assert!(
         responses.len() == 1,
         "Client received an unexpected number of pod job request responses."
