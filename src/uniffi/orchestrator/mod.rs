@@ -42,7 +42,7 @@ pub struct RunInfo {
     /// Environment variables set in environment.
     pub env_vars: HashMap<String, String>,
     /// Command used to start run.
-    pub command: String,
+    pub command: Vec<String>,
     /// Current run status.
     pub status: Status,
     /// Mounted volume binds to the environment.

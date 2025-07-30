@@ -9,7 +9,7 @@ use orcapod::{core::model::to_yaml, uniffi::error::Result};
 fn hash_pod() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "c2a426ee36ff1e7803f54b194371854bafaf7d2510f2073a7ed53402e8c5f9bf",
+        "11fc4cb2cbfeb06cf37af60c966e67eebc992e23d41c831f59621fda0de51447",
         "Hash didn't match."
     );
     Ok(())
@@ -22,7 +22,9 @@ fn pod_to_yaml() -> Result<()> {
         indoc! {r"
             class: pod
             image: example.server.com/user/style-transfer:1.0.0
-            command: python /run.py
+            command:
+            - python
+            - /run.py
             input_spec:
               base-input:
                 path: /input
@@ -49,7 +51,7 @@ fn pod_to_yaml() -> Result<()> {
 fn hash_pod_job() -> Result<()> {
     assert_eq!(
         pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "c8030ee00ebcbf19560fb615b4c97c3a7ccb5a961c8737d30957f0fd22ec6603",
+        "e2cd825491c1e05f3b4be6891031839a0bcdb6dc2072cd46c3a18227cce46171",
         "Hash didn't match."
     );
     Ok(())
@@ -61,7 +63,7 @@ fn pod_job_to_yaml() -> Result<()> {
         to_yaml(&pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_job
-            pod: c2a426ee36ff1e7803f54b194371854bafaf7d2510f2073a7ed53402e8c5f9bf
+            pod: 11fc4cb2cbfeb06cf37af60c966e67eebc992e23d41c831f59621fda0de51447
             input_packet:
               base-input:
               - kind: File
@@ -98,7 +100,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "5d5eb907bc961322bb6d7455197941ed9470e2d5307ce50147a092f8592d7582",
+        "6eeb76503cb6215fc91e92966f0b46b80f57d27476a2a547fbf621cfbd5e5134",
         "Hash didn't match."
     );
     Ok(())
@@ -110,7 +112,7 @@ fn pod_result_to_yaml() -> Result<()> {
         to_yaml(&pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_result
-            pod_job: c8030ee00ebcbf19560fb615b4c97c3a7ccb5a961c8737d30957f0fd22ec6603
+            pod_job: e2cd825491c1e05f3b4be6891031839a0bcdb6dc2072cd46c3a18227cce46171
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307

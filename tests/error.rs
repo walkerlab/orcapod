@@ -7,7 +7,7 @@
 
 pub mod fixture;
 use dot_parser::ast::Graph as DOTGraph;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style};
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style, str_to_vec};
 use glob::glob;
 use orcapod::{
     core::crypto::hash_file,
@@ -124,7 +124,7 @@ fn internal_incomplete_packet() -> Result<()> {
         pod_job_custom(
             &pod_custom(
                 "alpine:3.14",
-                "echo",
+                &["echo".into()],
                 HashMap::from([(
                     "key_1".into(),
                     PathInfo {
@@ -162,7 +162,7 @@ fn internal_key_missing() {
 async fn submit_pod_jobs() -> Result<()> {
     let client = AgentClient::new("error".into(), "host".into())?;
     let mut pod_job = pod_job_custom(
-        &pod_custom("alpine:3.14", "sleep 5", HashMap::new())?,
+        &pod_custom("alpine:3.14", &str_to_vec("sleep 5"), HashMap::new())?,
         HashMap::new(),
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;

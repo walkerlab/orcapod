@@ -33,7 +33,7 @@ fn input_packet_checksum() -> Result<()> {
             Kernel::Pod {
                 r#ref: pod_custom(
                     "alpine:3.14",
-                    "echo",
+                    &["echo".into()],
                     HashMap::from([(
                         "node_key_1".into(),
                         PathInfo {

@@ -130,12 +130,6 @@ impl LocalDockerOrchestrator {
             ),
             ("org.orcapod.pod_job.hash".to_owned(), pod_job.hash.clone()),
         ]);
-        let command = pod_job
-            .pod
-            .command
-            .split_whitespace()
-            .map(String::from)
-            .collect::<Vec<_>>();
 
         Ok((
             container_name.clone(),
@@ -145,8 +139,8 @@ impl LocalDockerOrchestrator {
             }),
             Config {
                 image: Some(image),
-                entrypoint: Some(command[..1].to_vec()),
-                cmd: Some(command[1..].to_vec()),
+                entrypoint: Some(pod_job.pod.command[..1].to_vec()),
+                cmd: Some(pod_job.pod.command[1..].to_vec()),
                 env: pod_job.env_vars.as_ref().map(|provided_env_vars| {
                     provided_env_vars
                         .iter()
@@ -170,7 +164,6 @@ impl LocalDockerOrchestrator {
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::indexing_slicing,
-        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
@@ -229,16 +222,11 @@ impl LocalDockerOrchestrator {
                                 .map(|(key, value)| (key.to_owned(), value.to_owned()))
                         })
                         .collect(),
-                    command: format!(
-                        "{} {}",
-                        container_spec
-                            .config
-                            .as_ref()?
-                            .entrypoint
-                            .as_ref()?
-                            .join(" "),
-                        container_spec.config.as_ref()?.cmd.as_ref()?.join(" ")
-                    ),
+                    command: [
+                        container_spec.config.as_ref()?.entrypoint.as_ref()?.clone(),
+                        container_spec.config.as_ref()?.cmd.as_ref()?.clone(),
+                    ]
+                    .concat(),
                     status: match (
                         container_spec.state.as_ref()?.status.as_ref()?,
                         container_spec.state.as_ref()?.exit_code? as i16,
