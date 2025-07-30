@@ -1,6 +1,4 @@
-use crate::uniffi::error::Result;
-
-use super::pipeline::PipelineJob;
+use crate::uniffi::{error::Result, model::pipeline::PipelineJob};
 
 /// # Errors:
 /// Error out if fail to start the pipeline job

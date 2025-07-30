@@ -3,6 +3,7 @@
     reason = "Needed since SNAFU dynamically generating selectors."
 )]
 use bollard::errors::Error as BollardError;
+use dot_parser::ast::PestError;
 use glob;
 use serde_json;
 use serde_yaml;
@@ -19,7 +20,6 @@ use tokio::task;
 use uniffi;
 
 use crate::uniffi::orchestrator::Status;
-
 /// Shorthand for a Result that returns an `OrcaError`.
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -47,6 +47,12 @@ pub(crate) enum Kind {
     },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
+    #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
+    IncompletePacket {
+        kind: String,
+        missing_keys: Vec<String>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("{source} ({path:?})."))]
     InvalidFilepath {
         path: PathBuf,
@@ -79,7 +85,6 @@ pub(crate) enum Kind {
     },
     #[snafu(display("No known container names."))]
     NoContainerNames { backtrace: Option<Backtrace> },
-
     #[snafu(display("Missing file or directory name ({path:?})."))]
     NoFileName {
         path: PathBuf,
@@ -134,6 +139,11 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     ChannelReceiveError {
         source: oneshot::error::RecvError,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    DOTError {
+        source: Box<PestError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

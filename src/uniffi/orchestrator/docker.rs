@@ -5,7 +5,7 @@ use crate::{
     },
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{PodJob, PodResult},
+        model::pod::{PodJob, PodResult},
         orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo, Status},
     },
 };
@@ -158,7 +158,7 @@ impl Orchestrator for LocalDockerOrchestrator {
         .await?
         .map(|(assigned_name, run_info)| {
             let pod_job: PodJob =
-                serde_json::from_str(get(&run_info.labels, &"org.orcapod.pod_job".to_owned())?)?;
+                serde_json::from_str(get(&run_info.labels, "org.orcapod.pod_job")?)?;
             Ok(PodRun::new::<Self>(&pod_job, assigned_name))
         })
         .collect()

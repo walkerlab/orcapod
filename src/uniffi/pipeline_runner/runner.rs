@@ -1,13 +1,20 @@
 use crate::{
-    core::{crypto::hash_buffer, model::serialize_hashmap, util::get},
+    core::{
+        crypto::hash_buffer,
+        model::{pipeline::PipelineNode, serialize_hashmap},
+        util::get,
+    },
     uniffi::{
         error::{Kind, OrcaError, Result, selector},
-        model::{PathSet, Pod, PodJob, PodResult, PodResultStatus, URI},
+        model::{
+            packet::{PathSet, URI},
+            pipeline::{Kernel, Mapper, Pipeline, PipelineJob, PipelineResult},
+            pod::{Pod, PodJob, PodResult, PodResultStatus},
+        },
         orchestrator::{
             agent::{Agent, AgentClient, Response},
             docker::LocalDockerOrchestrator,
         },
-        pipeline::{Kernel, Mapper, Node, Pipeline, PipelineJob, PipelineResult},
     },
 };
 use async_trait::async_trait;
@@ -53,9 +60,9 @@ struct ProcessingFailure {
 #[derive(Debug)]
 struct PipelineRun {
     /// `PipelineJob` that this run is associated with
-    pipeline_job: PipelineJob, // The pipeline job that this run is associated with
+    pipeline_job: Arc<PipelineJob>, // The pipeline job that this run is associated with
     node_tasks: JoinSet<Result<()>>, // JoinSet of tasks for each node in the pipeline
-    outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>, // String is the node key, while hash
+    outputs: Arc<RwLock<HashMap<String, Vec<PathSet>>>>, // String is the node key, while hash
     orchestrator_agent: Arc<Agent>, // This is placed in pipeline due to the current design requiring a namespace to operate on
     orchestrator_agent_task: JoinSet<Result<()>>, // JoinSet of tasks for the orchestrator agent
 }
@@ -132,7 +139,7 @@ impl DockerPipelineRunner {
 
         // Create a new pipeline run
         let mut pipeline_run = PipelineRun {
-            pipeline_job,
+            pipeline_job: pipeline_job.into(),
             outputs: Arc::new(RwLock::new(HashMap::new())),
             node_tasks: JoinSet::new(),
             orchestrator_agent: orchestrator_agent.into(),
@@ -170,7 +177,7 @@ impl DockerPipelineRunner {
                 .node_tasks
                 .spawn(Self::spawn_node_processing_task(
                     node.clone(),
-                    pipeline_run.pipeline_job.pipeline.clone(),
+                    Arc::clone(&pipeline_run.pipeline_job.pipeline),
                     self.get_base_key_exp(&pipeline_run_id),
                     namespace.to_owned(),
                     namespace_lookup.clone(),
@@ -181,21 +188,22 @@ impl DockerPipelineRunner {
 
         // Spawn the task that captures the outputs from the output_nodes
         // For now the output nodes are hardcoded to be the leaf nodes of the pipeline
-        for node in pipeline_run.pipeline_job.pipeline.get_leaf_nodes() {
-            pipeline_run
-                .node_tasks
-                .spawn(Self::create_output_capture_task_for_node(
-                    node.id.clone(),
-                    Arc::clone(&pipeline_run.outputs),
-                    Arc::clone(&session),
-                    format!(
-                        "{}/{}/outputs/{}",
-                        self.get_base_key_exp(&pipeline_run_id),
-                        node.id,
-                        SUCCESS_KEY_EXP,
-                    ),
-                ));
-        }
+
+        // for node in pipeline_run.pipeline_job.pipeline.get_leaf_nodes() {
+        //     pipeline_run
+        //         .node_tasks
+        //         .spawn(Self::create_output_capture_task_for_node(
+        //             node.id.clone(),
+        //             Arc::clone(&pipeline_run.outputs),
+        //             Arc::clone(&session),
+        //             format!(
+        //                 "{}/{}/outputs/{}",
+        //                 self.get_base_key_exp(&pipeline_run_id),
+        //                 node.id,
+        //                 SUCCESS_KEY_EXP,
+        //             ),
+        //         ));
+        // }
 
         // Wait for all nodes to be ready before sending inputs
         let num_of_nodes = graph.node_count();
@@ -216,7 +224,7 @@ impl DockerPipelineRunner {
             self.get_base_key_exp(&pipeline_run_id),
             INPUT_KEY_EXP,
         );
-        for packet in &pipeline_run.pipeline_job.input_packets {
+        for packet in pipeline_run.pipeline_job.get_input_packets() {
             // Send the packet to the input node key_exp
             session
                 .put(
@@ -276,8 +284,9 @@ impl DockerPipelineRunner {
             }
         }
 
+        // Figure out how to do this later
         Ok(PipelineResult {
-            pipeline_job: pipeline_run.pipeline_job.clone(),
+            pipeline_job: Arc::clone(&pipeline_run.pipeline_job),
             output_packets: pipeline_run.outputs.read().await.clone(),
         })
     }
@@ -365,8 +374,8 @@ impl DockerPipelineRunner {
     /// # Errors
     /// Will error out if the kernel for the node is not found or if the
     async fn spawn_node_processing_task(
-        node: Node,
-        pipeline: Pipeline,
+        node: PipelineNode,
+        pipeline: Arc<Pipeline>,
         base_key_exp: String,
         namespace: String,
         namespace_lookup: HashMap<String, PathBuf>,
@@ -374,31 +383,31 @@ impl DockerPipelineRunner {
         client: Arc<AgentClient>,
     ) -> Result<()> {
         // Create the correct processor for the node based on the kernel type
-        let node_processor: Arc<Mutex<Box<dyn NodeProcessor>>> = Arc::new(Mutex::new(
-            match get(&pipeline.kernel_lut, &node.kernel_hash)? {
-                Kernel::Pod(pod) => Box::new(PodProcessor::new(Arc::clone(pod), client)),
-                Kernel::Mapper(mapper) => Box::new(MapperProcessor::new(Arc::clone(mapper))),
+        let node_processor: Arc<Mutex<Box<dyn NodeProcessor>>> =
+            Arc::new(Mutex::new(match &node.kernel {
+                Kernel::Pod { pod } => Box::new(PodProcessor::new(Arc::clone(pod), client)),
+                Kernel::Mapper { mapper } => Box::new(MapperProcessor::new(Arc::clone(mapper))),
                 Kernel::Joiner => {
                     // Need to get the parent node id for this joiner node
-                    let parent_nodes_id = pipeline
-                        .get_parents_for_node(&node)
-                        .map(|parent_node| parent_node.id.clone())
-                        .collect::<Vec<_>>();
-                    Box::new(JoinerProcessor::new(parent_nodes_id))
+                    Box::new(JoinerProcessor::new(
+                        pipeline
+                            .get_node_parents(&node)
+                            .map(|parent_node| parent_node.name.clone())
+                            .collect::<Vec<_>>(),
+                    ))
                 }
-            },
-        ));
+            }));
 
         // Create a join set to spawn and handle incoming messages tasks
         let mut listener_tasks = JoinSet::new();
 
         // Create the list of key_expressions to subscribe to
         let mut key_exps_to_subscribe_to = pipeline
-            .get_parents_for_node(&node)
+            .get_node_parents(&node)
             .map(|parent_node| {
                 format!(
                     "{base_key_exp}/{}/outputs/{SUCCESS_KEY_EXP}",
-                    parent_node.id
+                    parent_node.name
                 )
             })
             .collect::<Vec<_>>();
@@ -418,7 +427,7 @@ impl DockerPipelineRunner {
             listener_tasks.spawn(Self::start_async_processor_task(
                 subscriber,
                 Arc::clone(&node_processor),
-                node.id.clone(),
+                node.name.clone(),
                 base_key_exp.clone(),
                 namespace.clone(),
                 namespace_lookup.clone(),
@@ -431,7 +440,7 @@ impl DockerPipelineRunner {
 
         stop_listener_task.spawn(Self::start_stop_request_task(
             Arc::clone(&node_processor),
-            format!("{base_key_exp}/{}/stop", node.id),
+            format!("{base_key_exp}/{}/stop", node.name),
             Arc::clone(&session),
         ));
 
@@ -443,7 +452,7 @@ impl DockerPipelineRunner {
         let status_subscriber = session
             .declare_subscriber(format!(
                 "{base_key_exp}/{}/subscriber/status/ready",
-                node.id
+                node.name
             ))
             .await
             .context(selector::AgentCommunicationFailure {})?;
@@ -458,7 +467,10 @@ impl DockerPipelineRunner {
 
         // Send a ready message so the pipeline knows when to start sending inputs
         session
-            .put(format!("{base_key_exp}/{}/status/ready", node.id), &node.id)
+            .put(
+                format!("{base_key_exp}/{}/status/ready", node.name),
+                &node.name,
+            )
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -475,7 +487,7 @@ impl DockerPipelineRunner {
     async fn start_async_processor_task(
         subscriber: Subscriber<FifoChannelHandler<Sample>>,
         node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
-        node_id: String,
+        node_name: String,
         base_key_exp: String,
         namespace: String,
         namespace_lookup: HashMap<String, PathBuf>,
@@ -485,13 +497,13 @@ impl DockerPipelineRunner {
         // back to our spawner task
         session
             .put(
-                format!("{base_key_exp}/{node_id}/subscriber/status/ready"),
-                &node_id,
+                format!("{base_key_exp}/{node_name}/subscriber/status/ready"),
+                &node_name,
             )
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
-        let node_base_output_key_exp = format!("{base_key_exp}/{node_id}/outputs");
+        let node_base_output_key_exp = format!("{base_key_exp}/{node_name}/outputs");
         while let Ok(payload) = subscriber.recv_async().await {
             // Extract the message from the payload
             match serde_json::from_slice(&payload.payload().to_bytes())? {
@@ -499,7 +511,7 @@ impl DockerPipelineRunner {
                     // Process the packet using the node processor
                     let result = node_processor.lock().await.process_packet(
                         &sender_id,
-                        &node_id,
+                        &node_name,
                         &hash_map,
                         Arc::clone(&session),
                         &node_base_output_key_exp,
@@ -512,7 +524,7 @@ impl DockerPipelineRunner {
                             Arc::clone(&session),
                             err,
                             &node_base_output_key_exp,
-                            &node_id,
+                            &node_name,
                         )
                         .await;
                     }
@@ -527,12 +539,12 @@ impl DockerPipelineRunner {
                     {
                         // This was the last parent, thus we need to send the processing complete message
                         let output_key_exp =
-                            format!("{base_key_exp}/{node_id}/outputs/{SUCCESS_KEY_EXP}");
+                            format!("{base_key_exp}/{node_name}/outputs/{SUCCESS_KEY_EXP}");
                         session
                             .put(
                                 output_key_exp,
                                 serde_json::to_string(&NodeOutput::ProcessingCompleted(
-                                    node_id.clone(),
+                                    node_name.clone(),
                                 ))?,
                             )
                             .await
@@ -729,7 +741,7 @@ impl PodProcessor {
         // Get the pod result from the listener task
         println!("Trying to get pod job result...");
         let temp = pod_job_listener_task.await?;
-        println!("Waiting for pod job to complete... {:?}", temp);
+        println!("Waiting for pod job to complete... {temp:?}");
         let pod_result = temp?;
 
         // Get the output packet for the pod result
@@ -1190,7 +1202,7 @@ async fn joiner() -> Result<()> {
 /// Helper function to create a test packet with a given key and path
 #[cfg(test)]
 fn make_test_packet(key: String, path: PathBuf) -> HashMap<String, PathSet> {
-    use crate::uniffi::model::{Blob, BlobKind};
+    use crate::uniffi::model::packet::{Blob, BlobKind, URI};
 
     let path_set = PathSet::Unary(Blob {
         kind: BlobKind::File,

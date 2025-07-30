@@ -18,7 +18,8 @@
         "cffi",
         "zenoh",
         "PodJob",
-        "stresser"
+        "stresser",
+        "petgraph"
     ],
     "ignoreWords": [
         "relpath",
@@ -83,7 +84,8 @@
         "oneshot",
         "patchelf",
         "colinianking",
-        "bitcode"
+        "bitcode",
+        "pathset"
     ],
     "useGitignore": false,
     "ignorePaths": [

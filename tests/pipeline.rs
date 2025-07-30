@@ -1,107 +1,89 @@
-#![allow(clippy::panic_in_result_fn, clippy::unwrap_used, reason = "test code")]
-//! Tests for pipeline creation functionality.
-//!
-//! This module contains tests that verify the correct creation of pipelines
-//! using the `pipeline` fixture. The tests ensure that the pipeline creation
-//! process completes successfully and outputs the expected results.
+#![expect(
+    missing_docs,
+    clippy::panic_in_result_fn,
+    clippy::indexing_slicing,
+    clippy::panic,
+    reason = "OK in tests."
+)]
 
 pub mod fixture;
-use std::vec;
+use fixture::pod_custom;
+use indoc::indoc;
+use orcapod::uniffi::{
+    error::Result,
+    model::{
+        packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+        pipeline::{Kernel, Pipeline, PipelineJob, SpecURI},
+    },
+};
+use std::collections::HashMap;
 
-use fixture::pipeline;
-use orcapod::uniffi::{error::Result, model::Annotation};
-
-use crate::fixture::pipeline_job;
+use crate::fixture::NAMESPACE_LOOKUP_READ_ONLY;
 
 #[test]
-fn creation() -> Result<()> {
-    // This test checks if the pipeline can be created successfully.
-    let pipeline = pipeline()?;
+fn input_packet_checksum() -> Result<()> {
+    let pipeline = Pipeline::new(
+        indoc! {"
+            digraph {
+                A
+            }
+        "},
+        HashMap::from([(
+            "A".into(),
+            Kernel::Pod {
+                r#ref: pod_custom(
+                    "alpine:3.14",
+                    "echo",
+                    HashMap::from([(
+                        "node_key_1".into(),
+                        PathInfo {
+                            path: "/tmp/input/subject.jpeg".into(),
+                            match_pattern: r".*\.jpeg".into(),
+                        },
+                    )]),
+                )?
+                .into(),
+            },
+        )]),
+        &HashMap::from([(
+            "pipeline_key_1".into(),
+            vec![SpecURI {
+                node_name: "A".into(),
+                key: "node_key_1".into(),
+            }],
+        )]),
+        &HashMap::new(),
+    )?;
+
+    let pipeline_job = PipelineJob::new(
+        pipeline.into(),
+        &HashMap::from([(
+            "pipeline_key_1".into(),
+            vec![PathSet::Unary(Blob {
+                kind: BlobKind::File,
+                location: URI {
+                    namespace: "default".into(),
+                    path: "images/subject.jpeg".into(),
+                },
+                checksum: String::new(),
+            })],
+        )]),
+        &URI {
+            namespace: "default".into(),
+            path: "output/pipeline".into(),
+        },
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    )?;
+
+    let checksum = match &pipeline_job.input_packet["pipeline_key_1"].first() {
+        Some(PathSet::Unary(blob)) => blob.checksum.clone(),
+        Some(_) | None => panic!("Input configuration unexpectedly changed."),
+    };
 
     assert_eq!(
-        pipeline.annotation,
-        Some(Annotation {
-            name: "Example Pipeline".to_owned(),
-            description: "This is an example pipeline. of A -> B -> C".to_owned(),
-            version: "1.0.0".to_owned(),
-        }),
-        "Pipeline annotation does not match expected values."
+        checksum,
+        "8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd".to_owned(),
+        "Incorrect checksum"
     );
-
-    // Check if kernel lut is accurate
-    // Expected behavior is the kernel_lut should only contain unique kernels
-    // so graph of 5, and 4 kernels due to the mapping being repeated
-    assert_eq!(
-        pipeline.kernel_lut.len(),
-        7,
-        "Kernel LUT should have exactly 7 entries."
-    );
-
-    Ok(())
-}
-
-#[test]
-fn root_nodes() -> Result<()> {
-    let pipeline = pipeline()?;
-
-    assert_eq!(pipeline.get_root_nodes().count(), 2);
-    Ok(())
-}
-
-#[test]
-fn get_leaf_nodes() -> Result<()> {
-    let pipeline = pipeline()?;
-
-    assert_eq!(pipeline.get_leaf_nodes().count(), 1);
-    Ok(())
-}
-
-#[test]
-fn get_parents_key_for_node() -> Result<()> {
-    let pipeline = pipeline()?;
-    let node_key = pipeline.get_root_nodes().next().unwrap();
-
-    assert_eq!(pipeline.get_parents_for_node(node_key).count(), 0);
-    Ok(())
-}
-
-#[test]
-fn get_childen_for_node() -> Result<()> {
-    let pipeline = pipeline()?;
-    let node_key = pipeline.get_root_nodes().next().unwrap();
-
-    assert_eq!(pipeline.get_children_for_node(node_key).count(), 1);
-    Ok(())
-}
-
-#[test]
-fn get_input_spec() -> Result<()> {
-    let pipeline = pipeline()?;
-
-    assert_eq!(pipeline.get_input_spec()?, vec!["input_text"]);
-    Ok(())
-}
-
-#[test]
-fn get_output_spec() -> Result<()> {
-    let pipeline = pipeline()?;
-
-    assert_eq!(pipeline.get_output_spec()?, vec!["output_text"]);
-    Ok(())
-}
-
-#[test]
-fn pipeline_job_creation() -> Result<()> {
-    let pipeline_job = pipeline_job()?;
-
-    assert_eq!(
-        pipeline_job.annotation,
-        Some(Annotation {
-            name: "Example Pipeline Job".to_owned(),
-            description: "This is an example pipeline job.".to_owned(),
-            version: "1.0.0".to_owned(),
-        })
-    );
-
     Ok(())
 }

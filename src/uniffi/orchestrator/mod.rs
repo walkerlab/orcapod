@@ -1,6 +1,9 @@
 use crate::uniffi::{
     error::Result,
-    model::{PodJob, PodResult, URI},
+    model::{
+        packet::URI,
+        pod::{PodJob, PodResult},
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};

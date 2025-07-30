@@ -1,14 +1,19 @@
 use crate::{
     core::{
-        crypto::{hash_blob, hash_buffer, hash_dir, hash_file},
+        crypto::{hash_buffer, hash_dir, hash_file},
         model::{
-            deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
-            to_yaml,
+            pod::{deserialize_pod, deserialize_pod_job},
+            serialize_hashmap, serialize_hashmap_option, to_yaml,
         },
         util::get,
+        validation::validate_packet,
     },
     uniffi::{
         error::{Kind, OrcaError, Result},
+        model::{
+            Annotation,
+            packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+        },
         orchestrator::Status,
     },
 };
@@ -17,19 +22,6 @@ use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
-
-/// Available models.
-#[derive(uniffi::Enum, Debug)]
-pub enum ModelType {
-    /// A reusable, containerized computational unit.
-    Pod,
-    /// A compute job that specifies resource requests and input/output targets.
-    PodJob,
-    /// Result from a compute job run.
-    PodResult,
-}
-
-// --- core model structs ---
 
 /// A reusable, containerized computational unit.
 #[derive(
@@ -48,12 +40,12 @@ pub struct Pod {
     pub image: String,
     /// Space-delimited shell command to begin computation.
     pub command: String,
-    /// Exposed, internal input streams.
+    /// Exposed, internal input specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_spec: HashMap<String, PathInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    /// Exposed, internal output streams.
+    /// Exposed, internal output specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub output_spec: HashMap<String, PathInfo>,
     /// Link to source associated with image binary.
@@ -122,7 +114,7 @@ pub struct PodJob {
     /// A pod to base the pod job on.
     #[serde(deserialize_with = "deserialize_pod")]
     pub pod: Arc<Pod>,
-    /// Attached, external input streams.
+    /// Attached, external input packet.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_packet: HashMap<String, PathSet>,
     /// Attached, external output directory.
@@ -154,24 +146,18 @@ impl PodJob {
         env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        validate_packet("input".into(), &pod.input_spec, &input_packet)?;
+        // Hash all the pathset in the input_packet
         input_packet = input_packet
-            .into_iter()
-            .map(|(stream_name, stream_input)| match stream_input {
-                PathSet::Unary(blob) => Ok((
-                    stream_name,
-                    PathSet::Unary(hash_blob(namespace_lookup, blob)?),
-                )),
-                PathSet::Collection(blobs) => Ok((
-                    stream_name,
-                    PathSet::Collection(
-                        blobs
-                            .into_iter()
-                            .map(|blob| hash_blob(namespace_lookup, blob))
-                            .collect::<Result<Vec<_>>>()?,
-                    ),
-                )),
+            .iter()
+            .map(|(path_set_key, path_set)| {
+                Ok((
+                    path_set_key.clone(),
+                    path_set.hash_content(namespace_lookup)?,
+                ))
             })
-            .collect::<Result<_>>()?;
+            .collect::<Result<HashMap<_, _>>>()?;
+        // Build the pod job
         let pod_job_no_hash = Self {
             annotation,
             hash: String::new(),
@@ -317,18 +303,6 @@ impl PodResult {
     }
 }
 
-// --- util types ---
-
-/// Standard metadata structure for all model instances.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub struct Annotation {
-    /// A unique name.
-    pub name: String,
-    /// A unique semantic version.
-    pub version: String,
-    /// A long form description.
-    pub description: String,
-}
 /// Specification for GPU requirements in computation.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
@@ -339,6 +313,7 @@ pub struct GPURequirement {
     /// Number of GPU cards required.
     pub count: u16,
 }
+
 /// GPU model specification.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
@@ -347,57 +322,3 @@ pub enum GPUModel {
     /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
-/// Streams are named and represent an abstraction for the file(s) that represent some particular
-/// data.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct PathInfo {
-    /// Path to stream file or directory.
-    pub path: PathBuf,
-    /// Naming pattern for the stream.
-    pub match_pattern: String,
-}
-/// A single BLOB or a collection of BLOBs.
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum PathSet {
-    /// A single BLOB.
-    Unary(Blob),
-    /// A series of BLOBs.
-    Collection(Vec<Blob>),
-}
-/// Location of BLOB data.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct URI {
-    /// Namespace alias.
-    pub namespace: String,
-    /// Path within namespace.
-    pub path: PathBuf,
-}
-
-/// BLOB with metadata.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct Blob {
-    /// BLOB available options.
-    pub kind: BlobKind,
-    /// BLOB location.
-    pub location: URI,
-    /// BLOB contents checksum.
-    pub checksum: String,
-}
-/// File or directory options for BLOBs.
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub enum BlobKind {
-    /// A single file.
-    #[default]
-    File,
-    /// A single directory.
-    Directory,
-}
-
-// --- utils ----
-
-uniffi::custom_type!(PathBuf, String, {
-    remote,
-    try_lift: |val| Ok(PathBuf::from(&val)),
-    lower: |obj| obj.display().to_string(),
-});

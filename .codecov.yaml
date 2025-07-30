@@ -1,4 +1,5 @@
 # https://docs.codecov.com/docs/codecovyml-reference
+# https://docs.codecov.com/docs/commit-status
 # curl -X POST --data-binary @.codecov.yaml https://codecov.io/validate
 coverage:
   status:
@@ -7,3 +8,7 @@ coverage:
         target: 100%
         threshold: 0%
         informational: true
+    project:
+      default:
+        target: 95%
+        threshold: 0%

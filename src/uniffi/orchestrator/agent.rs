@@ -2,7 +2,7 @@ use crate::{
     core::orchestrator::agent::{EventPayload, start_service},
     uniffi::{
         error::{Kind, OrcaError, Result, selector},
-        model::{PodJob, PodResult, PodResultStatus},
+        model::pod::{PodJob, PodResult, PodResultStatus},
         orchestrator::{Orchestrator, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
@@ -211,11 +211,6 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
         }
-        // Create a service that responds to pod_job_worker availability requests.
-        services.spawn(start_service(
-
-        ))
-
         services
             .join_next()
             .await

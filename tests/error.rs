@@ -6,12 +6,14 @@
 )]
 
 pub mod fixture;
-use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_custom, pod_job_style};
+use dot_parser::ast::Graph as DOTGraph;
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style};
 use glob::glob;
 use orcapod::{
     core::crypto::hash_file,
     uniffi::{
         error::{OrcaError, Result},
+        model::packet::PathInfo,
         orchestrator::{
             Orchestrator as _,
             agent::{AgentClient, Response},
@@ -41,6 +43,14 @@ fn external_bollard() -> Result<()> {
         "Did not raise a bollard error."
     );
     Ok(())
+}
+
+#[test]
+fn external_dot() {
+    assert!(
+        DOTGraph::try_from("graph {").is_err_and(contains_debug),
+        "Did not raise a DOT error."
+    );
 }
 
 #[test]
@@ -109,6 +119,30 @@ async fn internal_agent_communication_failure() -> Result<()> {
 }
 
 #[test]
+fn internal_incomplete_packet() -> Result<()> {
+    assert!(
+        pod_job_custom(
+            &pod_custom(
+                "alpine:3.14",
+                "echo",
+                HashMap::from([(
+                    "key_1".into(),
+                    PathInfo {
+                        path: "/tmp/input.txt".into(),
+                        match_pattern: r".*\.txt".into()
+                    }
+                )])
+            )?,
+            HashMap::new(),
+            &NAMESPACE_LOOKUP_READ_ONLY
+        )
+        .is_err_and(contains_debug),
+        "Did not raise an incomplete packet error."
+    );
+    Ok(())
+}
+
+#[test]
 fn internal_invalid_filepath() {
     assert!(
         hash_file("nonexistent_file.txt").is_err_and(contains_debug),
@@ -127,7 +161,11 @@ fn internal_key_missing() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn submit_pod_jobs() -> Result<()> {
     let client = AgentClient::new("error".into(), "host".into())?;
-    let mut pod_job = pod_job_custom("alpine:3.14", "sleep 5", &NAMESPACE_LOOKUP_READ_ONLY)?;
+    let mut pod_job = pod_job_custom(
+        &pod_custom("alpine:3.14", "sleep 5", HashMap::new())?,
+        HashMap::new(),
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    )?;
     pod_job.hash = "bad?hash".into();
     let responses = client.submit_pod_jobs(vec![pod_job.into()]).await;
     assert!(
