@@ -2,6 +2,10 @@
 //! mind.
 extern crate uniffi as uniffi_external;
 uniffi_external::setup_scaffolding!();
+
+#[cfg(all(feature = "default", feature = "test"))]
+compile_error!(r#"Feature "default" and feature "test" cannot be enabled at the same time."#);
+
 /// Pure Rust source.
 pub mod core;
 /// Exposed CFFI client based on [uniffi](https://crates.io/crates/uniffi).
