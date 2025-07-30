@@ -91,7 +91,7 @@ pub(crate) enum Kind {
     },
     #[snafu(transparent)]
     BollardError {
-        source: BollardError,
+        source: Box<BollardError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
@@ -101,32 +101,32 @@ pub(crate) enum Kind {
     },
     #[snafu(transparent)]
     GlobPatternError {
-        source: glob::PatternError,
+        source: Box<glob::PatternError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     IoError {
-        source: io::Error,
+        source: Box<io::Error>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     PathPrefixError {
-        source: path::StripPrefixError,
+        source: Box<path::StripPrefixError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     SerdeJsonError {
-        source: serde_json::Error,
+        source: Box<serde_json::Error>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     SerdeYamlError {
-        source: serde_yaml::Error,
+        source: Box<serde_yaml::Error>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     TokioTaskJoinError {
-        source: task::JoinError,
+        source: Box<task::JoinError>,
         backtrace: Option<Backtrace>,
     },
 }

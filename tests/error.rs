@@ -107,7 +107,10 @@ async fn external_tokio_task() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn internal_agent_communication_failure() -> Result<()> {
-    let client = AgentClient::new("error".into(), "host".into())?;
+    let client = AgentClient::new(
+        "error_internal-agent-communication-failure".into(),
+        "host".into(),
+    )?;
     assert!(
         client
             .watch("oh?no".into())
@@ -159,8 +162,8 @@ fn internal_key_missing() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn submit_pod_jobs() -> Result<()> {
-    let client = AgentClient::new("error".into(), "host".into())?;
+async fn internal_submit_pod_jobs() -> Result<()> {
+    let client = AgentClient::new("error_submit-pod-jobs".into(), "host".into())?;
     let mut pod_job = pod_job_custom(
         &pod_custom("alpine:3.14", "sleep 5", HashMap::new())?,
         HashMap::new(),
