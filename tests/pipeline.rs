@@ -37,7 +37,7 @@ fn input_packet_checksum() -> Result<()> {
                     HashMap::from([(
                         "node_key_1".into(),
                         PathInfo {
-                            path: "/tmp/input/subject.jpeg".into(),
+                            path: "/tmp/input".into(),
                             match_pattern: r".*\.jpeg".into(),
                         },
                     )]),
@@ -59,14 +59,14 @@ fn input_packet_checksum() -> Result<()> {
         pipeline.into(),
         &HashMap::from([(
             "pipeline_key_1".into(),
-            vec![PathSet::Unary(Blob {
+            vec![PathSet::Collection(vec![Blob {
                 kind: BlobKind::File,
                 location: URI {
                     namespace: "default".into(),
                     path: "images/subject.jpeg".into(),
                 },
                 checksum: String::new(),
-            })],
+            }])],
         )]),
         &URI {
             namespace: "default".into(),
@@ -76,7 +76,7 @@ fn input_packet_checksum() -> Result<()> {
     )?;
 
     let checksum = match &pipeline_job.input_packet["pipeline_key_1"].first() {
-        Some(PathSet::Unary(blob)) => blob.checksum.clone(),
+        Some(PathSet::Collection(blobs)) => blobs[0].checksum.clone(),
         Some(_) | None => panic!("Input configuration unexpectedly changed."),
     };
 
