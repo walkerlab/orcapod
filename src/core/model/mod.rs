@@ -32,7 +32,7 @@ pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
     Ok(yaml)
 }
 
-pub fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize>(
+pub(crate) fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize>(
     map: &HashMap<K, V>,
     serializer: S,
 ) -> result::Result<S::Ok, S::Error>
@@ -44,7 +44,7 @@ where
 }
 
 #[expect(clippy::ref_option, reason = "Serde requires this signature.")]
-pub fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize>(
+pub(crate) fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize>(
     map_option: &Option<HashMap<K, V>>,
     serializer: S,
 ) -> result::Result<S::Ok, S::Error>
@@ -57,5 +57,5 @@ where
     sorted.serialize(serializer)
 }
 
-pub mod pipeline;
-pub mod pod;
+pub(crate) mod pipeline;
+pub(crate) mod pod;

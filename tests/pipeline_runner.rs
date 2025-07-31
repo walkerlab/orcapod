@@ -13,8 +13,15 @@ use orcapod::uniffi::{error::Result, pipeline_runner::runner::DockerPipelineRunn
 use crate::fixture::TestDirs;
 use fixture::pipeline_job;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn basic_run() -> Result<()> {
+    // Create the test_dir and get the namespace lookup
+    let test_dirs = TestDirs::new(&HashMap::from([(
+        "default".to_owned(),
+        Some("./tests/extra/data/"),
+    )]))?;
+    let namespace_lookup = test_dirs.namespace_lookup();
+
     // create a zenoh session to print out all communication message
     let session = zenoh::open(zenoh::Config::default())
         .await
@@ -32,21 +39,15 @@ async fn basic_run() -> Result<()> {
             println!(
                 "Received message: {}: {:?}",
                 sample.key_expr().as_str(),
-                sample.payload();
+                sample.payload()
             );
         }
     });
 
-    let pipeline_job = pipeline_job()?;
+    let pipeline_job = pipeline_job(&namespace_lookup)?;
 
     // Create the runner
     let mut runner = DockerPipelineRunner::new("test".to_owned())?;
-
-    let test_dirs = TestDirs::new(&HashMap::from([(
-        "default".to_owned(),
-        Some("./tests/extra/data/"),
-    )]))?;
-    let namespace_lookup = test_dirs.namespace_lookup();
 
     let pipeline_run = runner
         .start(pipeline_job, "default", &namespace_lookup)
@@ -65,16 +66,21 @@ async fn basic_run() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn stop() -> Result<()> {
-    let pipeline_job = pipeline_job()?;
+    // Create the test_dir and get the namespace lookup
+    let test_dirs = TestDirs::new(&HashMap::from([(
+        "default".to_owned(),
+        Some(
+            "./tests/extra
+        /data/",
+        ),
+    )]))?;
+
+    let namespace_lookup = test_dirs.namespace_lookup();
+
+    let pipeline_job = pipeline_job(&namespace_lookup)?;
 
     // Create the runner
     let mut runner = DockerPipelineRunner::new("test".to_owned())?;
-
-    let test_dirs = TestDirs::new(&HashMap::from([(
-        "default".to_owned(),
-        Some("./tests/extra/data/"),
-    )]))?;
-    let namespace_lookup = test_dirs.namespace_lookup();
 
     let pipeline_run = runner
         .start(pipeline_job, "default", &namespace_lookup)

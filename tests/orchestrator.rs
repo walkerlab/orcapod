@@ -8,7 +8,7 @@ use fixture::{
 use futures_util::future::join_all;
 use orcapod::uniffi::{
     error::{OrcaError, Result},
-    model::packet::{PodResultStatus, URI},
+    model::{packet::URI, pod::PodResultStatus},
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
 use std::{collections::HashMap, path::PathBuf};

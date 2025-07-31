@@ -3,7 +3,8 @@
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style, pod_result_style, pod_style};
 use indoc::indoc;
-use orcapod::{core::model::to_yaml, uniffi::error::Result};
+use orcapod::core::model::to_yaml;
+use orcapod::uniffi::error::Result;
 
 #[test]
 fn hash_pod() -> Result<()> {

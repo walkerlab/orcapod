@@ -8,6 +8,7 @@ use crate::{
     uniffi::{
         error::Result,
         model::{
+            Annotation,
             packet::{PathSet, URI},
             pod::Pod,
         },
@@ -31,9 +32,12 @@ pub struct Pipeline {
     #[getset(skip)]
     pub graph: DiGraph<PipelineNode, ()>,
     /// Exposed, internal input specification. Each input may be fed into more than one node/key if desired.
-    pub input_spec: HashMap<String, Vec<SpecURI>>,
+    pub input_spec: HashMap<String, Vec<NodeURI>>,
     /// Exposed, internal output specification. Each output is associated with only one node/key.
-    pub output_spec: HashMap<String, SpecURI>,
+    pub output_spec: HashMap<String, NodeURI>,
+    /// Optional annotation for the pipeline.
+    #[getset(skip)]
+    pub annotation: Option<Annotation>,
 }
 
 #[uniffi::export]
@@ -46,15 +50,17 @@ impl Pipeline {
     #[uniffi::constructor]
     pub fn new(
         graph_dot: &str,
-        metadata: HashMap<String, Kernel>,
-        input_spec: &HashMap<String, Vec<SpecURI>>,
-        output_spec: &HashMap<String, SpecURI>,
+        kernel_map: HashMap<String, Kernel>,
+        input_spec: HashMap<String, Vec<NodeURI>>,
+        output_spec: HashMap<String, NodeURI>,
+        annotation: Option<Annotation>,
     ) -> Result<Self> {
-        let graph = make_graph(graph_dot, metadata)?;
+        let graph = make_graph(graph_dot, kernel_map)?;
         Ok(Self {
             graph,
-            input_spec: input_spec.clone(),
-            output_spec: output_spec.clone(),
+            input_spec,
+            output_spec,
+            annotation,
         })
     }
 }
@@ -78,6 +84,9 @@ pub struct PipelineJob {
     pub input_packet: HashMap<String, Vec<PathSet>>,
     /// Attached, external output directory.
     pub output_dir: URI,
+    /// Optional annotation for the pipeline job.
+    #[getset(skip)]
+    pub annotation: Option<Annotation>,
 }
 
 #[uniffi::export]
@@ -91,7 +100,8 @@ impl PipelineJob {
     pub fn new(
         pipeline: Arc<Pipeline>,
         input_packet: &HashMap<String, Vec<PathSet>>,
-        output_dir: &URI,
+        output_dir: URI,
+        annotation: Option<Annotation>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
         validate_packet("input".into(), &pipeline.input_spec, input_packet)?;
@@ -112,7 +122,8 @@ impl PipelineJob {
             hash: make_random_hash(),
             pipeline,
             input_packet: input_packet_with_checksum,
-            output_dir: output_dir.clone(),
+            output_dir,
+            annotation,
         })
     }
 }
@@ -137,6 +148,7 @@ impl PipelineJob {
     }
 }
 
+/// Struct to hold the result of a pipeline execution.
 pub struct PipelineResult {
     /// The pipeline job that was executed.
     pub pipeline_job: Arc<PipelineJob>,
@@ -175,6 +187,7 @@ impl From<Mapper> for Kernel {
     }
 }
 
+/// Mapper struct to store mapping information between input and output stream keys.
 #[derive(uniffi::Object, Display, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
@@ -206,7 +219,7 @@ impl Mapper {
 
 /// Index from pipeline node into pod specification.
 #[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct SpecURI {
+pub struct NodeURI {
     /// Node reference name in pipeline.
     pub node_name: String,
     /// Specification key.

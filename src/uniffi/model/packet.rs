@@ -31,6 +31,15 @@ pub struct URI {
     pub path: PathBuf,
 }
 
+#[uniffi::export]
+impl URI {
+    #[uniffi::constructor]
+    /// Create a new URI with the given namespace and path.
+    pub const fn new(namespace: String, path: PathBuf) -> Self {
+        Self { namespace, path }
+    }
+}
+
 /// BLOB with metadata.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob {
@@ -40,6 +49,19 @@ pub struct Blob {
     pub location: URI,
     /// BLOB contents checksum.
     pub checksum: String,
+}
+
+#[uniffi::export]
+impl Blob {
+    #[uniffi::constructor]
+    /// Create a new BLOB with the given kind, location, and checksum.
+    pub const fn new(kind: BlobKind, location: URI) -> Self {
+        Self {
+            kind,
+            location,
+            checksum: String::new(),
+        }
+    }
 }
 
 /// A single BLOB or a collection of BLOBs.

@@ -53,10 +53,6 @@ struct ProcessingFailure {
 
 /// Internal representation of a pipeline run, this should not be made public due to the fact that it contains
 /// internal states and tasks
-#[expect(
-    clippy::type_complexity,
-    reason = "too complex, but necessary for async handling"
-)]
 #[derive(Debug)]
 struct PipelineRun {
     /// `PipelineJob` that this run is associated with

@@ -13,9 +13,9 @@ use orcapod::uniffi::{
     model::{
         Annotation,
         packet::{Blob, BlobKind, PathInfo, PathSet, URI},
-        pod::{Pod, PodJob, PodResult},
+        pipeline::{Kernel, Mapper, NodeURI, Pipeline, PipelineJob},
+        pod::{Pod, PodJob, PodResult, PodResultStatus},
     },
-    orchestrator::Status,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{
@@ -156,7 +156,7 @@ pub fn pod_custom(
         image_reference.into(),
         command.into(),
         input_spec,
-        PathBuf::from("/tmp/output"),
+        PathBuf::from("/output"),
         HashMap::new(),
         "https://github.com/place/holder".to_owned(),
         0.1,          // 100 millicores as frac cores
@@ -271,20 +271,29 @@ pub fn append_name_pod(pod_name: &str) -> Result<Pod> {
         }),
         "alpine:3.14".to_owned(),
         format!(
-            "cp /input/input.txt /output/input.txt && echo \"Touch by Pod: {pod_name}\" >> /output/input.txt"
+            "cat input/input1.txt input/input2.txt > /output/output.txt && echo \"Processed by {pod_name}\" >> /output/output.txt"
         ),
-        HashMap::from([(
-            "input_text".to_owned(),
-            PathInfo {
-                path: PathBuf::from("/input/input.txt"),
-                match_pattern: r".*\.txt".to_owned(),
-            },
-        )]),
+        HashMap::from([
+            (
+                "input1".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("/input/input1.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            ),
+            (
+                "input2".into(),
+                PathInfo {
+                    path: PathBuf::from("/input/input2.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            ),
+        ]),
         PathBuf::from("/output"),
         HashMap::from([(
-            "output_text".to_owned(),
+            "output".to_owned(),
             PathInfo {
-                path: PathBuf::from("/output/input.txt"),
+                path: PathBuf::from("/output/output.txt"),
                 match_pattern: r".*\.txt".to_owned(),
             },
         )]),
@@ -299,62 +308,29 @@ pub fn pipeline() -> Result<Pipeline> {
     // Create a simple pipeline where the functions job is to add append their name into the input file
     // Structure: A -> Mapper -> Joiner -> B -> Mapper -> C, D -> Mapper -> Joiner
 
-    // Create the components of the pipeline
-    let pod_a = append_name_pod("A")?;
-    let pod_b = append_name_pod("B")?;
-    let pod_c = append_name_pod("C")?;
-    let pod_d = append_name_pod("D")?;
+    // Create the kernel map
+    let mut kernel_map = HashMap::new();
 
-    // Create the file mapper that will be used to map the output of one pod to the input of another
-    let file_mapper = Mapper::new(HashMap::from([(
-        "output_text".to_owned(),
-        "input_text".to_owned(),
-    )]))?;
-
-    // Create the file mapper that will be used to map the output of one pod to the input of another
-    let file_mapper_for_pod_d = Mapper::new(HashMap::from([(
-        "output_text".to_owned(),
-        "input2_text".to_owned(),
-    )]))?;
-
-    let mut kernel_to_node_name = HashMap::<Kernel, Vec<String>>::new();
-
-    // Insert the pods into the kernel_to_node_name mapping
-    for pod in [&pod_a, &pod_b, &pod_c, &pod_d] {
-        kernel_to_node_name
-            .entry(pod.clone().into())
-            .or_default()
-            .push(
-                pod.annotation
-                    .as_ref()
-                    .expect("Annotation missing.")
-                    .name
-                    .clone(),
-            );
+    // Insert the pod into the kernel map
+    for pod_name in ["A", "B", "C", "D"] {
+        kernel_map.insert(pod_name.into(), append_name_pod(pod_name)?.into());
     }
 
-    // Add mapper to end of pod_a and pod_b
-    kernel_to_node_name
-        .entry(file_mapper.clone().into())
-        .or_default()
-        .push("pod_a_mapper".to_owned());
+    // Create the file mapper that will be used to map the output of one pod to the input of another
+    let mapper_kernel: Kernel =
+        Mapper::new(HashMap::from([("output".to_owned(), "input".to_owned())]))?.into();
+    // Add the mappers
+    kernel_map.insert("pod_a_mapper".into(), mapper_kernel.clone());
+    kernel_map.insert("pod_b_mapper".into(), mapper_kernel);
 
-    kernel_to_node_name
-        .entry(file_mapper.into())
-        .or_default()
-        .push("pod_b_mapper".to_owned());
+    // Create the file mapper for d which needs to be different
+    kernel_map.insert(
+        "pod_d_mapper".into(),
+        Mapper::new(HashMap::from([("output".to_owned(), "input2".to_owned())]))?.into(),
+    );
 
-    // Insert mapper for pod_d
-    kernel_to_node_name
-        .entry(file_mapper_for_pod_d.into())
-        .or_default()
-        .push("pod_d_mapper".to_owned());
-
-    // Add the joiner
-    kernel_to_node_name
-        .entry(Kernel::Joiner)
-        .or_default()
-        .push("pod_b_joiner".to_owned());
+    // Add the joiner node
+    kernel_map.insert("pod_b_joiner".into(), Kernel::Joiner);
 
     // Write all the edges in DOT format
     let dot = "
@@ -364,31 +340,73 @@ pub fn pipeline() -> Result<Pipeline> {
         }
     ";
 
-    // Create pipeline with annotation
-    let annotation = Some(Annotation {
-        name: "Example Pipeline".to_owned(),
-        description: "This is an example pipeline. of A -> B -> C".to_owned(),
-        version: "1.0.0".to_owned(),
-    });
-
-    Pipeline::from_dot(&kernel_to_node_name, dot, annotation)
+    Pipeline::new(
+        dot,
+        kernel_map,
+        HashMap::from([
+            (
+                "input".into(),
+                vec![
+                    NodeURI {
+                        node_name: "A".into(),
+                        key: "input".into(),
+                    },
+                    NodeURI {
+                        node_name: "D".into(),
+                        key: "input".into(),
+                    },
+                ],
+            ),
+            (
+                "input2".into(),
+                vec![
+                    NodeURI {
+                        node_name: "A".into(),
+                        key: "input2".into(),
+                    },
+                    NodeURI {
+                        node_name: "D".into(),
+                        key: "input2".into(),
+                    },
+                ],
+            ),
+        ]),
+        HashMap::from([(
+            "output".to_owned(),
+            NodeURI {
+                node_name: "C".into(),
+                key: "output".into(),
+            },
+        )]),
+        Some(Annotation {
+            name: "Example Pipeline".to_owned(),
+            description: "This is an example pipeline. of A -> B -> C".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+    )
 }
 
-pub fn pipeline_job() -> Result<PipelineJob> {
+#[expect(clippy::implicit_hasher, reason = "Could be a false positive?")]
+pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<PipelineJob> {
     // Create a simple pipeline_job
     PipelineJob::new(
-        pipeline()?,
-        vec![HashMap::from([(
-            "input_text".to_owned(),
-            PathSet::Unary(Blob {
-                kind: BlobKind::File,
-                location: URI {
-                    namespace: "default".to_owned(),
-                    path: PathBuf::from("input.txt"),
-                },
-                ..Default::default()
-            }),
-        )])],
+        pipeline()?.into(),
+        &HashMap::from([
+            (
+                "input1".into(),
+                vec![PathSet::Unary(Blob::new(
+                    BlobKind::File,
+                    URI::new("default".into(), "input.txt".into()),
+                ))],
+            ),
+            (
+                "input2".into(),
+                vec![PathSet::Unary(Blob::new(
+                    BlobKind::File,
+                    URI::new("default".into(), "input2.txt".into()),
+                ))],
+            ),
+        ]),
         URI {
             namespace: "default".to_owned(),
             path: PathBuf::from("output"),
@@ -398,6 +416,7 @@ pub fn pipeline_job() -> Result<PipelineJob> {
             description: "This is an example pipeline job.".to_owned(),
             version: "1.0.0".to_owned(),
         }),
+        namespace_lookup,
     )
 }
 

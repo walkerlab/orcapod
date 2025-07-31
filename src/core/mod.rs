@@ -2,7 +2,8 @@
 pub mod crypto;
 pub(crate) mod error;
 pub(crate) mod graph;
-pub(crate) mod model;
+/// Model definitions and utilities.
+pub mod model;
 pub(crate) mod orchestrator;
 pub(crate) mod store;
 pub(crate) mod util;

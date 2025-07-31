@@ -13,7 +13,7 @@ use orcapod::uniffi::{
     error::Result,
     model::{
         packet::{Blob, BlobKind, PathInfo, PathSet, URI},
-        pipeline::{Kernel, Pipeline, PipelineJob, SpecURI},
+        pipeline::{NodeURI, Pipeline, PipelineJob},
     },
 };
 use std::collections::HashMap;
@@ -30,29 +30,28 @@ fn input_packet_checksum() -> Result<()> {
         "},
         HashMap::from([(
             "A".into(),
-            Kernel::Pod {
-                r#ref: pod_custom(
-                    "alpine:3.14",
-                    "echo",
-                    HashMap::from([(
-                        "node_key_1".into(),
-                        PathInfo {
-                            path: "/tmp/input/subject.jpeg".into(),
-                            match_pattern: r".*\.jpeg".into(),
-                        },
-                    )]),
-                )?
-                .into(),
-            },
+            pod_custom(
+                "alpine:3.14",
+                "echo",
+                HashMap::from([(
+                    "node_key_1".into(),
+                    PathInfo {
+                        path: "/tmp/input/subject.jpeg".into(),
+                        match_pattern: r".*\.jpeg".into(),
+                    },
+                )]),
+            )?
+            .into(),
         )]),
-        &HashMap::from([(
+        HashMap::from([(
             "pipeline_key_1".into(),
-            vec![SpecURI {
+            vec![NodeURI {
                 node_name: "A".into(),
                 key: "node_key_1".into(),
             }],
         )]),
-        &HashMap::new(),
+        HashMap::new(),
+        None,
     )?;
 
     let pipeline_job = PipelineJob::new(
@@ -68,10 +67,11 @@ fn input_packet_checksum() -> Result<()> {
                 checksum: String::new(),
             })],
         )]),
-        &URI {
+        URI {
             namespace: "default".into(),
             path: "output/pipeline".into(),
         },
+        None,
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;
 
