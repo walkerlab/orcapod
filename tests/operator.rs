@@ -1,13 +1,13 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 use orcapod::{
-    core::operator::{JoinOperator, Operator as _},
+    core::operator::{JoinOperator, MapOperator, Operator as _},
     uniffi::{
         error::Result,
         model::packet::{Blob, BlobKind, Packet, PathSet, URI},
     },
 };
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 fn make_packet_key(key_name: String, filepath: String) -> (String, PathSet) {
     (
@@ -164,6 +164,28 @@ fn join_spotty() -> Result<()> {
             ]),
         ],
         "Unexpected streams."
+    );
+
+    Ok(())
+}
+
+#[test]
+fn map_once() -> Result<()> {
+    let mut operator = MapOperator::new(&HashMap::from([("key_old".into(), "key_new".into())]));
+
+    assert_eq!(
+        operator.next(vec![(
+            "parent".into(),
+            Packet::from([
+                make_packet_key("key_old".into(), "some/key.txt".into()),
+                make_packet_key("subject".into(), "some/subject.txt".into()),
+            ]),
+        )])?,
+        vec![Packet::from([
+            make_packet_key("key_new".into(), "some/key.txt".into()),
+            make_packet_key("subject".into(), "some/subject.txt".into()),
+        ]),],
+        "Unexpected packet."
     );
 
     Ok(())
