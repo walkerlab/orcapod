@@ -32,7 +32,7 @@ fn input_packet_checksum() -> Result<()> {
             "A".into(),
             pod_custom(
                 "alpine:3.14",
-                "echo",
+                vec!["echo".into()],
                 HashMap::from([(
                     "node_key_1".into(),
                     PathInfo {
@@ -58,14 +58,14 @@ fn input_packet_checksum() -> Result<()> {
         pipeline.into(),
         &HashMap::from([(
             "pipeline_key_1".into(),
-            vec![PathSet::Unary(Blob {
+            vec![PathSet::Collection(vec![Blob {
                 kind: BlobKind::File,
                 location: URI {
                     namespace: "default".into(),
                     path: "images/subject.jpeg".into(),
                 },
                 checksum: String::new(),
-            })],
+            }])],
         )]),
         URI {
             namespace: "default".into(),
@@ -76,7 +76,7 @@ fn input_packet_checksum() -> Result<()> {
     )?;
 
     let checksum = match &pipeline_job.input_packet["pipeline_key_1"].first() {
-        Some(PathSet::Unary(blob)) => blob.checksum.clone(),
+        Some(PathSet::Collection(blobs)) => blobs[0].checksum.clone(),
         Some(_) | None => panic!("Input configuration unexpectedly changed."),
     };
 

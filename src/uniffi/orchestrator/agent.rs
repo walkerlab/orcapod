@@ -7,6 +7,7 @@ use crate::{
         store::{Store as _, filestore::LocalFileStore},
     },
 };
+use colored::Colorize as _;
 use derive_more::Display;
 use futures_executor::block_on;
 use futures_util::future::join_all;
@@ -71,9 +72,9 @@ impl AgentClient {
             .into(),
         })
     }
-    /// Submit many pod jobs to be processed in parallel.
+    /// Start many pod jobs to be processed in parallel.
     /// Return order will match inputs, casting outputs to `String` (since `uniffi` doesn't support sending unwrapped `Result`s).
-    pub async fn submit_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<Response> {
+    pub async fn start_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<Response> {
         join_all(pod_jobs.iter().map(|pod_job| async {
             match self
                 .publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
@@ -99,7 +100,7 @@ impl AgentClient {
             .context(selector::AgentCommunicationFailure {})?;
         while let Ok(sample) = subscriber.recv_async().await {
             let value = serde_json::from_slice::<Value>(&sample.payload().to_bytes())?;
-            println!("{}: {value:#}", sample.key_expr().as_str());
+            println!("{}: {value:#}", sample.key_expr().as_str().yellow());
         }
         Ok(())
     }

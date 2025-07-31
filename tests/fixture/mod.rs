@@ -18,6 +18,7 @@ use orcapod::uniffi::{
     },
     store::{ModelID, ModelInfo, Store},
 };
+use std::borrow::ToOwned;
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -41,7 +42,7 @@ pub fn pod_style() -> Result<Pod> {
             version: "1.0.0".to_owned(),
         }),
         "example.server.com/user/style-transfer:1.0.0".to_owned(),
-        "python /run.py".to_owned(),
+        str_to_vec("python /run.py"),
         HashMap::from([
             (
                 "extra-style".to_owned(),
@@ -148,13 +149,13 @@ pub fn pod_result_style(
 
 pub fn pod_custom(
     image_reference: &str,
-    command: &str,
+    command: Vec<String>,
     input_spec: HashMap<String, PathInfo, RandomState>,
 ) -> Result<Pod> {
     Pod::new(
         None,
         image_reference.into(),
-        command.into(),
+        command,
         input_spec,
         PathBuf::from("/output"),
         HashMap::new(),
@@ -197,7 +198,7 @@ pub fn pod_jobs_stresser(
                 return Ok(pod_job_custom(
                     &pod_custom(
                         image_reference,
-                        &format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"),
+                        str_to_vec(&format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief")),
                         HashMap::new()
                     )?,
                     HashMap::new(),
@@ -206,7 +207,7 @@ pub fn pod_jobs_stresser(
                 .into());
             }
             Ok(pod_job_custom(
-                &pod_custom(image_reference, "sleep crash", HashMap::new())?,
+                &pod_custom(image_reference, str_to_vec("sleep crash"), HashMap::new())?,
                 HashMap::new(),
                 &NAMESPACE_LOOKUP_READ_ONLY,
             )?
@@ -270,9 +271,9 @@ pub fn append_name_pod(pod_name: &str) -> Result<Pod> {
             version: "1.0.0".to_owned(),
         }),
         "alpine:3.14".to_owned(),
-        format!(
+        str_to_vec(&format!(
             "cat input/input1.txt input/input2.txt > /output/output.txt && echo \"Processed by {pod_name}\" >> /output/output.txt"
-        ),
+        )),
         HashMap::from([
             (
                 "input1".to_owned(),
@@ -431,6 +432,10 @@ pub fn pull_image(reference: &str) -> Result<()> {
 }
 
 // --- util ---
+
+pub fn str_to_vec(v: &str) -> Vec<String> {
+    v.split_whitespace().map(String::from).collect()
+}
 
 pub struct TestDirs(pub HashMap<String, TempDir>);
 

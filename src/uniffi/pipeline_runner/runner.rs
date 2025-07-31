@@ -717,7 +717,7 @@ impl PodProcessor {
         });
 
         // Submit it to the client and get the response to make sure it was successful
-        let responses = client.submit_pod_jobs(vec![pod_job.into()]).await;
+        let responses = client.start_pod_jobs(vec![pod_job.into()]).await;
         let response = responses
             .first()
             .context(selector::InvalidIndex { idx: 0_usize })?;
