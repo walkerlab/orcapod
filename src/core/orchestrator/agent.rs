@@ -154,16 +154,6 @@ where
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
             while let Ok(sample) = subscriber.recv_async().await {
-                println!(
-                    "Received message on key expression: {}",
-                    sample.key_expr().as_str(),
-                );
-
-                println!(
-                    "Received payload: {:?}",
-                    RE_PODJOB_ACTION.captures(sample.key_expr().as_str())
-                );
-
                 if let (Ok(input), Some(metadata)) = (
                     serde_json::from_slice::<RequestI>(&sample.payload().to_bytes()),
                     RE_PODJOB_ACTION.captures(sample.key_expr().as_str()),

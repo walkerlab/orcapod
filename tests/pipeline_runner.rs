@@ -1,4 +1,9 @@
-#![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
+#![expect(
+    missing_docs,
+    clippy::panic_in_result_fn,
+    clippy::expect_used,
+    reason = "OK in tests."
+)]
 
 // If 'fixture' is a local module, ensure there is a 'mod fixture;' statement or a 'fixture.rs' file in the same directory or in 'tests/'.
 // If 'fixture' is an external crate, add it to Cargo.toml and import as shown below.
@@ -36,11 +41,7 @@ async fn basic_run() -> Result<()> {
 
         while let Ok(sample) = sub.recv_async().await {
             // Print the key expression and payload of each message
-            println!(
-                "Received message: {}: {:?}",
-                sample.key_expr().as_str(),
-                sample.payload()
-            );
+            println!("Received message: {}:", sample.key_expr().as_str(),);
         }
     });
 

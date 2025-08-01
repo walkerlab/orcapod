@@ -12,6 +12,18 @@ pub struct PathInfo {
     pub match_pattern: String,
 }
 
+#[uniffi::export]
+impl PathInfo {
+    #[uniffi::constructor]
+    /// Create a new `PathInfo` with the given path and match pattern.
+    pub const fn new(path: PathBuf, match_pattern: String) -> Self {
+        Self {
+            path,
+            match_pattern,
+        }
+    }
+}
+
 /// File or directory options for BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {
@@ -53,8 +65,8 @@ pub struct Blob {
 
 #[uniffi::export]
 impl Blob {
-    #[uniffi::constructor]
     /// Create a new BLOB with the given kind, location, and checksum.
+    #[uniffi::constructor]
     pub const fn new(kind: BlobKind, location: URI) -> Self {
         Self {
             kind,

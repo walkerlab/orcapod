@@ -6,7 +6,7 @@ use crate::{
         validation::validate_packet,
     },
     uniffi::{
-        error::Result,
+        error::{Kind, OrcaError, Result},
         model::{
             Annotation,
             packet::{PathSet, URI},
@@ -19,7 +19,7 @@ use getset::CloneGetters;
 use itertools::Itertools as _;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
 
 /// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
@@ -129,22 +129,64 @@ impl PipelineJob {
 }
 
 impl PipelineJob {
-    pub(crate) fn get_input_packets(&self) -> impl Iterator<Item = HashMap<String, PathSet>> {
-        let (keys, values) = self
-            .input_packet
-            .iter()
-            .map(|(key, value)| (key.clone(), value))
-            .collect::<(Vec<_>, Vec<_>)>();
+    /// Helpful function to get the input packet for input nodes of the pipeline based on the `pipeline_job` an`pipeline_spec`ec
+    /// # Errors
+    /// Will return `Err` if there is an issue getting the input packet per node.
+    /// # Returns
+    /// A `HashMap` where the key is the node name and the value is a vector of `HashMap<String, PathSet>` representing the input packets for that node.
+    pub fn get_input_packet_per_node(
+        &self,
+    ) -> Result<HashMap<String, Vec<HashMap<String, PathSet>>>> {
+        // For each node in the input specification, we will iterate over its mapping and
+        let mut node_input_spec = HashMap::new();
+        for (input_key, node_uris) in &self.pipeline.input_spec {
+            for node_uri in node_uris {
+                let input_path_sets = self.input_packet.get(input_key).ok_or(OrcaError {
+                    kind: Kind::KeyMissing {
+                        key: input_key.clone(),
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                })?;
+                // There shouldn't be a duplicate key in the input packet
+                let node_input_path_sets_ref = node_input_spec
+                    .entry(&node_uri.node_name)
+                    .or_insert_with(HashMap::new);
 
-        values
+                // Check if the node_uri.key already exists, if it does this is an error as there can't be two input_packet that map to the same key
+                if node_input_path_sets_ref.contains_key(&node_uri.key) {
+                    todo!()
+                } else {
+                    // Insert all the input_path_sets that map to this specific key for the node
+                    node_input_path_sets_ref.insert(&node_uri.key, input_path_sets);
+                }
+            }
+        }
+
+        // For each node, compute the cartesian product of the path_sets for each unique combination of keys
+        let node_input_packets = node_input_spec
             .into_iter()
-            .multi_cartesian_product()
-            .map(move |combo| {
-                keys.clone()
+            .map(|(node_id, input_node_keys)| {
+                // We need to pull them out at the same time to ensure the key order is preserve to match the cartesian product
+                let (keys, values): (Vec<_>, Vec<_>) = input_node_keys.into_iter().unzip();
+
+                // Covert each combo into a packet
+                let packets = values
                     .into_iter()
-                    .zip(combo.into_iter().cloned())
-                    .collect::<HashMap<_, _>>()
+                    .multi_cartesian_product()
+                    .map(|combo| {
+                        keys.iter()
+                            .copied()
+                            .zip(combo)
+                            .map(|(key, pathset)| (key.to_owned(), pathset.to_owned()))
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .collect::<Vec<HashMap<String, PathSet>>>();
+
+                (node_id.to_owned(), packets)
             })
+            .collect::<HashMap<_, _>>();
+
+        Ok(node_input_packets)
     }
 }
 
@@ -224,4 +266,13 @@ pub struct NodeURI {
     pub node_name: String,
     /// Specification key.
     pub key: String,
+}
+
+#[uniffi::export]
+impl NodeURI {
+    /// Create a new `NodeURI` instance.
+    #[uniffi::constructor]
+    pub const fn new(node_name: String, key: String) -> Self {
+        Self { node_name, key }
+    }
 }

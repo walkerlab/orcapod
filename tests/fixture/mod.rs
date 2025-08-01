@@ -18,7 +18,7 @@ use orcapod::uniffi::{
     },
     store::{ModelID, ModelInfo, Store},
 };
-use std::borrow::ToOwned;
+use std::borrow::ToOwned as _;
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -263,7 +263,7 @@ pub fn container_image_style(binary_location: impl AsRef<Path>) -> Result<TestCo
 
 // Pipeline stuff
 
-pub fn append_name_pod(pod_name: &str) -> Result<Pod> {
+pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
     Pod::new(
         Some(Annotation {
             name: pod_name.to_owned(),
@@ -272,22 +272,16 @@ pub fn append_name_pod(pod_name: &str) -> Result<Pod> {
         }),
         "alpine:3.14".to_owned(),
         str_to_vec(&format!(
-            "cat input/input1.txt input/input2.txt > /output/output.txt && echo \"Processed by {pod_name}\" >> /output/output.txt"
+            "cat input/input_1.txt input/input_2.txt > /output/output.txt && echo \"Processed by {pod_name}\" >> /output/output.txt"
         )),
         HashMap::from([
             (
                 "input1".to_owned(),
-                PathInfo {
-                    path: PathBuf::from("/input/input1.txt"),
-                    match_pattern: r".*\.txt".to_owned(),
-                },
+                PathInfo::new("/input/input_1.txt".into(), r".*\.txt".into()),
             ),
             (
                 "input2".into(),
-                PathInfo {
-                    path: PathBuf::from("/input/input2.txt"),
-                    match_pattern: r".*\.txt".to_owned(),
-                },
+                PathInfo::new("/input/input2.txt".into(), r".*\.txt".into()),
             ),
         ]),
         PathBuf::from("/output"),
@@ -299,8 +293,8 @@ pub fn append_name_pod(pod_name: &str) -> Result<Pod> {
             },
         )]),
         "N/A".to_owned(),
-        0.25,        // 250 millicores as frac cores
-        1_u64 << 30, // 1GiB in bytes
+        0.25,          // 250 millicores as frac cores
+        128_u64 << 20, // 128MB in bytes
         None,
     )
 }
@@ -314,30 +308,32 @@ pub fn pipeline() -> Result<Pipeline> {
 
     // Insert the pod into the kernel map
     for pod_name in ["A", "B", "C", "D"] {
-        kernel_map.insert(pod_name.into(), append_name_pod(pod_name)?.into());
+        kernel_map.insert(pod_name.into(), combine_txt_pod(pod_name)?.into());
     }
 
-    // Create the file mapper that will be used to map the output of one pod to the input of another
-    let mapper_kernel: Kernel =
-        Mapper::new(HashMap::from([("output".to_owned(), "input".to_owned())]))?.into();
-    // Add the mappers
-    kernel_map.insert("pod_a_mapper".into(), mapper_kernel.clone());
-    kernel_map.insert("pod_b_mapper".into(), mapper_kernel);
-
-    // Create the file mapper for d which needs to be different
+    // Create a mapper for A, B, and C
     kernel_map.insert(
-        "pod_d_mapper".into(),
-        Mapper::new(HashMap::from([("output".to_owned(), "input2".to_owned())]))?.into(),
+        "pod_a_mapper".into(),
+        Mapper::new(HashMap::from([("output".to_owned(), "input_1".to_owned())]))?.into(),
+    );
+    kernel_map.insert(
+        "pod_b_mapper".into(),
+        Mapper::new(HashMap::from([("output".to_owned(), "input_2".to_owned())]))?.into(),
+    );
+    kernel_map.insert(
+        "pod_c_mapper".into(),
+        Mapper::new(HashMap::from([("output".to_owned(), "input_1".to_owned())]))?.into(),
     );
 
     // Add the joiner node
-    kernel_map.insert("pod_b_joiner".into(), Kernel::Joiner);
+    kernel_map.insert("pod_c_joiner".into(), Kernel::Joiner);
 
     // Write all the edges in DOT format
     let dot = "
         digraph {
-        A -> pod_a_mapper -> pod_b_joiner -> B -> pod_b_mapper -> C;
-        D -> pod_d_mapper -> pod_b_joiner;
+        A -> pod_a_mapper -> pod_c_joiner;
+        B -> pod_b_mapper -> pod_c_joiner;
+        pod_c_joiner -> C -> D;
         }
     ";
 
@@ -346,42 +342,36 @@ pub fn pipeline() -> Result<Pipeline> {
         kernel_map,
         HashMap::from([
             (
-                "input".into(),
-                vec![
-                    NodeURI {
-                        node_name: "A".into(),
-                        key: "input".into(),
-                    },
-                    NodeURI {
-                        node_name: "D".into(),
-                        key: "input".into(),
-                    },
-                ],
+                "where".into(),
+                vec![NodeURI::new("A".into(), "input_1".into())],
             ),
             (
-                "input2".into(),
-                vec![
-                    NodeURI {
-                        node_name: "A".into(),
-                        key: "input2".into(),
-                    },
-                    NodeURI {
-                        node_name: "D".into(),
-                        key: "input2".into(),
-                    },
-                ],
+                "is_the".into(),
+                vec![NodeURI::new("A".into(), "input_2".into())],
+            ),
+            (
+                "cat_color".into(),
+                vec![NodeURI::new("B".into(), "input_1".into())],
+            ),
+            (
+                "cat".into(),
+                vec![NodeURI::new("B".into(), "input_2".into())],
+            ),
+            (
+                "action".into(),
+                vec![NodeURI::new("D".into(), "input_2".into())],
             ),
         ]),
         HashMap::from([(
             "output".to_owned(),
             NodeURI {
-                node_name: "C".into(),
+                node_name: "D".into(),
                 key: "output".into(),
             },
         )]),
         Some(Annotation {
-            name: "Example Pipeline".to_owned(),
-            description: "This is an example pipeline. of A -> B -> C".to_owned(),
+            name: "Sentence making pipeline".to_owned(),
+            description: "Parse txt files with txt and to form sentences".to_owned(),
             version: "1.0.0".to_owned(),
         }),
     )
@@ -394,27 +384,62 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
         pipeline()?.into(),
         &HashMap::from([
             (
-                "input1".into(),
+                "where".into(),
                 vec![PathSet::Unary(Blob::new(
                     BlobKind::File,
-                    URI::new("default".into(), "input.txt".into()),
+                    URI::new("default".into(), "input_txt/Where.txt".into()),
                 ))],
             ),
             (
-                "input2".into(),
+                "is_the".into(),
                 vec![PathSet::Unary(Blob::new(
                     BlobKind::File,
-                    URI::new("default".into(), "input2.txt".into()),
+                    URI::new("default".into(), "input_txt/is_the.txt".into()),
                 ))],
+            ),
+            (
+                "cat_color".into(),
+                vec![
+                    PathSet::Unary(Blob::new(
+                        BlobKind::File,
+                        URI::new("default".into(), "input_txt/black.txt".into()),
+                    )),
+                    PathSet::Unary(Blob::new(
+                        BlobKind::File,
+                        URI::new("default".into(), "input_txt/tabby.txt".into()),
+                    )),
+                ],
+            ),
+            (
+                "cat".into(),
+                vec![PathSet::Unary(Blob::new(
+                    BlobKind::File,
+                    URI::new("default".into(), "input_txt/cat.txt".into()),
+                ))],
+            ),
+            (
+                "action".into(),
+                vec![
+                    PathSet::Unary(Blob::new(
+                        BlobKind::File,
+                        URI::new("default".into(), "input_txt/hiding.txt".into()),
+                    )),
+                    PathSet::Unary(Blob::new(
+                        BlobKind::File,
+                        URI::new("default".into(), "input_txt/playing.txt".into()),
+                    )),
+                ],
             ),
         ]),
         URI {
             namespace: "default".to_owned(),
-            path: PathBuf::from("output"),
+            path: PathBuf::from("pipeline_output"),
         },
         Some(Annotation {
-            name: "Example Pipeline Job".to_owned(),
-            description: "This is an example pipeline job.".to_owned(),
+            name: "Hiding Cat Sentence".to_owned(),
+            description:
+                "This pipeline should produce a txt file with the phrase about a cat hiding"
+                    .to_owned(),
             version: "1.0.0".to_owned(),
         }),
         namespace_lookup,

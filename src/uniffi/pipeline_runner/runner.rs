@@ -61,6 +61,8 @@ struct PipelineRun {
     outputs: Arc<RwLock<HashMap<String, Vec<PathSet>>>>, // String is the node key, while hash
     orchestrator_agent: Arc<Agent>, // This is placed in pipeline due to the current design requiring a namespace to operate on
     orchestrator_agent_task: JoinSet<Result<()>>, // JoinSet of tasks for the orchestrator agent
+    failure_logs: Arc<RwLock<Vec<ProcessingFailure>>>, // Logs of processing failures
+    failure_logging_task: JoinSet<Result<()>>, // JoinSet of tasks for logging failures
 }
 
 impl PartialEq for PipelineRun {
@@ -140,11 +142,14 @@ impl DockerPipelineRunner {
             node_tasks: JoinSet::new(),
             orchestrator_agent: orchestrator_agent.into(),
             orchestrator_agent_task: JoinSet::new(),
+            failure_logs: Arc::new(RwLock::new(Vec::new())),
+            failure_logging_task: JoinSet::new(),
         };
 
         // Get the preexisting zenoh session from agent
         let session = Arc::clone(&pipeline_run.orchestrator_agent.client.session);
 
+        // Spawn task for each of the processing node
         let orchestrator_agent_clone = Arc::clone(&pipeline_run.orchestrator_agent);
         let namespace_lookup_clone = namespace_lookup.clone();
         // Start the orchestrator agent service
@@ -154,17 +159,27 @@ impl DockerPipelineRunner {
                 .await
         });
 
+        // Create failure logging task
+        pipeline_run
+            .failure_logging_task
+            .spawn(Self::failure_capture_task(
+                Arc::clone(&session),
+                Arc::clone(&pipeline_run.failure_logs),
+            ));
+
+        // Create the processor task for each node
         // The id for the pipeline_run is the pipeline_job hash
         let pipeline_run_id = pipeline_run.pipeline_job.hash.clone();
 
         let graph = &pipeline_run.pipeline_job.pipeline.graph;
 
+        // Create the subscriber that listen for ready messages
         let subscriber = session
             .declare_subscriber(self.get_base_key_exp(&pipeline_run_id) + "/*/status/ready")
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
-        // For each node, we will create call create_node_processing_task
+        // Iterate through each node in the graph and spawn a task for each
         for node_idx in graph.node_indices() {
             let node = &graph[node_idx];
 
@@ -182,24 +197,35 @@ impl DockerPipelineRunner {
                 ));
         }
 
-        // Spawn the task that captures the outputs from the output_nodes
-        // For now the output nodes are hardcoded to be the leaf nodes of the pipeline
+        // Spawn the task that captures the outputs based on the output_spec
+        let mut node_output_spec = HashMap::new();
+        // Group the output spec by node
+        for (output_key, node_uri) in &pipeline_run.pipeline_job.pipeline.output_spec {
+            node_output_spec
+                .entry(node_uri.node_name.clone())
+                .or_insert_with(HashMap::new)
+                .insert(output_key.clone(), node_uri.key.clone());
+        }
 
-        // for node in pipeline_run.pipeline_job.pipeline.get_leaf_nodes() {
-        //     pipeline_run
-        //         .node_tasks
-        //         .spawn(Self::create_output_capture_task_for_node(
-        //             node.id.clone(),
-        //             Arc::clone(&pipeline_run.outputs),
-        //             Arc::clone(&session),
-        //             format!(
-        //                 "{}/{}/outputs/{}",
-        //                 self.get_base_key_exp(&pipeline_run_id),
-        //                 node.id,
-        //                 SUCCESS_KEY_EXP,
-        //             ),
-        //         ));
-        // }
+        for (node_id, key_mapping) in node_output_spec {
+            // Create the key expression to subscribe to
+            let key_exp_to_sub = format!(
+                "{}/{}/outputs/{}",
+                self.get_base_key_exp(&pipeline_run_id),
+                node_id,
+                SUCCESS_KEY_EXP,
+            );
+
+            // Spawn the task that captures the outputs
+            pipeline_run
+                .node_tasks
+                .spawn(Self::create_output_capture_task_for_node(
+                    key_mapping,
+                    Arc::clone(&pipeline_run.outputs),
+                    Arc::clone(&session),
+                    key_exp_to_sub,
+                ));
+        }
 
         // Wait for all nodes to be ready before sending inputs
         let num_of_nodes = graph.node_count();
@@ -220,19 +246,19 @@ impl DockerPipelineRunner {
             self.get_base_key_exp(&pipeline_run_id),
             INPUT_KEY_EXP,
         );
-        for packet in pipeline_run.pipeline_job.get_input_packets() {
-            // Send the packet to the input node key_exp
-            session
-                .put(
-                    &input_node_key_exp,
-                    serde_json::to_string(&NodeOutput::Packet(
-                        "input_node".to_owned(),
-                        packet.clone(),
-                    ))?,
-                )
-                .await
-                .context(selector::AgentCommunicationFailure {})?;
-        }
+        // for packet in pipeline_run.pipeline_job.get_input_packet_per_node() {
+        //     // Send the packet to the input node key_exp
+        //     session
+        //         .put(
+        //             &input_node_key_exp,
+        //             serde_json::to_string(&NodeOutput::Packet(
+        //                 "input_node".to_owned(),
+        //                 packet.clone(),
+        //             ))?,
+        //         )
+        //         .await
+        //         .context(selector::AgentCommunicationFailure {})?;
+        // }
 
         // Send the complete processing message for the input node
         session
@@ -323,13 +349,15 @@ impl DockerPipelineRunner {
     }
 
     /// This will capture the outputs of the given nodes and store it in the `outputs` map
-    #[expect(clippy::type_complexity, reason = "Needed for async")]
     async fn create_output_capture_task_for_node(
-        node_id: String,
-        outputs: Arc<RwLock<HashMap<String, Vec<HashMap<String, PathSet>>>>>,
+        //<Key to pull from the node, Key that will be mapped to in the outputs>
+        key_mapping: HashMap<String, String>,
+        outputs: Arc<RwLock<HashMap<String, Vec<PathSet>>>>,
         session: Arc<zenoh::Session>,
         key_exp_to_sub: String,
     ) -> Result<()> {
+        // Determine which keys we are interested in for the given node_id
+
         // Create a zenoh session
         let subscriber = session
             .declare_subscriber(key_exp_to_sub)
@@ -341,13 +369,16 @@ impl DockerPipelineRunner {
             let msg: NodeOutput = serde_json::from_slice(&payload.payload().to_bytes())?;
 
             match msg {
-                NodeOutput::Packet(_, hash_map) => {
+                NodeOutput::Packet(_, packet) => {
+                    // Figure out which keys
                     // Store the output packet in the outputs map
                     let mut outputs_lock = outputs.write().await;
-                    outputs_lock
-                        .entry(node_id.clone())
-                        .or_default()
-                        .push(hash_map);
+                    for (output_key, node_key) in &key_mapping {
+                        outputs_lock
+                            .entry(output_key.to_owned())
+                            .or_default()
+                            .push(get(&packet, node_key.as_str())?.clone());
+                    }
                 }
                 NodeOutput::ProcessingCompleted(_) => {
                     // Processing is completed, thus we can exit this task
@@ -355,6 +386,28 @@ impl DockerPipelineRunner {
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn failure_capture_task(
+        session: Arc<zenoh::Session>,
+        failure_logs: Arc<RwLock<Vec<ProcessingFailure>>>,
+    ) -> Result<()> {
+        let sub = session
+            .declare_subscriber(format!("**/outputs/{FAILURE_KEY_EXP}"))
+            .await
+            .context(selector::AgentCommunicationFailure {})?;
+
+        // Listen to any failure messages and write it the logs
+        while let Ok(payload) = sub.recv_async().await {
+            // Extract the message from the payload
+            let msg: ProcessingFailure = serde_json::from_slice(&payload.payload().to_bytes())?;
+            // Store the failure message in the logs
+            failure_logs.write().await.push(msg.clone());
+            // Print the failure message to stderr
+            eprintln!("Processing failure for node {}: {}", msg.node_id, msg.error);
+        }
+
         Ok(())
     }
 
@@ -694,6 +747,7 @@ impl PodProcessor {
             None,
             namespace_lookup,
         )?;
+        // Print out the packet
 
         // Create listener for pod_job
         let target_key_exp = format!("group/{}/*/pod_job/{}/**", client.group, pod_job.hash);
@@ -735,9 +789,8 @@ impl PodProcessor {
         }
 
         // Get the pod result from the listener task
-        println!("Trying to get pod job result...");
         let temp = pod_job_listener_task.await?;
-        println!("Waiting for pod job to complete... {temp:?}");
+
         let pod_result = temp?;
 
         // Get the output packet for the pod result
@@ -820,7 +873,7 @@ impl NodeProcessor for PodProcessor {
                     try_to_forward_err_msg(
                         session,
                         err,
-                        &format!("{base_output_key_exp_owned}/{FAILURE_KEY_EXP}"),
+                        &base_output_key_exp_owned,
                         &node_id_owned,
                     )
                     .await;
@@ -901,13 +954,7 @@ impl NodeProcessor for MapperProcessor {
             .await;
 
             if let Err(err) = result {
-                try_to_forward_err_msg(
-                    session,
-                    err,
-                    &format!("{output_key_exp_clone}/{FAILURE_KEY_EXP}"),
-                    &node_id_clone,
-                )
-                .await;
+                try_to_forward_err_msg(session, err, &output_key_exp_clone, &node_id_clone).await;
             }
         });
         Ok(())
