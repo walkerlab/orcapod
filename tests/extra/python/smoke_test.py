@@ -28,7 +28,7 @@ def create_pod(data, _):
             version="1.0.0",
         ),
         image="alpine:3.14",
-        command="sleep 1",
+        command="sleep 1".split(" "),
         input_spec={},
         output_dir="/tmp/output",
         output_spec={},
