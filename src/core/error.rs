@@ -22,6 +22,16 @@ impl From<BollardError> for OrcaError {
         }
     }
 }
+impl From<chrono::ParseError> for OrcaError {
+    fn from(error: chrono::ParseError) -> Self {
+        Self {
+            kind: Kind::ChronoParseError {
+                source: error.into(),
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
 impl From<PestError> for OrcaError {
     fn from(error: PestError) -> Self {
         Self {
@@ -125,6 +135,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoRemainingServices { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
+            | Kind::ChronoParseError { backtrace, .. }
             | Kind::DOTError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }

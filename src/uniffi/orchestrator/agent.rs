@@ -1,8 +1,8 @@
 use crate::{
-    core::orchestrator::agent::{EventPayload, start_service},
+    core::orchestrator::agent::start_service,
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::pod::{PodJob, PodResult},
+        model::pod::PodJob,
         orchestrator::{Orchestrator, PodStatus, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
@@ -152,7 +152,6 @@ impl Agent {
             Arc::new(self.clone()),
             "request/pod_job/**".to_owned(),
             namespace_lookup.clone(),
-            |pod_job: &PodJob| EventPayload::Request(pod_job.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {
                 let pod_run = agent
                     .orchestrator
@@ -187,7 +186,6 @@ impl Agent {
                 Arc::new(self.clone()),
                 "success/pod_job/**".to_owned(),
                 namespace_lookup.clone(),
-                |pod_result: &PodResult| EventPayload::Success(pod_result.clone()),
                 {
                     let inner_store = Arc::clone(&store);
                     async move |_, _, _, pod_result| {
@@ -201,7 +199,6 @@ impl Agent {
                 Arc::new(self.clone()),
                 "failure/pod_job/**".to_owned(),
                 namespace_lookup.clone(),
-                |pod_result: &PodResult| EventPayload::Failure(pod_result.clone()),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;
                     Ok(())

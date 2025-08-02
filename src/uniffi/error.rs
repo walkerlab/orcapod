@@ -95,6 +95,11 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
+    ChronoParseError {
+        source: Box<chrono::ParseError>,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
     DOTError {
         source: Box<PestError>,
         backtrace: Option<Backtrace>,
