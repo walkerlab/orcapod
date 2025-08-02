@@ -1,5 +1,6 @@
 #![expect(
     missing_docs,
+    clippy::panic,
     clippy::panic_in_result_fn,
     clippy::indexing_slicing,
     reason = "OK in tests."
@@ -23,7 +24,15 @@ use orcapod::{
 };
 use serde_json;
 use serde_yaml;
-use std::{collections::HashMap, fs, ops::Deref as _, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    ops::Deref as _,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 use tokio::{self, time::sleep as async_sleep};
 
 fn contains_debug(error: impl Into<OrcaError>) -> bool {
@@ -76,6 +85,33 @@ fn external_path_prefix() {
             .strip_prefix("/missing/path")
             .is_err_and(contains_debug),
         "Did not raise a path prefix error."
+    );
+}
+
+#[expect(
+    clippy::let_underscore_must_use,
+    clippy::let_underscore_untyped,
+    clippy::significant_drop_tightening,
+    unreachable_code,
+    reason = "debug"
+)]
+#[test]
+fn external_poison() {
+    let name = Arc::new(Mutex::new("jack"));
+    let _ = thread::spawn({
+        let inner_name = Arc::clone(&name);
+        move || {
+            let mut new_name = inner_name.lock()?;
+            *new_name = "jill";
+            panic!();
+            Ok::<_, OrcaError>(())
+        }
+    })
+    .join();
+
+    assert!(
+        name.lock().is_err_and(contains_debug),
+        "Did not raise a poison error."
     );
 }
 
