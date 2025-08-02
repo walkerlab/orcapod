@@ -38,8 +38,9 @@ pub struct Pod {
     pub hash: String,
     /// Reproducible environment for compute.
     pub image: String,
-    /// Space-delimited shell command to begin computation.
-    pub command: String,
+    /// Shell command to begin computation. First element is the executable and remaining elements
+    /// are the arguments.
+    pub command: Vec<String>,
     /// Exposed, internal input specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_spec: HashMap<String, PathInfo>,
@@ -69,7 +70,7 @@ impl Pod {
     pub fn new(
         annotation: Option<Annotation>,
         image: String,
-        command: String,
+        command: Vec<String>,
         input_spec: HashMap<String, PathInfo>,
         output_dir: PathBuf,
         output_spec: HashMap<String, PathInfo>,

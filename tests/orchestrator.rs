@@ -3,7 +3,7 @@
 pub mod fixture;
 use fixture::{
     NAMESPACE_LOOKUP_READ_ONLY, TestContainerImage, TestDirs, container_image_style, pod_custom,
-    pod_job_custom, pod_job_style, pod_jobs_stresser, pod_result_style,
+    pod_job_custom, pod_job_style, pod_jobs_stresser, pod_result_style, str_to_vec,
 };
 use futures_util::future::join_all;
 use orcapod::uniffi::{
@@ -20,7 +20,7 @@ where
     T: Fn(
         &HashMap<String, PathBuf>,
         &LocalDockerOrchestrator,
-    ) -> Result<(PodRun, String, Packet, Option<TestContainerImage>)>,
+    ) -> Result<(PodRun, Vec<String>, Packet, Option<TestContainerImage>)>,
 {
     let test_dirs = TestDirs::new(&HashMap::from([(
         "default".to_owned(),
@@ -123,7 +123,7 @@ fn offline_container_image_basic() -> Result<()> {
 fn remote_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
         let pod_job = pod_job_custom(
-            &pod_custom("alpine:3.14", "sleep 5", HashMap::new())?,
+            &pod_custom("alpine:3.14", &str_to_vec("sleep 5"), HashMap::new())?,
             HashMap::new(),
             namespace_lookup,
         )?;
@@ -140,7 +140,7 @@ fn remote_container_image_basic() -> Result<()> {
 async fn remote_container_image_failed() -> Result<()> {
     let orch = LocalDockerOrchestrator::new()?;
     let pod_job = pod_job_custom(
-        &pod_custom("alpine:3.14", "sleep crash", HashMap::new())?,
+        &pod_custom("alpine:3.14", &str_to_vec("sleep crash"), HashMap::new())?,
         HashMap::new(),
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;

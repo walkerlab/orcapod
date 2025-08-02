@@ -28,4 +28,6 @@ pub mod core;
 ///       values are owned by Rust
 /// 1. No default trait implementations
 /// 1. (Rust limitation) No associated functions in traits e.g. class methods in Python
+/// 1. Hint: Enum variants with named fields offer a better UX (e.g. in Python) as opposed to
+///    unnamed enum fields i.e. will show up in help.
 pub mod uniffi;

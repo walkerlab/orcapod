@@ -42,7 +42,7 @@ pub struct PodRunInfo {
     /// Environment variables set in environment.
     pub env_vars: HashMap<String, String>,
     /// Command used to start run.
-    pub command: String,
+    pub command: Vec<String>,
     /// Current run status.
     pub status: PodStatus,
     /// Mounted volume binds to the environment.
