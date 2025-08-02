@@ -35,7 +35,7 @@ async fn basic_run() -> Result<()> {
     tokio::spawn(async move {
         // Subscribe to all messages in the 'test' group
         let sub = session
-            .declare_subscriber("**")
+            .declare_subscriber("**/failure/**")
             .await
             .expect("Failed to declare subscriber");
 
@@ -56,6 +56,11 @@ async fn basic_run() -> Result<()> {
 
     // Wait for the pipeline run to complete
     let pipeline_result = runner.get_result(&pipeline_run).await?;
+
+    println!(
+        "Pipeline run completed: {:?}",
+        pipeline_result.output_packets
+    );
 
     assert!(
         pipeline_result.output_packets.len() == 1,

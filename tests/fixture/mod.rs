@@ -272,15 +272,15 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
         }),
         "alpine:3.14".to_owned(),
         str_to_vec(&format!(
-            "cat input/input_1.txt input/input_2.txt > /output/output.txt && echo \"Processed by {pod_name}\" >> /output/output.txt"
+            "sh -c cat input/input_1.txt input/input_2.txt > /output/output.txt && echo \"Processed by {pod_name}\" >> /output/output.txt"
         )),
         HashMap::from([
             (
-                "input1".to_owned(),
+                "input_1".to_owned(),
                 PathInfo::new("/input/input_1.txt".into(), r".*\.txt".into()),
             ),
             (
-                "input2".into(),
+                "input_2".into(),
                 PathInfo::new("/input/input2.txt".into(), r".*\.txt".into()),
             ),
         ]),
@@ -328,12 +328,15 @@ pub fn pipeline() -> Result<Pipeline> {
     // Add the joiner node
     kernel_map.insert("pod_c_joiner".into(), Kernel::Joiner);
 
+    // Add joiner node for D
+    kernel_map.insert("pod_d_joiner".into(), Kernel::Joiner);
+
     // Write all the edges in DOT format
     let dot = "
         digraph {
         A -> pod_a_mapper -> pod_c_joiner;
         B -> pod_b_mapper -> pod_c_joiner;
-        pod_c_joiner -> C -> D;
+        pod_c_joiner -> C -> pod_d_joiner -> D;
         }
     ";
 
@@ -359,7 +362,7 @@ pub fn pipeline() -> Result<Pipeline> {
             ),
             (
                 "action".into(),
-                vec![NodeURI::new("D".into(), "input_2".into())],
+                vec![NodeURI::new("pod_d_joiner".into(), "input_2".into())],
             ),
         ]),
         HashMap::from([(

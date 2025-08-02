@@ -108,13 +108,13 @@ fn creation() -> Result<()> {
 
     assert_eq!(
         pipeline.graph.node_count(),
-        6,
-        "Pipeline graph should have 6 nodes."
+        8,
+        "Pipeline graph should have 8 nodes."
     );
     assert_eq!(
         pipeline.graph.edge_count(),
-        5,
-        "Pipeline graph should have 5 edges."
+        7,
+        "Pipeline graph should have 7 edges."
     );
 
     Ok(())
@@ -132,7 +132,7 @@ fn get_input_packet_per_node() -> Result<()> {
     // Node A: 1 packets, with keys input "input_1" and "input_2" Due to only Where.txt and is_the.txt being route to this node
     // Node B: 2 packets, with keys "input_1" and "input_2" Due to black.txt / tabby.txt and cat.txt being routed to this node
     // Node C should not receive any input, as it is an internal node
-    // Node D: 2 packets, with keys "input_2" only, due to input_1 being received by the joiner node, and input_2 being hiding.txt
+    // Node pod_d_joiner: 2 packets, with keys "input_2" only, due to input_1 being received by the joiner node, and input_2 being hiding.txt
 
     // Check A
     let input_packet_node_a = input_packets_per_node.get("A").unwrap();
@@ -151,11 +151,18 @@ fn get_input_packet_per_node() -> Result<()> {
         "Node C should not have any input packets.",
     );
 
-    // Check D
-    let input_packet_node_d = input_packets_per_node.get("D").unwrap();
+    // Check pod_d_joiner
+    // Node node_d_joiner: 2 packets, with keys "input_2" only, due to input_1 being received by the joiner node, and input_2 being hiding.txt
+    let input_packet_node_d = input_packets_per_node.get("pod_d_joiner").unwrap();
     assert_num_of_packets(input_packet_node_d.len(), 2);
     assert_contains_keys(&input_packet_node_d[0], &["input_2"]);
     assert_contains_keys(&input_packet_node_d[1], &["input_2"]);
+
+    // Check D
+    assert!(
+        !input_packets_per_node.contains_key("D"),
+        "Node D should not have any input packets.",
+    );
 
     Ok(())
 }

@@ -179,6 +179,9 @@ impl DockerPipelineRunner {
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
+        // Get the set of input_nodes
+        let input_nodes = pipeline_run.pipeline_job.pipeline.get_input_nodes();
+
         // Iterate through each node in the graph and spawn a task for each
         for node_idx in graph.node_indices() {
             let node = &graph[node_idx];
@@ -189,6 +192,7 @@ impl DockerPipelineRunner {
                 .spawn(Self::spawn_node_processing_task(
                     node.clone(),
                     Arc::clone(&pipeline_run.pipeline_job.pipeline),
+                    input_nodes.contains(&node.name),
                     self.get_base_key_exp(&pipeline_run_id),
                     namespace.to_owned(),
                     namespace_lookup.clone(),
@@ -241,33 +245,40 @@ impl DockerPipelineRunner {
         }
 
         // Submit the input_packets to the correct key_exp
-        let input_node_key_exp = format!(
+        let base_input_node_key_exp = format!(
             "{}/{}",
             self.get_base_key_exp(&pipeline_run_id),
             INPUT_KEY_EXP,
         );
-        // for packet in pipeline_run.pipeline_job.get_input_packet_per_node() {
-        //     // Send the packet to the input node key_exp
-        //     session
-        //         .put(
-        //             &input_node_key_exp,
-        //             serde_json::to_string(&NodeOutput::Packet(
-        //                 "input_node".to_owned(),
-        //                 packet.clone(),
-        //             ))?,
-        //         )
-        //         .await
-        //         .context(selector::AgentCommunicationFailure {})?;
-        // }
 
-        // Send the complete processing message for the input node
-        session
-            .put(
-                input_node_key_exp,
-                serde_json::to_string(&NodeOutput::ProcessingCompleted("input_node".to_owned()))?,
-            )
-            .await
-            .context(selector::AgentCommunicationFailure {})?;
+        // For each node send all the packets associate with it
+        for (node_name, input_packets) in pipeline_run.pipeline_job.get_input_packet_per_node()? {
+            for packet in input_packets {
+                // Send the packet to the input node key_exp
+                let output_key_exp = format!("{base_input_node_key_exp}/{node_name}");
+                session
+                    .put(
+                        &output_key_exp,
+                        serde_json::to_string(&NodeOutput::Packet(
+                            "input_node".to_owned(),
+                            packet.clone(),
+                        ))?,
+                    )
+                    .await
+                    .context(selector::AgentCommunicationFailure {})?;
+
+                // All packets associate with node are sent, we can send processing complete msg now
+                session
+                    .put(
+                        &output_key_exp,
+                        serde_json::to_string(&NodeOutput::ProcessingCompleted(
+                            "input_node".to_owned(),
+                        ))?,
+                    )
+                    .await
+                    .context(selector::AgentCommunicationFailure {})?;
+            }
+        }
 
         // Insert into the list of pipeline runs
         self.pipeline_runs
@@ -401,11 +412,16 @@ impl DockerPipelineRunner {
         // Listen to any failure messages and write it the logs
         while let Ok(payload) = sub.recv_async().await {
             // Extract the message from the payload
-            let msg: ProcessingFailure = serde_json::from_slice(&payload.payload().to_bytes())?;
+            let process_failure: ProcessingFailure =
+                serde_json::from_slice(&payload.payload().to_bytes())?;
             // Store the failure message in the logs
-            failure_logs.write().await.push(msg.clone());
-            // Print the failure message to stderr
-            eprintln!("Processing failure for node {}: {}", msg.node_id, msg.error);
+            failure_logs.write().await.push(process_failure.clone());
+            if let Some(first_line) = process_failure.error.lines().next() {
+                println!(
+                    "Node {} processing failed with error: {}",
+                    process_failure.node_id, first_line
+                );
+            }
         }
 
         Ok(())
@@ -425,6 +441,7 @@ impl DockerPipelineRunner {
     async fn spawn_node_processing_task(
         node: PipelineNode,
         pipeline: Arc<Pipeline>,
+        is_input_node: bool,
         base_key_exp: String,
         namespace: String,
         namespace_lookup: HashMap<String, PathBuf>,
@@ -438,12 +455,17 @@ impl DockerPipelineRunner {
                 Kernel::Mapper { mapper } => Box::new(MapperProcessor::new(Arc::clone(mapper))),
                 Kernel::Joiner => {
                     // Need to get the parent node id for this joiner node
-                    Box::new(JoinerProcessor::new(
-                        pipeline
-                            .get_node_parents(&node)
-                            .map(|parent_node| parent_node.name.clone())
-                            .collect::<Vec<_>>(),
-                    ))
+                    let mut parent_nodes = pipeline
+                        .get_node_parents(&node)
+                        .map(|parent_node| parent_node.name.clone())
+                        .collect::<Vec<_>>();
+
+                    // Check if it this node takes input from input_nodes, if so we need ot add it to parent_node
+                    if is_input_node {
+                        parent_nodes.push("input_node".to_owned());
+                    }
+
+                    Box::new(JoinerProcessor::new(parent_nodes))
                 }
             }));
 
@@ -461,9 +483,10 @@ impl DockerPipelineRunner {
             })
             .collect::<Vec<_>>();
 
-        // If there was no parent node, then this is root node, therefore we need to subscribe to the input node
-        if key_exps_to_subscribe_to.is_empty() {
-            key_exps_to_subscribe_to.push(format!("{base_key_exp}/{INPUT_KEY_EXP}"));
+        // Check if node is an input_node, if so we need to add the input node key expression
+        if is_input_node {
+            key_exps_to_subscribe_to
+                .push(format!("{base_key_exp}/input_node/outputs/{}", node.name));
         }
 
         // Create a subscriber for each of the parent nodes (Should only be 1, unless it is a joiner node)
@@ -747,10 +770,9 @@ impl PodProcessor {
             None,
             namespace_lookup,
         )?;
-        // Print out the packet
 
         // Create listener for pod_job
-        let target_key_exp = format!("group/{}/*/pod_job/{}/**", client.group, pod_job.hash);
+        let target_key_exp = format!("group/{}/success/pod_job/{}/**", client.group, pod_job.hash);
 
         // Create the subscriber
         let pod_job_subscriber = session
@@ -1036,7 +1058,6 @@ impl NodeProcessor for JoinerProcessor {
 
         // Check if we have all the other parents needed to compute the cartesian product
         if self.input_packet_cache.values().all(|v| !v.is_empty()) {
-            // Print we have all the parents
             // Get all the cached packets from other parents
             let other_parent_ids = self
                 .input_packet_cache

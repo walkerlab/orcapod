@@ -154,11 +154,11 @@ impl Agent {
             namespace_lookup.clone(),
             |pod_job: &PodJob| EventPayload::Request(pod_job.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {
-                println!("Processing pod job: {}", pod_job.hash);
                 let pod_run = agent
                     .orchestrator
                     .start(&inner_namespace_lookup, &pod_job)
                     .await?;
+
                 let pod_result = agent.orchestrator.get_result(&pod_run).await?;
                 //agent.orchestrator.delete(&pod_run).await?;
                 Ok(pod_result)

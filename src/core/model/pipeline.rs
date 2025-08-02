@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::uniffi::model::pipeline::{Kernel, Pipeline};
 use petgraph::Direction::Incoming;
 use serde::{Deserialize, Serialize};
@@ -24,5 +26,18 @@ impl Pipeline {
                 .neighbors_directed(idx, Incoming)
                 .map(move |parent_idx| &self.graph[parent_idx])
         })
+    }
+
+    /// Return a vec of `node_names` that takes in inputs based on the `input_spec`ec
+    pub(crate) fn get_input_nodes(&self) -> HashSet<&String> {
+        let mut input_nodes = HashSet::new();
+
+        self.input_spec.iter().for_each(|(_, node_uris)| {
+            for node_uri in node_uris {
+                input_nodes.insert(&node_uri.node_name);
+            }
+        });
+
+        input_nodes
     }
 }
