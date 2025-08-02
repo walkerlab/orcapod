@@ -1,35 +1,40 @@
 use crate::uniffi::{error::Result, model::packet::Packet};
 use itertools::Itertools as _;
-use std::{clone::Clone, collections::HashMap, iter::IntoIterator};
+use std::{
+    clone::Clone,
+    collections::HashMap,
+    iter::IntoIterator,
+    sync::{Arc, Mutex},
+};
 
 pub trait Operator {
-    fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
+    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
 }
 
 pub struct JoinOperator {
     parent_count: usize,
-    received_streams: HashMap<String, Vec<Packet>>,
+    received_streams: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
 }
 
 impl JoinOperator {
     pub fn new(parent_count: usize) -> Self {
         Self {
             parent_count,
-            received_streams: HashMap::new(),
+            received_streams: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
 #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
 impl Operator for JoinOperator {
-    fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
+    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
         let mut next_packets = vec![];
         for (stream, packet) in &packets {
-            if self.parent_count - usize::from(!self.received_streams.contains_key(stream))
-                == self.received_streams.len()
+            let mut received_streams = self.received_streams.lock()?;
+            if self.parent_count - usize::from(!received_streams.contains_key(stream))
+                == received_streams.len()
             {
-                let packets_to_multiplex = self
-                    .received_streams
+                let packets_to_multiplex = received_streams
                     .iter()
                     .filter_map(|(parent_stream, parent_packets)| {
                         (parent_stream != stream).then_some(parent_packets.clone())
@@ -45,7 +50,7 @@ impl Operator for JoinOperator {
                 );
                 next_packets.extend(current_packets);
             }
-            self.received_streams
+            received_streams
                 .entry(stream.clone())
                 .or_default()
                 .push(packet.clone());
@@ -65,7 +70,7 @@ impl MapOperator {
 }
 
 impl Operator for MapOperator {
-    fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
+    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
         Ok(packets
             .iter()
             .map(|(_, packet)| {

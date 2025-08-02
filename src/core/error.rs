@@ -6,9 +6,10 @@ use serde_json;
 use serde_yaml;
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
+    error::Error,
     fmt::{self, Formatter},
-    io,
-    path::{self},
+    io, path,
+    sync::PoisonError,
 };
 use tokio::task;
 
@@ -57,6 +58,16 @@ impl From<path::StripPrefixError> for OrcaError {
         Self {
             kind: Kind::PathPrefixError {
                 source: error,
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl<T> From<PoisonError<T>> for OrcaError {
+    fn from(_: PoisonError<T>) -> Self {
+        Self {
+            kind: Kind::PoisonError {
+                source: Box::<dyn Error + Send + Sync>::from("PoisonError"),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -129,6 +140,7 @@ impl fmt::Debug for OrcaError {
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
+            | Kind::PoisonError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
             | Kind::SerdeYamlError { backtrace, .. }
             | Kind::TokioTaskJoinError { backtrace, .. } => {
