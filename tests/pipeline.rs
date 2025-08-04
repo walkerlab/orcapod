@@ -7,7 +7,7 @@
 )]
 
 pub mod fixture;
-use fixture::pod_custom;
+use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom};
 use indoc::indoc;
 use orcapod::uniffi::{
     error::Result,
@@ -17,8 +17,6 @@ use orcapod::uniffi::{
     },
 };
 use std::collections::HashMap;
-
-use crate::fixture::NAMESPACE_LOOKUP_READ_ONLY;
 
 #[test]
 fn input_packet_checksum() -> Result<()> {

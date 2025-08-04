@@ -13,6 +13,9 @@
         "max_width=100"
     ],
     "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.runnables.extraTestBinaryArgs": [
+        "--nocapture"
+    ],
     "files.autoSave": "off",
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,

@@ -3,7 +3,7 @@ use crate::{
     uniffi::{
         error::{Result, selector},
         model::{packet::PathSet, pod::PodJob},
-        orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
+        orchestrator::{PodRunInfo, PodStatus, docker::LocalDockerOrchestrator},
     },
 };
 use bollard::{
@@ -175,7 +175,7 @@ impl LocalDockerOrchestrator {
     pub(crate) async fn list_containers(
         &self,
         filters: HashMap<String, Vec<String>>, // https://docs.rs/bollard/latest/bollard/container/struct.ListContainersOptions.html#structfield.filters
-    ) -> Result<impl Iterator<Item = (String, RunInfo)>> {
+    ) -> Result<impl Iterator<Item = (String, PodRunInfo)>> {
         Ok(join_all(
             self.api
                 .list_containers(Some(ListContainersOptions {
@@ -207,7 +207,7 @@ impl LocalDockerOrchestrator {
                     .timestamp();
             Some((
                 container_name,
-                RunInfo {
+                PodRunInfo {
                     image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
                     created: container_summary.created? as u64,
                     terminated: (terminated_timestamp > 0).then_some(terminated_timestamp as u64),
@@ -231,19 +231,19 @@ impl LocalDockerOrchestrator {
                         container_spec.state.as_ref()?.status.as_ref()?,
                         container_spec.state.as_ref()?.exit_code? as i16,
                     ) {
-                        (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
+                        (ContainerStateStatusEnum::RUNNING, _) => PodStatus::Running,
                         (
                             ContainerStateStatusEnum::EXITED
                             | ContainerStateStatusEnum::REMOVING
                             | ContainerStateStatusEnum::DEAD,
                             0,
-                        ) => Status::Completed,
+                        ) => PodStatus::Completed,
                         (
                             ContainerStateStatusEnum::EXITED
                             | ContainerStateStatusEnum::REMOVING
                             | ContainerStateStatusEnum::DEAD,
                             code,
-                        ) => Status::Failed(code),
+                        ) => PodStatus::Failed(code),
                         (_, code) => {
                             todo!(
                                 "Unhandled container state: {}, exit code: {code}.",

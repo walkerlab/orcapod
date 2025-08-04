@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 use uniffi;
 
 /// Path sets are named and represent an abstraction for the file(s) that represent some particular
@@ -51,3 +51,6 @@ pub enum PathSet {
     /// A series of BLOBs.
     Collection(Vec<Blob>),
 }
+
+/// A complete set of inputs to be provided to a computational unit.
+pub type Packet = HashMap<String, PathSet>;
