@@ -7,6 +7,7 @@
 )]
 
 pub mod fixture;
+use chrono::DateTime;
 use dot_parser::ast::Graph as DOTGraph;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style, str_to_vec};
 use glob::glob;
@@ -52,6 +53,14 @@ fn external_bollard() -> Result<()> {
         "Did not raise a bollard error."
     );
     Ok(())
+}
+
+#[test]
+fn external_chrono() {
+    assert!(
+        DateTime::parse_from_rfc3339("Whoops").is_err_and(contains_debug),
+        "Did not raise a chrono error."
+    );
 }
 
 #[test]
@@ -143,7 +152,10 @@ async fn external_tokio_task() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn internal_agent_communication_failure() -> Result<()> {
-    let client = AgentClient::new("error".into(), "host".into())?;
+    let client = AgentClient::new(
+        "error_internal-agent-communication-failure".into(),
+        "host".into(),
+    )?;
     assert!(
         client
             .watch("oh?no".into())
@@ -195,8 +207,8 @@ fn internal_key_missing() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn start_pod_jobs() -> Result<()> {
-    let client = AgentClient::new("error".into(), "host".into())?;
+async fn internal_start_pod_jobs() -> Result<()> {
+    let client = AgentClient::new("error_internal-start-pod-jobs".into(), "host".into())?;
     let mut pod_job = pod_job_custom(
         &pod_custom("alpine:3.14", &str_to_vec("sleep 5"), HashMap::new())?,
         HashMap::new(),

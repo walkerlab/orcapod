@@ -4,12 +4,13 @@ pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style, pod_result_style, pod_style};
 use indoc::indoc;
 use orcapod::{core::model::to_yaml, uniffi::error::Result};
+use pretty_assertions::assert_eq as pretty_assert_eq;
 
 #[test]
 fn hash_pod() -> Result<()> {
     assert_eq!(
         pod_style()?.hash,
-        "11fc4cb2cbfeb06cf37af60c966e67eebc992e23d41c831f59621fda0de51447",
+        "0e993f645fbb36f0635e2c9140975997cf4ca723d0b49cf4ee4963b76e6424d7",
         "Hash didn't match."
     );
     Ok(())
@@ -17,7 +18,7 @@ fn hash_pod() -> Result<()> {
 
 #[test]
 fn pod_to_yaml() -> Result<()> {
-    assert_eq!(
+    pretty_assert_eq!(
         to_yaml(&pod_style()?)?,
         indoc! {r"
             class: pod
@@ -34,8 +35,11 @@ fn pod_to_yaml() -> Result<()> {
                 match_pattern: .*\.t7
             output_dir: /output
             output_spec:
-              result:
-                path: ./result.jpeg
+              result1:
+                path: result1.jpeg
+                match_pattern: .*\.jpeg
+              result2:
+                path: result2.jpeg
                 match_pattern: .*\.jpeg
             source_commit_url: https://github.com/user/style-transfer/tree/1.0.0
             recommended_cpus: 0.25
@@ -51,7 +55,7 @@ fn pod_to_yaml() -> Result<()> {
 fn hash_pod_job() -> Result<()> {
     assert_eq!(
         pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "e2cd825491c1e05f3b4be6891031839a0bcdb6dc2072cd46c3a18227cce46171",
+        "ba1c4693f9186ccb1b6e63625085d8fd95552b28b7a60fe9b1b47f68a9ba8880",
         "Hash didn't match."
     );
     Ok(())
@@ -59,11 +63,11 @@ fn hash_pod_job() -> Result<()> {
 
 #[test]
 fn pod_job_to_yaml() -> Result<()> {
-    assert_eq!(
+    pretty_assert_eq!(
         to_yaml(&pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_job
-            pod: 11fc4cb2cbfeb06cf37af60c966e67eebc992e23d41c831f59621fda0de51447
+            pod: 0e993f645fbb36f0635e2c9140975997cf4ca723d0b49cf4ee4963b76e6424d7
             input_packet:
               base-input:
               - kind: File
@@ -100,7 +104,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "6eeb76503cb6215fc91e92966f0b46b80f57d27476a2a547fbf621cfbd5e5134",
+        "35abb8180349bed1f3ea8c0d84e98000ec3ace904624e94e678783891a7e710e",
         "Hash didn't match."
     );
     Ok(())
@@ -108,11 +112,24 @@ fn hash_pod_result() -> Result<()> {
 
 #[test]
 fn pod_result_to_yaml() -> Result<()> {
-    assert_eq!(
+    pretty_assert_eq!(
         to_yaml(&pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
         indoc! {"
             class: pod_result
-            pod_job: e2cd825491c1e05f3b4be6891031839a0bcdb6dc2072cd46c3a18227cce46171
+            pod_job: ba1c4693f9186ccb1b6e63625085d8fd95552b28b7a60fe9b1b47f68a9ba8880
+            output_packet:
+              result1:
+                kind: File
+                location:
+                  namespace: default
+                  path: output/result1.jpeg
+                checksum: 5898ca5bed67147680c6489056cbf2e90074bc51d8ca2645453742580ce74b7a
+              result2:
+                kind: File
+                location:
+                  namespace: default
+                  path: output/result2.jpeg
+                checksum: da71a1b5f8ca6ebd1edfd11df4c83078fc50d0e6a4c9b3d642ba397d81d8e883
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307

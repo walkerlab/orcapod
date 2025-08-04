@@ -1,9 +1,9 @@
 use crate::{
-    core::orchestrator::agent::{EventPayload, start_service},
+    core::orchestrator::agent::start_service,
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::pod::{PodJob, PodResult},
-        orchestrator::{Orchestrator, Status, docker::LocalDockerOrchestrator},
+        model::pod::PodJob,
+        orchestrator::{Orchestrator, PodStatus, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
 };
@@ -152,13 +152,15 @@ impl Agent {
             Arc::new(self.clone()),
             "request/pod_job/**".to_owned(),
             namespace_lookup.clone(),
-            |pod_job: &PodJob| EventPayload::Request(pod_job.clone()),
             async |agent, inner_namespace_lookup, _, pod_job| {
                 let pod_run = agent
                     .orchestrator
                     .start(&inner_namespace_lookup, &pod_job)
                     .await?;
-                let pod_result = agent.orchestrator.get_result(&pod_run).await?;
+                let pod_result = agent
+                    .orchestrator
+                    .get_result(&inner_namespace_lookup, &pod_run)
+                    .await?;
                 agent.orchestrator.delete(&pod_run).await?;
                 Ok(pod_result)
             },
@@ -168,8 +170,9 @@ impl Agent {
                         &format!(
                             "{}/pod_job/{}",
                             match &pod_result.status {
-                                Status::Completed => "success",
-                                Status::Running | Status::Failed(_) | Status::Unset => "failure",
+                                PodStatus::Completed => "success",
+                                PodStatus::Running | PodStatus::Failed(_) | PodStatus::Unset =>
+                                    "failure",
                             },
                             pod_result.pod_job.hash
                         ),
@@ -183,7 +186,6 @@ impl Agent {
                 Arc::new(self.clone()),
                 "success/pod_job/**".to_owned(),
                 namespace_lookup.clone(),
-                |pod_result: &PodResult| EventPayload::Success(pod_result.clone()),
                 {
                     let inner_store = Arc::clone(&store);
                     async move |_, _, _, pod_result| {
@@ -197,7 +199,6 @@ impl Agent {
                 Arc::new(self.clone()),
                 "failure/pod_job/**".to_owned(),
                 namespace_lookup.clone(),
-                |pod_result: &PodResult| EventPayload::Failure(pod_result.clone()),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;
                     Ok(())
