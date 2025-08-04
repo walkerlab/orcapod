@@ -1,61 +1,68 @@
-use crate::uniffi::{error::Result, model::packet::Packet};
-use itertools::Itertools as _;
-use std::{
-    clone::Clone,
-    collections::HashMap,
-    iter::IntoIterator,
-    sync::{Arc, Mutex},
+use crate::{
+    core::util::get,
+    uniffi::{error::Result, model::packet::Packet},
 };
+use itertools::Itertools as _;
+use std::{clone::Clone as _, collections::HashMap, iter::IntoIterator as _};
 
 pub trait Operator {
-    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
+    fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
 }
 
 pub struct JoinOperator {
     parent_count: usize,
-    received_streams: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
+    packet_cache: HashMap<String, Vec<Packet>>,
 }
 
 impl JoinOperator {
     pub fn new(parent_count: usize) -> Self {
         Self {
             parent_count,
-            received_streams: Arc::new(Mutex::new(HashMap::new())),
+            packet_cache: HashMap::new(),
         }
     }
 }
 
 #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
 impl Operator for JoinOperator {
-    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
-        let mut next_packets = vec![];
-        for (stream, packet) in &packets {
-            let mut received_streams = self.received_streams.lock()?;
-            if self.parent_count - usize::from(!received_streams.contains_key(stream))
-                == received_streams.len()
-            {
-                let packets_to_multiplex = received_streams
+    fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
+        let temp: Vec<Packet> = packets
+            .iter()
+            .flat_map(|(parent_id, packet)| {
+                self.packet_cache
+                    .entry(parent_id.clone())
+                    .or_insert_with(|| vec![packet.clone()])
+                    .push(packet.clone());
+
+                // If we still don't have at least 1 packet for each parent, skip computation
+                if self.packet_cache.len() < self.parent_count {
+                    return vec![];
+                }
+
+                // Build the factors for the cartesian product, silently missing key since it shouldn't be possible
+                let factors = self
+                    .packet_cache
                     .iter()
-                    .filter_map(|(parent_stream, parent_packets)| {
-                        (parent_stream != stream).then_some(parent_packets.clone())
+                    .filter_map(|(id, parent_packets)| {
+                        (id != parent_id).then_some(parent_packets.clone())
                     })
-                    .chain(vec![vec![packet.clone()]].into_iter());
-                let current_packets = packets_to_multiplex.multi_cartesian_product().map(
-                    |packet_combinations_to_merge| {
-                        packet_combinations_to_merge
-                            .into_iter()
-                            .flat_map(IntoIterator::into_iter)
-                            .collect::<HashMap<_, _>>()
-                    },
-                );
-                next_packets.extend(current_packets);
-            }
-            received_streams
-                .entry(stream.clone())
-                .or_default()
-                .push(packet.clone());
-        }
-        Ok(next_packets)
+                    .chain(vec![vec![packet.clone()]]);
+
+                factors
+                    .multi_cartesian_product()
+                    .map(|packets_to_combined| {
+                        packets_to_combined.into_iter().fold(
+                            HashMap::new(),
+                            |mut acc, new_packet| {
+                                acc.extend(new_packet);
+                                acc
+                            },
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        Ok(temp)
     }
 }
 
@@ -64,13 +71,13 @@ pub struct MapOperator {
 }
 
 impl MapOperator {
-    pub fn new(map: &HashMap<String, String>) -> Self {
-        Self { map: map.clone() }
+    pub const fn new(map: HashMap<String, String>) -> Self {
+        Self { map }
     }
 }
 
 impl Operator for MapOperator {
-    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
+    fn next(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
         Ok(packets
             .iter()
             .map(|(_, packet)| {

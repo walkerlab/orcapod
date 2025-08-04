@@ -25,7 +25,7 @@ fn make_packet_key(key_name: String, filepath: String) -> (String, PathSet) {
 
 #[test]
 fn join_once() -> Result<()> {
-    let operator = JoinOperator::new(2);
+    let mut operator = JoinOperator::new(2);
 
     let left_stream = (0..3)
         .map(|i| {
@@ -90,7 +90,7 @@ fn join_once() -> Result<()> {
 
 #[test]
 fn join_spotty() -> Result<()> {
-    let operator = JoinOperator::new(2);
+    let mut operator = JoinOperator::new(2);
 
     assert_eq!(
         operator.next(vec![(
@@ -171,7 +171,7 @@ fn join_spotty() -> Result<()> {
 
 #[test]
 fn map_once() -> Result<()> {
-    let operator = MapOperator::new(&HashMap::from([("key_old".into(), "key_new".into())]));
+    let mut operator = MapOperator::new(HashMap::from([("key_old".into(), "key_new".into())]));
 
     assert_eq!(
         operator.next(vec![(
