@@ -13,6 +13,9 @@
     "gitlens.showWhatsNewAfterUpgrades": false,
     "lldb.consoleMode": "evaluate",
     "rust-analyzer.check.command": "clippy",
+    "rust-analyzer.runnables.extraTestBinaryArgs": [
+        "--nocapture"
+    ],
     "rust-analyzer.rustfmt.extraArgs": [
         "--config",
         "max_width=100"

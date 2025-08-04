@@ -12,15 +12,15 @@ use orcapod::uniffi::{
     error::Result,
     model::{
         Annotation,
-        packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+        packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         pod::{Pod, PodJob, PodResult},
     },
-    orchestrator::Status,
+    orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{
     collections::HashMap,
-    fs::{self, File},
+    fs::{self, File, remove_dir_all},
     hash::RandomState,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -59,13 +59,22 @@ pub fn pod_style() -> Result<Pod> {
             ),
         ]),
         PathBuf::from("/output"),
-        HashMap::from([(
-            "result".to_owned(),
-            PathInfo {
-                path: PathBuf::from("./result.jpeg"),
-                match_pattern: r".*\.jpeg".to_owned(),
-            },
-        )]),
+        HashMap::from([
+            (
+                "result1".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("result1.jpeg"),
+                    match_pattern: r".*\.jpeg".to_owned(),
+                },
+            ),
+            (
+                "result2".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("result2.jpeg"),
+                    match_pattern: r".*\.jpeg".to_owned(),
+                },
+            ),
+        ]),
         "https://github.com/user/style-transfer/tree/1.0.0".to_owned(),
         0.25,        // 250 millicores as frac cores
         1_u64 << 30, // 1GiB in bytes
@@ -140,9 +149,10 @@ pub fn pod_result_style(
         }),
         pod_job_style(namespace_lookup)?.into(),
         "simple-endeavour".to_owned(),
-        Status::Completed,
+        PodStatus::Completed,
         1_737_922_307,
         1_737_925_907,
+        namespace_lookup,
     )
 }
 
@@ -167,7 +177,7 @@ pub fn pod_custom(
 
 pub fn pod_job_custom(
     pod: &Pod,
-    input_packet: HashMap<String, PathSet, RandomState>,
+    input_packet: Packet,
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(
@@ -292,6 +302,7 @@ impl TestDirs {
                             .arg(source.as_ref())
                             .arg(temp_dir.path())
                             .output()?;
+                        remove_dir_all(temp_dir.path().join("output"))?;
                     }
                     Ok((namespace.clone(), temp_dir))
                 })

@@ -5,15 +5,16 @@ use crate::{
             deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
             to_yaml,
         },
+        util::get,
         validation::validate_packet,
     },
     uniffi::{
-        error::Result,
+        error::{OrcaError, Result},
         model::{
             Annotation,
-            packet::{PathInfo, PathSet, URI},
+            packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         },
-        orchestrator::Status,
+        orchestrator::PodStatus,
     },
 };
 use derive_more::Display;
@@ -116,7 +117,7 @@ pub struct PodJob {
     pub pod: Arc<Pod>,
     /// Attached, external input packet.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_packet: HashMap<String, PathSet>,
+    pub input_packet: Packet,
     /// Attached, external output directory.
     pub output_dir: URI,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -139,7 +140,7 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_packet: HashMap<String, PathSet>,
+        mut input_packet: Packet,
         output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
@@ -193,10 +194,13 @@ pub struct PodResult {
     /// A pod job that originated the pod result.
     #[serde(deserialize_with = "deserialize_pod_job")]
     pub pod_job: Arc<PodJob>,
+    /// Produced, external output packet.
+    #[serde(serialize_with = "serialize_hashmap")]
+    pub output_packet: Packet,
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
-    pub status: Status,
+    pub status: PodStatus,
     /// Time in epoch when created in seconds.
     pub created: u64,
     /// Time in epoch when terminated in seconds.
@@ -213,14 +217,61 @@ impl PodResult {
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
         assigned_name: String,
-        status: Status,
+        status: PodStatus,
         created: u64,
         terminated: u64,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        let output_packet = pod_job
+            .pod
+            .output_spec
+            .iter()
+            .filter_map(|(packet_key, path_info)| {
+                let location = URI {
+                    namespace: pod_job.output_dir.namespace.clone(),
+                    path: pod_job.output_dir.path.join(&path_info.path),
+                };
+
+                let local_location = match get(namespace_lookup, &location.namespace) {
+                    Ok(root_path) => root_path.join(&location.path),
+                    Err(error) => return Some(Err(error)),
+                };
+
+                match local_location.try_exists() {
+                    Ok(false) => None,
+                    Err(error) => Some(Err(OrcaError::from(error))),
+                    Ok(true) => Some(Ok((
+                        packet_key,
+                        Blob {
+                            kind: if local_location.is_file() {
+                                BlobKind::File
+                            } else {
+                                BlobKind::Directory
+                            },
+                            location,
+                            checksum: String::new(),
+                        },
+                    ))),
+                }
+            })
+            .map(|result| {
+                let (packet_key, blob) = result?;
+                Ok((
+                    packet_key.clone(),
+                    PathSet::Unary(hash_blob(namespace_lookup, &blob)?),
+                ))
+            })
+            .collect::<Result<_>>()?;
+
+        if matches!(status, PodStatus::Completed) {
+            validate_packet("output".into(), &pod_job.pod.output_spec, &output_packet)?;
+        }
+
         let pod_result_no_hash = Self {
             annotation,
             hash: String::new(),
             pod_job,
+            output_packet,
             assigned_name,
             status,
             created,
