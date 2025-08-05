@@ -1,7 +1,7 @@
 use crate::uniffi::{error::Result, model::packet::Packet};
 use itertools::Itertools as _;
 use std::{clone::Clone as _, collections::HashMap, iter::IntoIterator as _, sync::Arc};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task::JoinSet};
 
 #[allow(async_fn_in_trait, reason = "We only use this internally")]
 pub trait Operator {
@@ -22,48 +22,72 @@ impl JoinOperator {
     }
 }
 
-#[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
+impl JoinOperator {
+    async fn process_packet(
+        parent_count: usize,
+        packet_cache: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
+        parent_id: String,
+        packet: Packet,
+    ) -> Result<Vec<Packet>> {
+        let mut packet_cache_lock = packet_cache.lock().await;
+        packet_cache_lock
+            .entry(parent_id.clone())
+            .or_insert_with(|| vec![packet.clone()])
+            .push(packet.clone());
+
+        // If we still don't have at least 1 packet for each parent, skip computation
+        if packet_cache_lock.len() < parent_count {
+            return Ok(vec![]);
+        }
+
+        // Build the factors for the cartesian product, silently missing key since it shouldn't be possible
+        let factors = packet_cache_lock
+            .iter()
+            .filter_map(|(id, parent_packets)| (*id != parent_id).then_some(parent_packets.clone()))
+            .chain(vec![vec![packet]])
+            .collect::<Vec<_>>();
+
+        // We don't need the lock after this point
+        drop(packet_cache_lock);
+
+        // Compute the cartesian product of the factors, this might take a while
+        Ok(factors
+            .into_iter()
+            .multi_cartesian_product()
+            .map(|packets_to_combined| {
+                packets_to_combined
+                    .into_iter()
+                    .fold(HashMap::new(), |mut acc, new_packet| {
+                        acc.extend(new_packet);
+                        acc
+                    })
+            })
+            .collect::<Vec<_>>())
+    }
+}
+
 impl Operator for JoinOperator {
     async fn process_packets(&mut self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
-        let mut new_packets = vec![];
+        let mut processing_task = JoinSet::new();
 
         for (parent_id, packet) in packets {
-            let mut packet_cache_lock = self.packet_cache.lock().await;
-            packet_cache_lock
-                .entry(parent_id.clone())
-                .or_insert_with(|| vec![packet.clone()])
-                .push(packet.clone());
-
-            // If we still don't have at least 1 packet for each parent, skip computation
-            if packet_cache_lock.len() < self.parent_count {
-                new_packets.extend(vec![]);
-                continue;
-            }
-
-            // Build the factors for the cartesian product, silently missing key since it shouldn't be possible
-            let factors = packet_cache_lock
-                .iter()
-                .filter_map(|(id, parent_packets)| {
-                    (*id != parent_id).then_some(parent_packets.clone())
-                })
-                .chain(vec![vec![packet]])
-                .collect::<Vec<_>>();
-
-            // We don't need the lock after this point
-            drop(packet_cache_lock);
-
-            // Compute the cartesian product of the factors, this might take a while
-            new_packets.extend(factors.into_iter().multi_cartesian_product().map(
-                |packets_to_combined| {
-                    packets_to_combined
-                        .into_iter()
-                        .fold(HashMap::new(), |mut acc, new_packet| {
-                            acc.extend(new_packet);
-                            acc
-                        })
-                },
+            processing_task.spawn(Self::process_packet(
+                self.parent_count,
+                Arc::clone(&self.packet_cache),
+                parent_id,
+                packet,
             ));
         }
+
+        let mut new_packets = vec![];
+        while let Some(result) = processing_task.join_next().await {
+            match result {
+                Ok(Ok(products)) => new_packets.extend(products),
+                Ok(Err(err)) => return Err(err),
+                Err(err) => return Err(err.into()),
+            }
+        }
+
         Ok(new_packets)
     }
 }
