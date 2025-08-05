@@ -257,9 +257,9 @@ impl PodResult {
             .output_spec
             .iter()
             .map(|(packet_key, path_info)| {
-                let full_path = get(namespace_lookup, &pod_job.output_dir.namespace)?
-                    .join(&pod_job.output_dir.path)
-                    .join(&path_info.path);
+                let rel_path = &pod_job.output_dir.path.join(&path_info.path);
+                let full_path =
+                    get(namespace_lookup, &pod_job.output_dir.namespace)?.join(rel_path);
 
                 // Check if it exists
                 if !full_path.exists() {
@@ -277,12 +277,12 @@ impl PodResult {
                 let path_set = if full_path.is_file() {
                     PathSet::Unary(Blob::new(
                         BlobKind::File,
-                        URI::new(pod_job.output_dir.namespace.clone(), full_path),
+                        URI::new(pod_job.output_dir.namespace.clone(), rel_path.into()),
                     ))
                 } else if full_path.is_dir() {
                     PathSet::Unary(Blob::new(
                         BlobKind::Directory,
-                        URI::new(pod_job.output_dir.namespace.clone(), full_path),
+                        URI::new(pod_job.output_dir.namespace.clone(), rel_path.into()),
                     ))
                 } else {
                     return Err(OrcaError {

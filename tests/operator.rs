@@ -3,6 +3,7 @@
     clippy::panic_in_result_fn,
     clippy::unwrap_used,
     clippy::panic,
+    clippy::indexing_slicing,
     reason = "OK in tests."
 )]
 pub mod fixture;
@@ -240,7 +241,7 @@ async fn combine_txt_pod_job() -> Result<()> {
         "test_node".into(),
         combine_txt_pod("test")?.into(),
         "default".into(),
-        namespace_lookup.into(),
+        namespace_lookup.clone().into(),
         agent_client_clone,
     );
 
@@ -270,7 +271,9 @@ async fn combine_txt_pod_job() -> Result<()> {
     // Verify that the output file has been created and contains the expected content
     match output_packets.first().unwrap().get("output") {
         Some(PathSet::Unary(Blob { location, .. })) => {
-            let file_content = fs::read_to_string(&location.path).await?;
+            let file_content =
+                fs::read_to_string(namespace_lookup[&location.namespace].join(&location.path))
+                    .await?;
             pretty_assert_eq!(file_content, "black\ncat\n");
         }
         _ => panic!("Output packet does not contain the expected output blob."),
