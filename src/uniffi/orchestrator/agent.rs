@@ -141,7 +141,6 @@ impl Agent {
     /// # Errors
     ///
     /// Will stop and return an error if encounters an error while processing any pod job request.
-    #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
     pub async fn start(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
@@ -168,7 +167,7 @@ impl Agent {
                 client
                     .publish(
                         &format!(
-                            "pod_job/{}/{}",
+                            "pod_job/{}/status/{}",
                             pod_result.pod_job.hash,
                             match &pod_result.status {
                                 PodResultStatus::Completed => "success",
@@ -183,20 +182,7 @@ impl Agent {
         if let Some(store) = available_store {
             services.spawn(start_service(
                 Arc::new(self.clone()),
-                "pod_job/success/**".to_owned(),
-                namespace_lookup.clone(),
-                {
-                    let inner_store = Arc::clone(&store);
-                    async move |_, _, _, pod_result| {
-                        inner_store.save_pod_result(&pod_result)?;
-                        Ok(())
-                    }
-                },
-                async |_, ()| Ok(()),
-            ));
-            services.spawn(start_service(
-                Arc::new(self.clone()),
-                "pod_job/failure/**".to_owned(),
+                "pod_job/*/status/**".to_owned(),
                 namespace_lookup.clone(),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;

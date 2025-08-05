@@ -79,7 +79,7 @@ impl PodOperator {
         )?;
 
         // Create listener for pod_job
-        let target_key_exp = format!("group/{}/pod_job/{}/**", client.group, pod_job.hash);
+        let target_key_exp = format!("group/{}/pod_job/{}/status/**", client.group, pod_job.hash);
         // Create the subscriber
         let pod_job_subscriber = client
             .session

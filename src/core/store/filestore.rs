@@ -16,7 +16,7 @@ use heck::ToSnakeCase as _;
 use regex::Regex;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_yaml;
-use snafu::{OptionExt as _, ResultExt};
+use snafu::{OptionExt as _, ResultExt as _};
 use std::{
     fmt, fs,
     path::{Path, PathBuf},
