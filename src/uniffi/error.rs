@@ -18,6 +18,8 @@ use std::{
 };
 use tokio::task;
 use uniffi;
+
+use crate::uniffi::orchestrator::PodStatus;
 /// Shorthand for a Result that returns an [`OrcaError`].
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -49,6 +51,11 @@ pub(crate) enum Kind {
     InvalidFilepath {
         path: PathBuf,
         source: io::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Failed to get items at idx {idx}."))]
+    InvalidIndex {
+        idx: usize,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display(
@@ -86,6 +93,34 @@ pub(crate) enum Kind {
     NoRemainingServices { backtrace: Option<Backtrace> },
     #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
     NoTagFoundInContainerAltImage {
+        path: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Pod job {hash} failed to process with reason: {reason}."))]
+    PodJobProcessingError {
+        hash: String,
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
+    ))]
+    PodJobOutputNotFound {
+        pod_job_hash: String,
+        packet_key: String,
+        path: Box<PathBuf>,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Failed to convert status {status:?} to PodResultStatus with reason: {reason}."
+    ))]
+    StatusConversionFailure {
+        status: PodStatus,
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Unexpected path type: {path:?}. Only support files and directories."))]
+    UnexpectedPathType {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },

@@ -13,9 +13,8 @@ use orcapod::uniffi::{
     model::{
         Annotation,
         packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
-        pod::{Pod, PodJob, PodResult},
+        pod::{Pod, PodJob, PodResult, PodResultStatus},
     },
-    orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{
@@ -149,7 +148,7 @@ pub fn pod_result_style(
         }),
         pod_job_style(namespace_lookup)?.into(),
         "simple-endeavour".to_owned(),
-        PodStatus::Completed,
+        PodResultStatus::Completed,
         1_737_922_307,
         1_737_925_907,
         namespace_lookup,
@@ -278,6 +277,45 @@ pub fn pull_image(reference: &str) -> Result<()> {
         .stdout(Stdio::inherit())
         .output()?;
     Ok(())
+}
+
+// Pipeline Fixture
+pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
+    Pod::new(
+        Some(Annotation {
+            name: pod_name.to_owned(),
+            description: "Pod append it's own name to the end of the file.".to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+        "alpine:3.14".to_owned(),
+        vec![
+            "sh".into(),
+            "-c".into(),
+            format!("cat input/input_1.txt input/input_2.txt > /output/output.txt"),
+        ],
+        HashMap::from([
+            (
+                "input_1".to_owned(),
+                PathInfo::new("/input/input_1.txt".into(), r".*\.txt".into()),
+            ),
+            (
+                "input_2".into(),
+                PathInfo::new("/input/input_2.txt".into(), r".*\.txt".into()),
+            ),
+        ]),
+        PathBuf::from("/output"),
+        HashMap::from([(
+            "output".to_owned(),
+            PathInfo {
+                path: PathBuf::from("output.txt"),
+                match_pattern: r".*\.txt".to_owned(),
+            },
+        )]),
+        "N/A".to_owned(),
+        0.25,          // 250 millicores as frac cores
+        128_u64 << 20, // 128MB in bytes
+        None,
+    )
 }
 
 // --- util ---

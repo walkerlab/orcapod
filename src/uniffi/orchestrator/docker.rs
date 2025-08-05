@@ -231,7 +231,7 @@ impl Orchestrator for LocalDockerOrchestrator {
             None,
             Arc::clone(&pod_run.pod_job),
             pod_run.assigned_name.clone(),
-            result_info.status,
+            result_info.status.try_into()?,
             result_info.created,
             result_info
                 .terminated

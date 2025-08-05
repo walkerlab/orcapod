@@ -2,8 +2,8 @@ use crate::{
     core::orchestrator::agent::start_service,
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::pod::PodJob,
-        orchestrator::{Orchestrator, PodStatus, docker::LocalDockerOrchestrator},
+        model::pod::{PodJob, PodResultStatus},
+        orchestrator::{Orchestrator, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
 };
@@ -168,13 +168,12 @@ impl Agent {
                 client
                     .publish(
                         &format!(
-                            "{}/pod_job/{}",
+                            "pod_job/{}/{}",
+                            pod_result.pod_job.hash,
                             match &pod_result.status {
-                                PodStatus::Completed => "success",
-                                PodStatus::Running | PodStatus::Failed(_) | PodStatus::Unset =>
-                                    "failure",
+                                PodResultStatus::Completed => "success",
+                                PodResultStatus::Failed(_) | PodResultStatus::Unset => "failure",
                             },
-                            pod_result.pod_job.hash
                         ),
                         &pod_result,
                     )
@@ -184,7 +183,7 @@ impl Agent {
         if let Some(store) = available_store {
             services.spawn(start_service(
                 Arc::new(self.clone()),
-                "success/pod_job/**".to_owned(),
+                "pod_job/success/**".to_owned(),
                 namespace_lookup.clone(),
                 {
                     let inner_store = Arc::clone(&store);
@@ -197,7 +196,7 @@ impl Agent {
             ));
             services.spawn(start_service(
                 Arc::new(self.clone()),
-                "failure/pod_job/**".to_owned(),
+                "pod_job/failure/**".to_owned(),
                 namespace_lookup.clone(),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;

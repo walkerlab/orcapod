@@ -8,7 +8,10 @@ use fixture::{
 use futures_util::future::join_all;
 use orcapod::uniffi::{
     error::{OrcaError, Result},
-    model::packet::{Packet, URI},
+    model::{
+        packet::{Packet, URI},
+        pod::PodResultStatus,
+    },
     orchestrator::{
         ImageKind, Orchestrator as _, PodRun, PodStatus, docker::LocalDockerOrchestrator,
     },
@@ -151,7 +154,7 @@ async fn remote_container_image_failed() -> Result<()> {
     orch.delete(&pod_run).await?;
 
     assert!(
-        matches!(pod_result.status, PodStatus::Failed(1)),
+        matches!(pod_result.status, PodResultStatus::Failed(1)),
         "Expected to fail but did not."
     );
     Ok(())
@@ -183,7 +186,7 @@ async fn verify_pod_result_not_running() -> Result<()> {
     let statuses = results
         .into_iter()
         .map(|result| Ok(result?.status))
-        .filter(|status| !matches!(status, Ok(PodStatus::Completed)))
+        .filter(|status| !matches!(status, Ok(PodResultStatus::Completed)))
         .collect::<Result<Vec<_>>>()?;
 
     println!("statuses: {statuses:?}");
