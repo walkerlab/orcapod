@@ -1,7 +1,8 @@
-#![expect(missing_docs, reason = "OK in tests.")]
+#![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 use orcapod::{
     core::operator::{JoinOperator, MapOperator, Operator as _},
+    uniffi::error::Result,
     uniffi::model::packet::{Blob, BlobKind, Packet, PathSet, URI},
 };
 use std::{collections::HashMap, path::PathBuf};
@@ -30,8 +31,8 @@ fn assert_contains_packet(packets_to_check: &Vec<Packet>, vec_to_check: &[Packet
     }
 }
 
-#[test]
-fn join_once() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn join_once() -> Result<()> {
     let mut operator = JoinOperator::new(2);
 
     let left_stream = (0..3)
@@ -88,33 +89,34 @@ fn join_once() {
                 make_packet_key("style".into(), "right/style1.t7".into()),
             ]),
         ],
-        &operator.next(input_streams).collect::<Vec<_>>(),
+        &operator.process_packets(input_streams).await?,
     );
+    Ok(())
 }
 
-#[test]
-fn join_spotty() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn join_spotty() -> Result<()> {
     let mut operator = JoinOperator::new(2);
 
     assert!(
         operator
-            .next(vec![(
+            .process_packets(vec![(
                 "right".into(),
                 Packet::from([make_packet_key("style".into(), "right/style0.t7".into(),)]),
             )])
-            .next()
-            .is_none(),
+            .await?
+            .is_empty(),
         "Unexpected streams."
     );
 
     assert!(
         operator
-            .next(vec![(
+            .process_packets(vec![(
                 "right".into(),
                 Packet::from([make_packet_key("style".into(), "right/style1.t7".into(),)]),
             )])
-            .next()
-            .is_none(),
+            .await?
+            .is_empty(),
         "Unexpected streams."
     );
 
@@ -130,14 +132,14 @@ fn join_spotty() {
             ]),
         ],
         &operator
-            .next(vec![(
+            .process_packets(vec![(
                 "left".into(),
                 Packet::from([make_packet_key(
                     "subject".into(),
                     "left/subject0.png".into(),
                 )]),
             )])
-            .collect::<Vec<_>>(),
+            .await?,
     );
 
     assert_contains_packet(
@@ -160,7 +162,7 @@ fn join_spotty() {
             ]),
         ],
         &operator
-            .next(
+            .process_packets(
                 (1..3)
                     .map(|i| {
                         (
@@ -173,12 +175,13 @@ fn join_spotty() {
                     })
                     .collect::<Vec<_>>(),
             )
-            .collect::<Vec<_>>(),
+            .await?,
     );
+    Ok(())
 }
 
-#[test]
-fn map_once() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn map_once() -> Result<()> {
     let mut operator = MapOperator::new(HashMap::from([("key_old".into(), "key_new".into())]));
 
     assert_contains_packet(
@@ -187,13 +190,14 @@ fn map_once() {
             make_packet_key("subject".into(), "some/subject.txt".into()),
         ])],
         &operator
-            .next(vec![(
+            .process_packets(vec![(
                 "parent".into(),
                 Packet::from([
                     make_packet_key("key_old".into(), "some/key.txt".into()),
                     make_packet_key("subject".into(), "some/subject.txt".into()),
                 ]),
             )])
-            .collect::<Vec<_>>(),
+            .await?,
     );
+    Ok(())
 }
