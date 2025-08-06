@@ -1,4 +1,3 @@
-use crate::{core::crypto::hash_blob, uniffi::error::Result};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use uniffi;
@@ -14,16 +13,7 @@ pub struct PathInfo {
 }
 
 #[uniffi::export]
-impl PathInfo {
-    #[uniffi::constructor]
-    /// Create a new `PathInfo` with the given path and match pattern.
-    pub const fn new(path: PathBuf, match_pattern: String) -> Self {
-        Self {
-            path,
-            match_pattern,
-        }
-    }
-}
+impl PathInfo {}
 
 /// File or directory options for BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -45,13 +35,7 @@ pub struct URI {
 }
 
 #[uniffi::export]
-impl URI {
-    #[uniffi::constructor]
-    /// Create a new URI with the given namespace and path.
-    pub const fn new(namespace: String, path: PathBuf) -> Self {
-        Self { namespace, path }
-    }
-}
+impl URI {}
 
 /// BLOB with metadata.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
@@ -65,17 +49,7 @@ pub struct Blob {
 }
 
 #[uniffi::export]
-impl Blob {
-    /// Create a new BLOB with the given kind, location, and checksum.
-    #[uniffi::constructor]
-    pub const fn new(kind: BlobKind, location: URI) -> Self {
-        Self {
-            kind,
-            location,
-            checksum: String::new(),
-        }
-    }
-}
+impl Blob {}
 
 /// A single BLOB or a collection of BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -85,20 +59,6 @@ pub enum PathSet {
     Unary(Blob),
     /// A series of BLOBs.
     Collection(Vec<Blob>),
-}
-
-impl PathSet {
-    pub(crate) fn hash_content(&self, namespace_lookup: &HashMap<String, PathBuf>) -> Result<Self> {
-        match self {
-            Self::Unary(blob) => Ok(Self::Unary(hash_blob(namespace_lookup, blob)?)),
-            Self::Collection(blobs) => Ok(Self::Collection(
-                blobs
-                    .iter()
-                    .map(|blob| hash_blob(namespace_lookup, blob))
-                    .collect::<Result<_>>()?,
-            )),
-        }
-    }
 }
 
 /// A complete set of inputs to be provided to a computational unit.

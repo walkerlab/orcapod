@@ -147,7 +147,7 @@ impl fmt::Debug for OrcaError {
             | Kind::NoRemainingServices { backtrace, .. }
             | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
             | Kind::PodJobProcessingError { backtrace, .. }
-            | Kind::PodJobOutputNotFound { backtrace, .. }
+            | Kind::FailedToGetPodJobOutput { backtrace, .. }
             | Kind::StatusConversionFailure { backtrace, .. }
             | Kind::UnexpectedPathType { backtrace, .. }
             | Kind::BollardError { backtrace, .. }

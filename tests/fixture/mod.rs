@@ -13,8 +13,9 @@ use orcapod::uniffi::{
     model::{
         Annotation,
         packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
-        pod::{Pod, PodJob, PodResult, PodResultStatus},
+        pod::{Pod, PodJob, PodResult},
     },
+    orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{
@@ -148,7 +149,7 @@ pub fn pod_result_style(
         }),
         pod_job_style(namespace_lookup)?.into(),
         "simple-endeavour".to_owned(),
-        PodResultStatus::Completed,
+        PodStatus::Completed,
         1_737_922_307,
         1_737_925_907,
         namespace_lookup,
@@ -296,11 +297,17 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
         HashMap::from([
             (
                 "input_1".to_owned(),
-                PathInfo::new("/input/input_1.txt".into(), r".*\.txt".into()),
+                PathInfo {
+                    path: PathBuf::from("/input/input_1.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
             ),
             (
                 "input_2".into(),
-                PathInfo::new("/input/input_2.txt".into(), r".*\.txt".into()),
+                PathInfo {
+                    path: PathBuf::from("/input/input_2.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
             ),
         ]),
         PathBuf::from("/output"),

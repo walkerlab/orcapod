@@ -105,10 +105,11 @@ pub(crate) enum Kind {
     #[snafu(display(
         "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
     ))]
-    PodJobOutputNotFound {
+    FailedToGetPodJobOutput {
         pod_job_hash: String,
         packet_key: String,
         path: Box<PathBuf>,
+        io_error: Box<io::Error>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display(

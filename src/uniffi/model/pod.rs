@@ -20,7 +20,7 @@ use crate::{
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, io, path::PathBuf, sync::Arc};
 use uniffi;
 
 /// A reusable, containerized computational unit.
@@ -182,37 +182,6 @@ impl PodJob {
         })
     }
 }
-
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-/// Status of a pod result.
-pub enum PodResultStatus {
-    /// Pod Job completed successfully.
-    Completed,
-    /// Pod Job failed with an exit code.
-    Failed(i16),
-    /// Mainly used for default values, not a valid status.
-    #[default]
-    Unset,
-}
-
-impl TryFrom<PodStatus> for PodResultStatus {
-    type Error = OrcaError;
-
-    fn try_from(status: PodStatus) -> Result<Self, Self::Error> {
-        match status {
-            PodStatus::Completed => Ok(Self::Completed),
-            PodStatus::Failed(code) => Ok(Self::Failed(code)),
-            PodStatus::Running | PodStatus::Unset => Err(OrcaError {
-                kind: Kind::StatusConversionFailure {
-                    status,
-                    reason: "Cannot convert Running or Unset status to PodResultStatus".to_owned(),
-                    backtrace: Some(snafu::Backtrace::capture()),
-                },
-            }),
-        }
-    }
-}
-
 /// Result from a compute job run.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct PodResult {
@@ -230,7 +199,7 @@ pub struct PodResult {
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
-    pub status: PodResultStatus,
+    pub status: PodStatus,
     /// Time in epoch when created in seconds.
     pub created: u64,
     /// Time in epoch when terminated in seconds.
@@ -247,7 +216,7 @@ impl PodResult {
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
         assigned_name: String,
-        status: PodResultStatus,
+        status: PodStatus,
         created: u64,
         terminated: u64,
         namespace_lookup: &HashMap<String, PathBuf>,
@@ -261,30 +230,40 @@ impl PodResult {
                 let full_path =
                     get(namespace_lookup, &pod_job.output_dir.namespace)?.join(rel_path);
 
-                // Check if it exists
-                if !full_path.exists() {
-                    return Err(OrcaError {
-                        kind: Kind::PodJobOutputNotFound {
-                            pod_job_hash: pod_job.hash.clone(),
-                            packet_key: packet_key.clone(),
-                            path: full_path.into(),
-                            backtrace: Some(snafu::Backtrace::capture()),
-                        },
-                    });
+                // Check if exists and any permissions issues
+                match full_path.try_exists() {
+                    Ok(true) => (),
+                    Ok(false) => {
+                        return Err(OrcaError {
+                            kind: Kind::FailedToGetPodJobOutput {
+                                pod_job_hash: pod_job.hash.clone(),
+                                packet_key: packet_key.clone(),
+                                path: full_path.into(),
+                                io_error: Box::new(io::ErrorKind::NotFound.into()),
+                                backtrace: Some(snafu::Backtrace::capture()),
+                            },
+                        });
+                    }
+                    Err(err) => {
+                        return Err(OrcaError {
+                            kind: Kind::FailedToGetPodJobOutput {
+                                pod_job_hash: pod_job.hash.clone(),
+                                packet_key: packet_key.clone(),
+                                path: full_path.into(),
+                                io_error: Box::new(err),
+                                backtrace: Some(snafu::Backtrace::capture()),
+                            },
+                        });
+                    }
                 }
 
-                // Check the type
-                let path_set = if full_path.is_file() {
-                    PathSet::Unary(Blob::new(
-                        BlobKind::File,
-                        URI::new(pod_job.output_dir.namespace.clone(), rel_path.into()),
-                    ))
+                // Determine if file or directory and handle other cases such as socket, named_pipe, etc.
+                let blob_kind = if full_path.is_file() {
+                    BlobKind::File
                 } else if full_path.is_dir() {
-                    PathSet::Unary(Blob::new(
-                        BlobKind::Directory,
-                        URI::new(pod_job.output_dir.namespace.clone(), rel_path.into()),
-                    ))
+                    BlobKind::Directory
                 } else {
+                    // Will fail on socket, named pipe, etc.
                     return Err(OrcaError {
                         kind: Kind::UnexpectedPathType {
                             path: full_path,
@@ -293,14 +272,24 @@ impl PodResult {
                     });
                 };
 
-                let hashed_path_set = path_set.hash_content(namespace_lookup)?;
-
-                // Return the key and pathset
-                Ok((packet_key.clone(), hashed_path_set))
+                Ok((
+                    packet_key.clone(),
+                    PathSet::Unary(hash_blob(
+                        namespace_lookup,
+                        &Blob {
+                            kind: blob_kind,
+                            location: URI {
+                                namespace: pod_job.output_dir.namespace.clone(),
+                                path: rel_path.into(),
+                            },
+                            ..Default::default()
+                        },
+                    )?),
+                ))
             })
             .collect::<Result<HashMap<_, _>>>()?;
 
-        if matches!(status, PodResultStatus::Completed) {
+        if matches!(status, PodStatus::Completed) {
             validate_packet("output".into(), &pod_job.pod.output_spec, &output_packet)?;
         }
 

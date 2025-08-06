@@ -2,8 +2,8 @@ use crate::{
     core::orchestrator::agent::start_service,
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::pod::{PodJob, PodResultStatus},
-        orchestrator::{Orchestrator, docker::LocalDockerOrchestrator},
+        model::pod::PodJob,
+        orchestrator::{Orchestrator, PodStatus, docker::LocalDockerOrchestrator},
         store::{Store as _, filestore::LocalFileStore},
     },
 };
@@ -170,8 +170,8 @@ impl Agent {
                             "pod_job/{}/status/{}",
                             pod_result.pod_job.hash,
                             match &pod_result.status {
-                                PodResultStatus::Completed => "success",
-                                PodResultStatus::Failed(_) | PodResultStatus::Unset => "failure",
+                                PodStatus::Completed => "success",
+                                _ => "failure",
                             },
                         ),
                         &pod_result,
