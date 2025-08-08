@@ -10,7 +10,11 @@
 use names::{Generator, Name};
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, Blob, BlobKind, PathInfo, PathSet, Pod, PodJob, PodResult, URI},
+    model::{
+        Annotation,
+        packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+        pod::{Pod, PodJob, PodResult},
+    },
     orchestrator::Status,
     store::{ModelID, ModelInfo, Store},
 };
@@ -37,7 +41,7 @@ pub fn pod_style() -> Result<Pod> {
             version: "1.0.0".to_owned(),
         }),
         "example.server.com/user/style-transfer:1.0.0".to_owned(),
-        "python /run.py".to_owned(),
+        str_to_vec("python /run.py"),
         HashMap::from([
             (
                 "extra-style".to_owned(),
@@ -142,27 +146,34 @@ pub fn pod_result_style(
     )
 }
 
-pub fn pod_job_custom(
+pub fn pod_custom(
     image_reference: &str,
-    command: &str,
+    command: &[String],
+    input_spec: HashMap<String, PathInfo, RandomState>,
+) -> Result<Pod> {
+    Pod::new(
+        None,
+        image_reference.into(),
+        command.into(),
+        input_spec,
+        PathBuf::from("/tmp/output"),
+        HashMap::new(),
+        "https://github.com/place/holder".to_owned(),
+        0.1,          // 100 millicores as frac cores
+        50_u64 << 20, // 10 MiB in bytes
+        None,
+    )
+}
+
+pub fn pod_job_custom(
+    pod: &Pod,
+    input_packet: HashMap<String, PathSet, RandomState>,
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(
         None,
-        Pod::new(
-            None,
-            image_reference.into(),
-            command.into(),
-            HashMap::new(),
-            PathBuf::from("/tmp/output"),
-            HashMap::new(),
-            "https://github.com/place/holder".to_owned(),
-            0.1,          // 100 millicores as frac cores
-            50_u64 << 20, // 10 MiB in bytes
-            None,
-        )?
-        .into(),
-        HashMap::new(),
+        Arc::new(pod.clone()),
+        input_packet,
         URI {
             namespace: "default".to_owned(),
             path: PathBuf::from("."),
@@ -184,13 +195,22 @@ pub fn pod_jobs_stresser(
         .map(|i| {
             if i <= success_count {
                 return Ok(pod_job_custom(
-                    image_reference,
-                    &format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief"),
+                    &pod_custom(
+                        image_reference,
+                        &str_to_vec(&format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief")),
+                        HashMap::new()
+                    )?,
+                    HashMap::new(),
                     &NAMESPACE_LOOKUP_READ_ONLY,
                 )?
                 .into());
             }
-            Ok(pod_job_custom(image_reference, "sleep crash", &NAMESPACE_LOOKUP_READ_ONLY)?.into())
+            Ok(pod_job_custom(
+                &pod_custom(image_reference, &str_to_vec("sleep crash"), HashMap::new())?,
+                HashMap::new(),
+                &NAMESPACE_LOOKUP_READ_ONLY,
+            )?
+            .into())
         })
         .collect::<Result<Vec<_>>>()
 }
@@ -251,6 +271,10 @@ pub fn pull_image(reference: &str) -> Result<()> {
 }
 
 // --- util ---
+
+pub fn str_to_vec(v: &str) -> Vec<String> {
+    v.split_whitespace().map(String::from).collect()
+}
 
 pub struct TestDirs(pub HashMap<String, TempDir>);
 

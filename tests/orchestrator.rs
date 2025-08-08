@@ -2,13 +2,13 @@
 
 pub mod fixture;
 use fixture::{
-    NAMESPACE_LOOKUP_READ_ONLY, TestContainerImage, TestDirs, container_image_style,
-    pod_job_custom, pod_job_style, pod_jobs_stresser,
+    NAMESPACE_LOOKUP_READ_ONLY, TestContainerImage, TestDirs, container_image_style, pod_custom,
+    pod_job_custom, pod_job_style, pod_jobs_stresser, str_to_vec,
 };
 use futures_util::future::join_all;
 use orcapod::uniffi::{
     error::{OrcaError, Result},
-    model::URI,
+    model::packet::URI,
     orchestrator::{ImageKind, Orchestrator as _, PodRun, Status, docker::LocalDockerOrchestrator},
 };
 use std::{collections::HashMap, path::PathBuf};
@@ -18,7 +18,7 @@ where
     T: Fn(
         &HashMap<String, PathBuf>,
         &LocalDockerOrchestrator,
-    ) -> Result<(PodRun, String, Option<TestContainerImage>)>,
+    ) -> Result<(PodRun, Vec<String>, Option<TestContainerImage>)>,
 {
     let test_dirs = TestDirs::new(&HashMap::from([(
         "default".to_owned(),
@@ -113,7 +113,11 @@ fn offline_container_image_basic() -> Result<()> {
 #[test]
 fn remote_container_image_basic() -> Result<()> {
     basic_test(|namespace_lookup, orchestrator| {
-        let pod_job = pod_job_custom("alpine:3.14", "sleep 5", namespace_lookup)?;
+        let pod_job = pod_job_custom(
+            &pod_custom("alpine:3.14", &str_to_vec("sleep 5"), HashMap::new())?,
+            HashMap::new(),
+            namespace_lookup,
+        )?;
         Ok((
             orchestrator.start_blocking(namespace_lookup, &pod_job)?,
             pod_job.pod.command.clone(),
@@ -125,7 +129,11 @@ fn remote_container_image_basic() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn remote_container_image_failed() -> Result<()> {
     let orch = LocalDockerOrchestrator::new()?;
-    let pod_job = pod_job_custom("alpine:3.14", "sleep crash", &NAMESPACE_LOOKUP_READ_ONLY)?;
+    let pod_job = pod_job_custom(
+        &pod_custom("alpine:3.14", &str_to_vec("sleep crash"), HashMap::new())?,
+        HashMap::new(),
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    )?;
     let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job).await?;
     let pod_result = orch.get_result(&pod_run).await?;
     orch.delete(&pod_run).await?;

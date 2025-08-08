@@ -1,6 +1,9 @@
 use crate::uniffi::{
     error::Result,
-    model::{PodJob, PodResult, URI},
+    model::{
+        packet::URI,
+        pod::{PodJob, PodResult},
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
@@ -39,7 +42,7 @@ pub struct RunInfo {
     /// Environment variables set in environment.
     pub env_vars: HashMap<String, String>,
     /// Command used to start run.
-    pub command: String,
+    pub command: Vec<String>,
     /// Current run status.
     pub status: Status,
     /// Mounted volume binds to the environment.
