@@ -10,13 +10,16 @@ RUN \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && \
     apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y && \
-    usermod -aG docker root && \
-    apt-get clean
+    usermod -aG docker root
+
+RUN apt-get install software-properties-common -y && \
+    apt-add-repository ppa:git-core/ppa && \
+    apt-get install git -y
 
 RUN \
     # dev setup
     apt update && \
-    apt-get install build-essential sudo jq git bash-completion graphviz rsync -y && \
+    apt-get install build-essential sudo jq bash-completion graphviz rsync software-properties-common -y && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /root/.bashrc && \
     echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /root/.bashrc && \
