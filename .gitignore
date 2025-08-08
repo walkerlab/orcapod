@@ -6,3 +6,4 @@ lcov.info
 *.tar.gz
 *.dot
 tests/.tmp
+*.pyc

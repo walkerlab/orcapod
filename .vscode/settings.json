@@ -1,27 +1,31 @@
 {
     "editor.formatOnPaste": false,
     "editor.formatOnSave": true,
-    "files.insertFinalNewline": true,
     "editor.rulers": [
         100
     ],
+    "files.autoSave": "off",
+    "files.insertFinalNewline": true,
     "[markdown]": {
         "editor.defaultFormatter": null
     },
-    "rust-analyzer.rustfmt.extraArgs": [
-        "--config",
-        "max_width=100"
-    ],
+    "gitlens.showWelcomeOnInstall": false,
+    "gitlens.showWhatsNewAfterUpgrades": false,
+    "lldb.consoleMode": "evaluate",
     "rust-analyzer.check.command": "clippy",
     "rust-analyzer.runnables.extraTestBinaryArgs": [
         "--nocapture"
     ],
-    "files.autoSave": "off",
-    "gitlens.showWelcomeOnInstall": false,
-    "gitlens.showWhatsNewAfterUpgrades": false,
-    "lldb.consoleMode": "evaluate",
+    "rust-analyzer.rustfmt.extraArgs": [
+        "--config",
+        "max_width=100"
+    ],
+    "jupyter.kernels.excludePythonEnvironments": [
+        "/bin/python3",
+        "/usr/bin/python3",
+    ],
+    "notebook.formatOnSave.enabled": true,
+    "notebook.output.scrolling": true,
     "python.defaultInterpreterPath": "~/.local/share/base/bin/python3",
     "python.terminal.activateEnvironment": false,
-    "notebook.formatOnSave.enabled": true,
-    "notebook.output.scrolling": true
 }
