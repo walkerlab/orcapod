@@ -18,6 +18,7 @@ use orcapod::{
         store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
     },
 };
+use pretty_assertions::assert_eq as pretty_assert_eq;
 use std::{collections::HashMap, fmt::Debug, ops::Deref as _, path::Path, sync::Arc};
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
@@ -36,7 +37,7 @@ fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -
     let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     model.save(&store)?;
     let annotation = model.get_annotation().expect("Annotation missing.");
-    assert_eq!(
+    pretty_assert_eq!(
         model.list(&store)?,
         vec![
             ModelInfo {
@@ -52,7 +53,7 @@ fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -
         ],
         "List didn't match."
     );
-    assert_eq!(
+    pretty_assert_eq!(
         &model.load(&store)?,
         expected_model,
         "Loaded model doesn't match."
@@ -151,7 +152,7 @@ fn pod_load_from_hash() -> Result<()> {
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     pod.annotation = None;
-    assert_eq!(
+    pretty_assert_eq!(
         store.load_pod(&ModelID::Hash(pod.hash.clone()))?,
         pod,
         "Loaded model from hash doesn't match."
@@ -174,7 +175,7 @@ fn pod_annotation_delete() -> Result<()> {
         description: String::new(),
     });
     store.save_pod(&pod)?;
-    assert_eq!(
+    pretty_assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
@@ -197,7 +198,7 @@ fn pod_annotation_delete() -> Result<()> {
     );
     // case 2: delete new annotation, assert list gives 2 entries: hash, annotation (original).
     store.delete_annotation(&ModelType::Pod, "new-name", "0.5.0")?;
-    assert_eq!(
+    pretty_assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
@@ -221,7 +222,7 @@ fn pod_annotation_delete() -> Result<()> {
             .to_owned()
             .expect("Version missing from `pod_style`"),
     )?;
-    assert_eq!(
+    pretty_assert_eq!(
         store.list_pod()?,
         vec![ModelInfo {
             name: None,
@@ -259,7 +260,7 @@ fn pod_annotation_unique() -> Result<()> {
         ..original_annotation.clone()
     });
     store.save_pod(&pod)?;
-    assert_eq!(
+    pretty_assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
@@ -275,7 +276,7 @@ fn pod_annotation_unique() -> Result<()> {
         ],
         "Pod list didn't return 2 expected entries."
     );
-    assert_eq!(
+    pretty_assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
                 original_annotation.name.clone(),
@@ -290,14 +291,9 @@ fn pod_annotation_unique() -> Result<()> {
     pod.hash = hash_buffer(to_yaml(&pod)?);
     let new_hash = pod.hash.clone();
     store.save_pod(&pod)?;
-    assert_eq!(
+    pretty_assert_eq!(
         store.list_pod()?,
         vec![
-            ModelInfo {
-                name: None,
-                version: None,
-                hash: new_hash,
-            },
             ModelInfo {
                 name: Some(original_annotation.name.clone()),
                 version: Some(original_annotation.version.clone()),
@@ -308,10 +304,15 @@ fn pod_annotation_unique() -> Result<()> {
                 version: None,
                 hash: original_hash,
             },
+            ModelInfo {
+                name: None,
+                version: None,
+                hash: new_hash,
+            },
         ],
         "Pod list didn't return 3 expected entries."
     );
-    assert_eq!(
+    pretty_assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
                 original_annotation.name.clone(),

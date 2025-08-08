@@ -86,6 +86,8 @@ name = "uniffi-bindgen"
 [dev-dependencies]
 # pretty multiline strings
 indoc = "2.0.5"
+# pretty assert statements
+pretty_assertions = "1.4.1"
 # creating temp directories
 tempfile = "3.13.0"
 

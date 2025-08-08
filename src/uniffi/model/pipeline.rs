@@ -134,14 +134,14 @@ impl PipelineJob {
 pub enum Kernel {
     /// Pod reference.
     Pod {
-        /// See [`Pod`].
+        /// See [`Pod`](crate::uniffi::model::pod::Pod).
         r#ref: Arc<Pod>,
     },
-    /// Cartesian product operation. See [`crate::core::operator::JoinOperator`].
+    /// Cartesian product operation. See [`JoinOperator`](crate::core::operator::JoinOperator).
     JoinOperator,
     /// Rename a path set key operation.
     MapOperator {
-        /// See [`crate::core::operator::MapOperator`].
+        /// See [`MapOperator`](crate::core::operator::MapOperator).
         map: HashMap<String, String>,
     },
 }
