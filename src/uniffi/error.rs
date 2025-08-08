@@ -96,12 +96,6 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Pod job {hash} failed to process with reason: {reason}."))]
-    PodJobProcessingError {
-        hash: String,
-        reason: String,
-        backtrace: Option<Backtrace>,
-    },
     #[snafu(display(
         "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
     ))]
@@ -153,11 +147,6 @@ pub(crate) enum Kind {
     #[snafu(transparent)]
     PathPrefixError {
         source: Box<path::StripPrefixError>,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
-    PoisonError {
-        source: Box<dyn Error + Send + Sync>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
