@@ -4,11 +4,11 @@ use std::path::PathBuf;
 /// Available models.
 #[derive(uniffi::Enum, Debug)]
 pub enum ModelType {
-    /// See [`crate::uniffi::model::pod::Pod`].
+    /// See [`Pod`](crate::uniffi::model::pod::Pod).
     Pod,
-    /// See [`crate::uniffi::model::pod::PodJob`].
+    /// See [`PodJob`](crate::uniffi::model::pod::PodJob).
     PodJob,
-    /// See [`crate::uniffi::model::pod::PodResult`].
+    /// See [`PodResult`](crate::uniffi::model::pod::PodResult).
     PodResult,
 }
 

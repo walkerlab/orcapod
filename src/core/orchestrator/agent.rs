@@ -1,10 +1,8 @@
 use crate::uniffi::{
     error::{OrcaError, Result, selector},
-    model::pod::{PodJob, PodResult},
     orchestrator::agent::{Agent, AgentClient},
-    store::ModelID,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures_util::future::FutureExt as _;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -21,15 +19,20 @@ use tokio::{
 use tokio_util::task::TaskTracker;
 
 #[expect(clippy::expect_used, reason = "Valid static regex")]
-static RE_PODJOB_ACTION: LazyLock<Regex> = LazyLock::new(|| {
+static RE_AGENT_KEY_EXPR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
             ^
-                group\/(?<group>[a-z_\-]+)\/
-                    (?<action>request|reservation|success|failure)\/
-                        pod_job\/(?<pod_job_hash>[0-9a-f]+)\/
-                            host\/(?<host>[a-z_]+)\/
-                                timestamp\/(?<timestamp>.*?)
+            group/
+                (?<group>[a-z_\-]+)/
+                    (?<action>request|success|failure)/
+                        (?<model_type>[a-z_]+)/
+                            (?<ref>[0-9a-f]+)/
+                                .*?
+                                    host/
+                                        (?<host>[a-z_]+)/
+                                            timestamp/
+                                                (?<timestamp>.*?)
             $
             ",
     )
@@ -40,33 +43,14 @@ static RE_PODJOB_ACTION: LazyLock<Regex> = LazyLock::new(|| {
     dead_code,
     reason = "Need to be able to initialize to pass metadata as input."
 )]
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct EventMetadata {
-    group: String,
-    host: String,
-    subgroup: String,
-}
-
-#[expect(
-    dead_code,
-    reason = "Need to be able to initialize to pass metadata as input."
-)]
-#[derive(Debug, Clone)]
-pub enum EventPayload {
-    Request(PodJob),
-    Reservation(ModelID),
-    Success(PodResult),
-    Failure(PodResult),
-}
-
-#[expect(
-    dead_code,
-    reason = "Need to be able to initialize to pass metadata as input."
-)]
-#[derive(Debug, Clone)]
-pub struct Event {
-    metadata: EventMetadata,
-    payload: EventPayload,
+    pub group: String,
+    pub action: String,
+    pub model_type: String,
+    pub r#ref: String,
+    pub host: String,
+    pub timestamp: DateTime<Utc>,
 }
 
 impl AgentClient {
@@ -95,7 +79,6 @@ impl AgentClient {
     ///
     /// Will fail if there is an issue sending the message.
     pub(crate) async fn log(&self, message: &str) -> Result<()> {
-        println!("{message}");
         self.publish("log", message).await
     }
 }
@@ -106,23 +89,20 @@ impl AgentClient {
     reason = "`result::Result<(), SendError<_>>` is the only uncaptured result since it would mean we can't transmit results over mpsc."
 )]
 pub async fn start_service<
-    EventClassifierF, // function to classify the event payload e.g. EventPayload::{Request | Reservation | ..}
-    RequestF,         // function to run on requests
-    RequestI,         // input to the function for requests
-    RequestR,         // output to the function for requests
-    ResponseF,        // function to run on completing a request i.e. response
-    ResponseI,        // input to the function for responses
-    ResponseR,        // output to the function for responses
+    RequestF,  // function to run on requests
+    RequestI,  // input to the function for requests
+    RequestR,  // output to the function for requests
+    ResponseF, // function to run on completing a request i.e. response
+    ResponseI, // input to the function for responses
+    ResponseR, // output to the function for responses
 >(
     agent: Arc<Agent>,
     request_key_expr: String,
     namespace_lookup: HashMap<String, PathBuf>,
-    event_classifier: EventClassifierF,
     request_task: RequestF,
     response_task: ResponseF,
 ) -> Result<()>
 where
-    EventClassifierF: Fn(&RequestI) -> EventPayload + Send + 'static,
     RequestI: for<'serde> Deserialize<'serde> + Send + 'static,
     RequestF: FnOnce(Arc<Agent>, HashMap<String, PathBuf>, EventMetadata, RequestI) -> RequestR
         + Clone
@@ -156,15 +136,17 @@ where
             while let Ok(sample) = subscriber.recv_async().await {
                 if let (Ok(input), Some(metadata)) = (
                     serde_json::from_slice::<RequestI>(&sample.payload().to_bytes()),
-                    RE_PODJOB_ACTION.captures(sample.key_expr().as_str()),
+                    RE_AGENT_KEY_EXPR.captures(sample.key_expr().as_str()),
                 ) {
                     let inner_response_tx = response_tx.clone();
                     let event_metadata = EventMetadata {
                         group: metadata["group"].to_string(),
+                        action: metadata["action"].to_string(),
+                        model_type: metadata["model_type"].to_string(),
+                        r#ref: metadata["ref"].to_string(),
                         host: metadata["host"].to_string(),
-                        subgroup: metadata["pod_job_hash"].to_string(),
+                        timestamp: DateTime::parse_from_rfc3339(&metadata["timestamp"])?.into(),
                     };
-                    let _event_payload = event_classifier(&input);
                     tasks.spawn({
                         let inner_request_task = request_task.clone();
                         let inner_inner_agent = Arc::clone(&inner_agent);
@@ -190,8 +172,8 @@ where
         }
     });
     services.spawn(async move {
-        while let Some(content) = response_rx.recv().await {
-            response_task(Arc::clone(&agent.client), content?).await?;
+        while let Some(response) = response_rx.recv().await {
+            response_task(Arc::clone(&agent.client), response?).await?;
         }
         Ok(())
     });
