@@ -1,30 +1,15 @@
 {
-	"name": "Development (GPU)",
-	"build": {
-		"dockerfile": "Dockerfile",
-		"context": "../.."
-	},
-	"overrideCommand": false,
+	"name": "Development-GPU",
+	"dockerComposeFile": "./docker-compose.yaml",
+	"service": "ide",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-	"mounts": [
-		"source=${localWorkspaceFolderBasename}_devcontainer_docker_data,target=/var/lib/docker,type=volume"
-	],
-	"remoteEnv": {
-		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
-		"RUST_BACKTRACE": "1"
-	},
+	"initializeCommand": ".devcontainer/gpu/make_env_file.py ${localWorkspaceFolder}",
 	"postStartCommand": "mkdir -p tests/.tmp && docker system prune -fa && docker volume prune -f",
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
 		"storage": "32gb"
 	},
-	"runArgs": [
-		"--name=${localWorkspaceFolderBasename}_devcontainer",
-		"--gpus=all",
-		"--privileged",
-		"--cgroupns=host"
-	],
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -41,8 +26,5 @@
 				"ms-python.black-formatter" // Python code formatter
 			]
 		}
-	},
-	"features": {
-		"ghcr.io/meaningful-ooo/devcontainer-features/fish:2": {} // Fish shell
 	}
 }
