@@ -2,7 +2,7 @@ services:
   ide:
     build:
       context: ..
-      dockerfile: ./Dockerfile
+      dockerfile: ./gpu/Dockerfile
     privileged: true   # Docker-in-Docker needs this
     cgroup: host       # Allow setting resource constraints (e.g. memory, cpu) for containers
     environment:
