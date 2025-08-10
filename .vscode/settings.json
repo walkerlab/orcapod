@@ -12,10 +12,6 @@
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,
     "lldb.consoleMode": "evaluate",
-    "rust-analyzer.cargo.features": [
-        "test"
-    ],
-    "rust-analyzer.cargo.noDefaultFeatures": true,
     "rust-analyzer.check.command": "clippy",
     "rust-analyzer.runnables.extraTestBinaryArgs": [
         "--nocapture"
@@ -24,8 +20,12 @@
         "--config",
         "max_width=100"
     ],
+    "jupyter.kernels.excludePythonEnvironments": [
+        "/bin/python3",
+        "/usr/bin/python3",
+    ],
     "notebook.formatOnSave.enabled": true,
     "notebook.output.scrolling": true,
     "python.defaultInterpreterPath": "~/.local/share/base/bin/python3",
-    "python.terminal.activateEnvironment": false
+    "python.terminal.activateEnvironment": false,
 }
