@@ -1,20 +1,14 @@
-use crate::{
-    core::util::get_type_name,
-    uniffi::{
-        error::Result,
-        model::pod::{Pod, PodJob},
-    },
-};
+use crate::{core::util::get_type_name, uniffi::error::Result};
 use heck::ToSnakeCase as _;
 use indexmap::IndexMap;
-use serde::{Deserialize as _, Deserializer, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use serde_yaml::{self, Value};
 use std::{
     collections::{BTreeMap, HashMap},
     hash::BuildHasher,
     result,
-    sync::Arc,
 };
+
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
@@ -67,54 +61,5 @@ where
     sorted.serialize(serializer)
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Function signature required by serde API."
-)]
-pub fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    (value).as_str().map_or_else(
-        || {
-            Ok(serde_yaml::from_value(value.clone())
-                .expect("Failed to convert from serde value to specific type."))
-        },
-        |hash| {
-            Ok({
-                Pod {
-                    hash: hash.to_owned(),
-                    ..Pod::default()
-                }
-                .into()
-            })
-        },
-    )
-}
-
-#[expect(
-    clippy::expect_used,
-    reason = "Function signature required by serde API."
-)]
-pub fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<Arc<PodJob>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    (value).as_str().map_or_else(
-        || {
-            Ok(serde_yaml::from_value(value.clone())
-                .expect("Failed to convert from serde value to specific type."))
-        },
-        |hash| {
-            Ok({
-                PodJob {
-                    hash: hash.to_owned(),
-                    ..PodJob::default()
-                }
-                .into()
-            })
-        },
-    )
-}
+pub mod pipeline;
+pub mod pod;
