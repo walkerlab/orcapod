@@ -1,5 +1,5 @@
 use crate::{
-    core::{pipeline::PipelineNode, util::get},
+    core::{model::pipeline::PipelineNode, util::get},
     uniffi::{error::Result, model::pipeline::Kernel},
 };
 use dot_parser::ast::Graph as DOTGraph;

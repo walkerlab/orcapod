@@ -2,7 +2,7 @@ use crate::{
     core::{
         crypto::{hash_blob, make_random_hash},
         graph::make_graph,
-        pipeline::PipelineNode,
+        model::pipeline::PipelineNode,
         validation::validate_packet,
     },
     uniffi::{
@@ -130,7 +130,7 @@ impl PipelineJob {
 }
 
 /// A node in a computational pipeline.
-#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize)]
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum Kernel {
     /// Pod reference.
     Pod {
