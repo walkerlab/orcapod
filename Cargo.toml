@@ -53,6 +53,8 @@ heck = "0.5.0"
 hex = "0.4.3"
 # hashmaps that preserve insertion order
 indexmap = { version = "2.9.0", features = ["serde"] }
+# utilities for iterables
+itertools = "0.14.0"
 # random name generator
 names = "0.14.0"
 # graph algorithms

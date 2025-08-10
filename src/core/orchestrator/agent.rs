@@ -2,15 +2,17 @@ use crate::uniffi::{
     error::{OrcaError, Result, selector},
     orchestrator::agent::{Agent, AgentClient},
 };
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use futures_util::future::FutureExt as _;
-use regex::Regex;
+use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
-    collections::HashMap,
+    borrow::ToOwned,
+    collections::{BTreeMap, HashMap},
+    fmt::Write as _,
     path::PathBuf,
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 use tokio::{
     sync::mpsc::{self, error::SendError},
@@ -18,56 +20,59 @@ use tokio::{
 };
 use tokio_util::task::TaskTracker;
 
-#[expect(clippy::expect_used, reason = "Valid static regex")]
-static RE_AGENT_KEY_EXPR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?x)
-            ^
-            group/
-                (?<group>[a-z_\-]+)/
-                    (?<action>request|success|failure)/
-                        (?<model_type>[a-z_]+)/
-                            (?<ref>[0-9a-f]+)/
-                                .*?
-                                    host/
-                                        (?<host>[a-z_]+)/
-                                            timestamp/
-                                                (?<timestamp>.*?)
-            $
-            ",
-    )
-    .expect("Invalid PodJob action regex.")
-});
-
-#[expect(
-    dead_code,
-    reason = "Need to be able to initialize to pass metadata as input."
-)]
-#[derive(Debug)]
-pub struct EventMetadata {
-    pub group: String,
-    pub action: String,
-    pub model_type: String,
-    pub r#ref: String,
-    pub host: String,
-    pub timestamp: DateTime<Utc>,
+fn extract_metadata(key_expr: &str) -> HashMap<String, String> {
+    key_expr
+        .split('/')
+        .map(ToOwned::to_owned)
+        .tuples()
+        .collect()
 }
 
 impl AgentClient {
-    pub(crate) async fn publish<T>(&self, topic: &str, payload: &T) -> Result<()>
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "write! on a `String` cannot fail. https://rust-lang.github.io/rust-clippy/master/index.html#format_collect"
+    )]
+    pub(crate) fn make_key_expr(
+        &self,
+        is_subscriber: bool,
+        topic: &str,
+        mut metadata: BTreeMap<&str, String>,
+    ) -> String {
+        metadata.insert("group", self.group.clone());
+        metadata.insert("topic", topic.to_owned());
+
+        let delimiter = if is_subscriber {
+            "**/".to_owned()
+        } else {
+            metadata.insert("host", self.host.clone());
+            metadata.insert("timestamp", Utc::now().to_rfc3339());
+            String::new()
+        };
+
+        metadata
+            .iter()
+            .fold(delimiter.clone(), |mut key_expr, (key, value)| {
+                let _ = write!(key_expr, "{key}/{value}/{delimiter}");
+                key_expr
+            })
+            .trim_end_matches('/')
+            .to_owned()
+    }
+
+    pub(crate) async fn publish<T>(
+        &self,
+        topic: &str,
+        metadata: BTreeMap<&str, String>,
+        payload: &T,
+    ) -> Result<()>
     where
         T: Serialize + Sync + ?Sized,
     {
         Ok(self
             .session
             .put(
-                format!(
-                    "group/{}/{}/host/{}/timestamp/{}",
-                    self.group,
-                    topic,
-                    self.host,
-                    Utc::now().to_rfc3339()
-                ),
+                self.make_key_expr(false, topic, metadata),
                 &serde_json::to_vec(payload)?,
             )
             .await
@@ -79,7 +84,7 @@ impl AgentClient {
     ///
     /// Will fail if there is an issue sending the message.
     pub(crate) async fn log(&self, message: &str) -> Result<()> {
-        self.publish("log", message).await
+        self.publish("log", BTreeMap::new(), message).await
     }
 }
 
@@ -97,14 +102,15 @@ pub async fn start_service<
     ResponseR, // output to the function for responses
 >(
     agent: Arc<Agent>,
-    request_key_expr: String,
+    request_topic: &str,
+    request_metadata: BTreeMap<&'static str, String>,
     namespace_lookup: HashMap<String, PathBuf>,
     request_task: RequestF,
     response_task: ResponseF,
 ) -> Result<()>
 where
     RequestI: for<'serde> Deserialize<'serde> + Send + 'static,
-    RequestF: FnOnce(Arc<Agent>, HashMap<String, PathBuf>, EventMetadata, RequestI) -> RequestR
+    RequestF: FnOnce(Arc<Agent>, HashMap<String, PathBuf>, HashMap<String, String>, RequestI) -> RequestR
         + Clone
         + Send
         + 'static,
@@ -115,38 +121,33 @@ where
 {
     agent
         .client
-        .log(&format!("Started `{request_key_expr}` service."))
+        .log(&format!(
+            "Started `{request_topic}` service for {request_metadata:?}."
+        ))
         .await?;
     let (response_tx, mut response_rx) = mpsc::channel(100);
 
     let mut services = JoinSet::new();
     services.spawn({
         let inner_agent = Arc::clone(&agent);
+        let inner_request_topic = request_topic.to_owned();
         async move {
             let tasks = TaskTracker::new();
             let subscriber = inner_agent
                 .client
                 .session
-                .declare_subscriber(format!(
-                    "group/{}/{}",
-                    inner_agent.client.group, request_key_expr
+                .declare_subscriber(inner_agent.client.make_key_expr(
+                    true,
+                    &inner_request_topic,
+                    request_metadata,
                 ))
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
             while let Ok(sample) = subscriber.recv_async().await {
-                if let (Ok(input), Some(metadata)) = (
-                    serde_json::from_slice::<RequestI>(&sample.payload().to_bytes()),
-                    RE_AGENT_KEY_EXPR.captures(sample.key_expr().as_str()),
-                ) {
+                if let Ok(input) = serde_json::from_slice::<RequestI>(&sample.payload().to_bytes())
+                {
                     let inner_response_tx = response_tx.clone();
-                    let event_metadata = EventMetadata {
-                        group: metadata["group"].to_string(),
-                        action: metadata["action"].to_string(),
-                        model_type: metadata["model_type"].to_string(),
-                        r#ref: metadata["ref"].to_string(),
-                        host: metadata["host"].to_string(),
-                        timestamp: DateTime::parse_from_rfc3339(&metadata["timestamp"])?.into(),
-                    };
+                    let event_metadata = extract_metadata(sample.key_expr().as_str());
                     tasks.spawn({
                         let inner_request_task = request_task.clone();
                         let inner_inner_agent = Arc::clone(&inner_agent);
