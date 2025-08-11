@@ -80,7 +80,8 @@
         "wasi",
         "patchelf",
         "itertools",
-        "colinianking"
+        "colinianking",
+        "itertools"
     ],
     "useGitignore": false,
     "ignorePaths": [
