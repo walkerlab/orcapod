@@ -24,6 +24,10 @@
         "--config",
         "max_width=100"
     ],
+    "jupyter.kernels.excludePythonEnvironments": [
+        "/bin/python3",
+        "/usr/bin/python3"
+    ],
     "notebook.formatOnSave.enabled": true,
     "notebook.output.scrolling": true,
     "python.defaultInterpreterPath": "~/.local/share/base/bin/python3",

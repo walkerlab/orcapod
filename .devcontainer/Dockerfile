@@ -1,32 +1,40 @@
 # DevContainer image
-FROM rust:1.87-slim
+FROM ubuntu:24.04
 RUN \
-    adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
     # install docker
     apt-get update && \
-    apt-get install ca-certificates curl gnupg lsb-release -y && \
+    apt-get install ca-certificates curl -y && \
     mkdir -m 0755 -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+        $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+        tee /etc/apt/sources.list.d/docker.list > /dev/null && \
     apt-get update && \
     apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y && \
-    usermod -aG docker vscode && \
+    usermod -aG docker ubuntu && \
     apt-get clean
 RUN \
     # dev setup
     apt update && \
-    apt-get install sudo jq git bash-completion graphviz rsync -y && \
-    usermod -aG sudo vscode && \
+    apt-get install sudo jq bash-completion graphviz rsync software-properties-common gcc -y && \
+    add-apt-repository ppa:git-core/ppa && \
+    apt update && \
+    apt-get install git -y && \
+    usermod -aG sudo ubuntu && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
-    echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \
-    echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /home/vscode/.bashrc && \
-    chown vscode:nogroup /home/vscode/.bashrc && \
+    echo '. /etc/bash_completion' >> /home/ubuntu/.bashrc && \
+    echo 'export PS1="\[\e[32;1m\]\u\[\e[m\]@\[\e[34;1m\]\H\[\e[m\]:\[\e[33;1m\]\w\[\e[m\]$ "' >> /home/ubuntu/.bashrc && \
+    chown ubuntu:nogroup /home/ubuntu/.bashrc && \
     apt-get clean
 
-USER vscode
-ENV CARGO_HOME=/home/vscode/.cargo \
-    PATH=/home/vscode/.cargo/bin:/home/vscode/.local/bin:$PATH
+USER ubuntu
+ENV CARGO_HOME=/home/ubuntu/.cargo \
+    PATH=/home/ubuntu/.cargo/bin:/home/ubuntu/.local/bin:$PATH
 RUN \
+    # install rust
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain=1.87.0 -y && \
     # rust auto formatting
     rustup component add rustfmt && \
     # rust style linter
@@ -47,5 +55,5 @@ RUN \
     # useful in examples
     uv pip install ipykernel eclipse-zenoh -p ~/.local/share/base && \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
-ENV VIRTUAL_ENV=/home/vscode/.local/share/base
+ENV VIRTUAL_ENV=/home/ubuntu/.local/share/base
 CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]
