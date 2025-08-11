@@ -31,6 +31,8 @@ cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi:
 
 ## Git Worktrees
 
+Update your git to at least version 2.48 since that is when the `--relative-paths` option was added to git worktree. That option makes it compatible with launching using VSCode DevContainers.
+
 ```bash
 git worktree add /path/to/new/dir-name branch-name --relative-paths # create
 git worktree remove dir-name # delete
