@@ -9,15 +9,17 @@
 
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
-use itertools::Itertools as _;
-use orcapod::uniffi::{
-    error::Result,
-    model::pod::PodResult,
-    orchestrator::{
-        agent::{Agent, AgentClient},
-        docker::LocalDockerOrchestrator,
+use orcapod::{
+    core::orchestrator::agent::extract_metadata,
+    uniffi::{
+        error::Result,
+        model::pod::PodResult,
+        orchestrator::{
+            agent::{Agent, AgentClient},
+            docker::LocalDockerOrchestrator,
+        },
+        store::{ModelID, Store as _, filestore::LocalFileStore},
     },
-    store::{ModelID, Store as _, filestore::LocalFileStore},
 };
 use std::{
     collections::HashMap,
@@ -26,14 +28,6 @@ use std::{
 };
 use tokio::{self, task::JoinSet, time::sleep as async_sleep};
 use zenoh;
-
-fn extract_metadata(key_expr: &str) -> HashMap<String, String> {
-    key_expr
-        .split('/')
-        .map(ToOwned::to_owned)
-        .tuples()
-        .collect()
-}
 
 #[test]
 fn simple() -> Result<()> {

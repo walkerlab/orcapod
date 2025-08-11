@@ -23,6 +23,10 @@ categories = [
 license = "MIT license"
 edition = "2024"
 
+[features]
+default = []
+test = []
+
 [lib]
 crate-type = ["rlib", "cdylib"]
 
@@ -108,6 +112,7 @@ restriction = "deny"
 style = "deny"
 suspicious = "deny"
 
+allow_attributes = { level = "allow", priority = 127 }                 # Useful when suppressing warnings is also desired.
 arbitrary_source_item_ordering = { level = "allow", priority = 127 }   # allow arbitrary ordering to keep relevant code nearby
 arithmetic_side_effects = { level = "allow", priority = 127 }          # allow arithmetic for convenience though it could overflow
 as_conversions = { level = "allow", priority = 127 }                   # allow casting

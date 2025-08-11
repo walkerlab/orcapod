@@ -11,6 +11,7 @@ use std::{
     borrow::ToOwned,
     collections::{BTreeMap, HashMap},
     fmt::Write as _,
+    hash::RandomState,
     path::PathBuf,
     sync::Arc,
 };
@@ -20,7 +21,7 @@ use tokio::{
 };
 use tokio_util::task::TaskTracker;
 
-fn extract_metadata(key_expr: &str) -> HashMap<String, String> {
+pub fn extract_metadata(key_expr: &str) -> HashMap<String, String> {
     key_expr
         .split('/')
         .map(ToOwned::to_owned)
@@ -104,7 +105,7 @@ pub async fn start_service<
     agent: Arc<Agent>,
     request_topic: &str,
     request_metadata: BTreeMap<&'static str, String>,
-    namespace_lookup: HashMap<String, PathBuf>,
+    namespace_lookup: HashMap<String, PathBuf, RandomState>,
     request_task: RequestF,
     response_task: ResponseF,
 ) -> Result<()>
