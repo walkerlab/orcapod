@@ -9,14 +9,17 @@
 
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
-use orcapod::uniffi::{
-    error::Result,
-    model::pod::PodResult,
-    orchestrator::{
-        agent::{Agent, AgentClient},
-        docker::LocalDockerOrchestrator,
+use orcapod::{
+    core::orchestrator::agent::extract_metadata,
+    uniffi::{
+        error::Result,
+        model::pod::PodResult,
+        orchestrator::{
+            agent::{Agent, AgentClient},
+            docker::LocalDockerOrchestrator,
+        },
+        store::{ModelID, Store as _, filestore::LocalFileStore},
     },
-    store::{ModelID, Store as _, filestore::LocalFileStore},
 };
 use std::{
     collections::HashMap,
@@ -47,13 +50,8 @@ async fn parallel_four_cores() -> Result<()> {
     // config
     let image_reference = "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40";
     pull_image(image_reference)?;
-    let margin_millis = 2000;
+    let margin_millis = 1000;
     let run_duration_secs = 5;
-    let current_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Current time is earlier than start of epoch (1970-01-01 00:00:00).")
-        .as_millis();
-    println!("current_timestamp: {current_timestamp}");
     let (group, host) = ("agent_parallel-four-cores", "host");
     // api
     let client = AgentClient::new(group.to_owned(), host.to_owned())?;
@@ -64,10 +62,15 @@ async fn parallel_four_cores() -> Result<()> {
     )?;
     // background services
     let mut services = JoinSet::new();
+    services.spawn(async {
+        async_sleep(Duration::from_secs(60)).await;
+        panic!("Test took too long. Killing...");
+    });
     services.spawn({
         let inner_client = client.clone();
         async move { inner_client.watch("**".to_owned()).await }
     });
+    async_sleep(Duration::from_secs(5)).await; // ensure watch is ready
     services.spawn({
         let inner_agent = agent.clone();
         let inner_store = store.clone();
@@ -77,18 +80,29 @@ async fn parallel_four_cores() -> Result<()> {
                 .await
         }
     });
+    async_sleep(Duration::from_secs(5)).await; // ensure services are ready
     services.spawn(async move {
+        let current_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Current time is earlier than start of epoch (1970-01-01 00:00:00).")
+            .as_millis();
+        println!("current_timestamp: {current_timestamp}");
         let session = zenoh::open(zenoh::Config::default())
             .await
             .expect("Unable to create a zenoh session.");
         let subscriber = session
-            .declare_subscriber(&format!("group/{group}/*/pod_job/**"))
+            .declare_subscriber(&format!("**/group/{group}/**/topic/pod_job/**"))
             .await
             .expect("Unable to create subscriber.");
         let mut success_counter = 0;
         let mut failure_counter = 0;
-        while let Ok(sample) = subscriber.recv_async().await {
-            let topic_kind = sample.key_expr().as_str().split('/').collect::<Vec<_>>()[2];
+        loop {
+            let sample = subscriber
+                .recv_async()
+                .await
+                .expect("All senders have dropped.");
+            let metadata = extract_metadata(sample.key_expr().as_str());
+            let topic_kind = metadata["action"].as_str();
             if ["success", "failure"].contains(&topic_kind) {
                 let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
                 assert!(
@@ -119,10 +133,6 @@ async fn parallel_four_cores() -> Result<()> {
             }
         }
         Ok(())
-    });
-    services.spawn(async {
-        async_sleep(Duration::from_secs(60)).await;
-        panic!("Test took too long. Killing...");
     });
     // submit requests
     client

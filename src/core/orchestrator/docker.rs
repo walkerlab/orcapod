@@ -79,8 +79,11 @@ impl LocalDockerOrchestrator {
                                 stream_info
                                     .path
                                     .join(blob.location.path.file_name().context(
-                                        selector::NoFileName {
-                                            path: blob.location.path.clone()
+                                        selector::MissingInfo {
+                                            details: format!(
+                                                "file or directory name where path = {}",
+                                                blob.location.path.to_string_lossy()
+                                            ),
                                         }
                                     )?)
                                     .to_string_lossy(),
@@ -115,9 +118,12 @@ impl LocalDockerOrchestrator {
     )> {
         // Prepare configuration
         let (input_binds, output_bind) = Self::prepare_mount_binds(namespace_lookup, pod_job)?;
-        let container_name = Generator::with_naming(Name::Plain)
-            .next()
-            .context(selector::GeneratedNamesOverflow)?;
+        let container_name =
+            Generator::with_naming(Name::Plain)
+                .next()
+                .context(selector::MissingInfo {
+                    details: "unable to generate a random name",
+                })?;
         let labels = HashMap::from([
             ("org.orcapod".to_owned(), "true".to_owned()),
             (
@@ -164,6 +170,7 @@ impl LocalDockerOrchestrator {
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::indexing_slicing,
+        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
@@ -186,10 +193,13 @@ impl LocalDockerOrchestrator {
                 .await?
                 .iter()
                 .map(|container_summary| async {
-                    let container_name = &container_summary
-                        .names
-                        .as_ref()
-                        .context(selector::NoContainerNames)?[0][1..];
+                    let container_name =
+                        &container_summary
+                            .names
+                            .as_ref()
+                            .context(selector::MissingInfo {
+                                details: "container name(s)".to_owned(),
+                            })?[0][1..];
                     Ok((
                         container_name.to_owned(),
                         container_summary.clone(),

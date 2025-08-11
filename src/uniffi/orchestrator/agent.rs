@@ -14,7 +14,11 @@ use futures_util::future::join_all;
 use getset::CloneGetters;
 use serde_json::Value;
 use snafu::{OptionExt as _, ResultExt as _};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+    sync::Arc,
+};
 use tokio::task::JoinSet;
 use uniffi;
 use zenoh;
@@ -76,7 +80,14 @@ impl AgentClient {
     pub async fn start_pod_jobs(&self, pod_jobs: Vec<Arc<PodJob>>) -> Vec<Response> {
         join_all(pod_jobs.iter().map(|pod_job| async {
             match self
-                .publish(&format!("request/pod_job/{}", pod_job.hash), pod_job)
+                .publish(
+                    "pod_job",
+                    BTreeMap::from([
+                        ("action", "request".to_owned()),
+                        ("hash", pod_job.hash.clone()),
+                    ]),
+                    pod_job,
+                )
                 .await
             {
                 Ok(()) => Response::Ok,
@@ -97,11 +108,14 @@ impl AgentClient {
             .declare_subscriber(&key_expr)
             .await
             .context(selector::AgentCommunicationFailure {})?;
-        while let Ok(sample) = subscriber.recv_async().await {
+        loop {
+            let sample = subscriber
+                .recv_async()
+                .await
+                .context(selector::AgentCommunicationFailure {})?;
             let value = serde_json::from_slice::<Value>(&sample.payload().to_bytes())?;
             println!("{}: {value:#}", sample.key_expr().as_str().yellow());
         }
-        Ok(())
     }
 }
 
@@ -149,7 +163,8 @@ impl Agent {
         let mut services = JoinSet::new();
         services.spawn(start_service(
             Arc::new(self.clone()),
-            "request/pod_job/**".to_owned(),
+            "pod_job",
+            BTreeMap::from([("action", "request".to_owned())]),
             namespace_lookup.clone(),
             async |agent, inner_namespace_lookup, _, pod_job| {
                 let pod_run = agent
@@ -166,14 +181,20 @@ impl Agent {
             async |client, pod_result| {
                 client
                     .publish(
-                        &format!(
-                            "pod_job/{}/status/{}",
-                            pod_result.pod_job.hash,
-                            match &pod_result.status {
-                                PodStatus::Completed => "success",
-                                _ => "failure",
-                            },
-                        ),
+                        "pod_job",
+                        BTreeMap::from([
+                            (
+                                "action",
+                                match &pod_result.status {
+                                    PodStatus::Completed => "success",
+                                    PodStatus::Running
+                                    | PodStatus::Failed(_)
+                                    | PodStatus::Unset => "failure",
+                                }
+                                .to_owned(),
+                            ),
+                            ("hash", pod_result.pod_job.hash.clone()),
+                        ]),
                         &pod_result,
                     )
                     .await
@@ -182,7 +203,22 @@ impl Agent {
         if let Some(store) = available_store {
             services.spawn(start_service(
                 Arc::new(self.clone()),
-                "pod_job/*/status/**".to_owned(),
+                "pod_job",
+                BTreeMap::from([("action", "success".to_owned())]),
+                namespace_lookup.clone(),
+                {
+                    let inner_store = Arc::clone(&store);
+                    async move |_, _, _, pod_result| {
+                        inner_store.save_pod_result(&pod_result)?;
+                        Ok(())
+                    }
+                },
+                async |_, ()| Ok(()),
+            ));
+            services.spawn(start_service(
+                Arc::new(self.clone()),
+                "pod_job",
+                BTreeMap::from([("action", "failure".to_owned())]),
                 namespace_lookup.clone(),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;
@@ -191,9 +227,8 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
         }
-        services
-            .join_next()
-            .await
-            .context(selector::NoRemainingServices {})??
+        services.join_next().await.context(selector::MissingInfo {
+            details: "no available services".to_owned(),
+        })??
     }
 }

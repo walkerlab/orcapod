@@ -3,10 +3,7 @@ use serde::{Deserialize as _, Deserializer};
 use serde_yaml::{self, Value};
 use std::{result, sync::Arc};
 
-#[expect(
-    clippy::expect_used,
-    reason = "Function signature required by serde API."
-)]
+#[expect(clippy::expect_used, reason = "Serde requires this signature.")]
 pub fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
 where
     D: Deserializer<'de>,
@@ -29,10 +26,7 @@ where
     )
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Function signature required by serde API."
-)]
+#[expect(clippy::expect_used, reason = "Serde requires this signature.")]
 pub fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<Arc<PodJob>, D::Error>
 where
     D: Deserializer<'de>,

@@ -29,6 +29,15 @@ cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi:
 cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot | dot -T svg > docs/images/orcapod_diagram.svg # orcapod diagram as SVG
 ```
 
+## Git Worktrees
+
+Update your git to at least version 2.48 since that is when the `--relative-paths` option was added to git worktree. That option makes it compatible with launching using VSCode DevContainers.
+
+```bash
+git worktree add /path/to/new/dir-name branch-name --relative-paths # create
+git worktree remove dir-name # delete
+```
+
 ## Project Management
 
 Progress is tracked under GH project [orcapod](https://github.com/orgs/walkerlab/projects/2).
