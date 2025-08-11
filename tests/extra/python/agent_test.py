@@ -29,7 +29,7 @@ async def verify(group, pod_job_count):
 
     with zenoh.open(zenoh.Config()) as session:
         with session.declare_subscriber(
-            f"group/{group}/success/pod_job/**", count
+            f"**/action/success/**/group/{group}/**/topic/pod_job/**", count
         ) as subscriber:
             await asyncio.sleep(20)  # wait for results
 

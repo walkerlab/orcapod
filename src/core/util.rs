@@ -31,7 +31,7 @@ where
     Q: ?Sized + hash::Hash + Eq + fmt::Debug,
     K: Borrow<Q> + hash::Hash + Eq,
 {
-    Ok(map.get(key).context(selector::KeyMissing {
-        key: format!("{key:?}"),
+    Ok(map.get(key).context(selector::MissingInfo {
+        details: format!("key = {key:?}"),
     })?)
 }

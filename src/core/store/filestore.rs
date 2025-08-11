@@ -102,10 +102,11 @@ impl LocalFileStore {
             Self::make_annotation_relpath(name, version),
         ))?
         .next()
-        .context(selector::NoAnnotationFound {
-            class: parse_debug_name(model).to_snake_case(),
-            name: name.to_owned(),
-            version: version.to_owned(),
+        .context(selector::MissingInfo {
+            details: format!(
+                "annotation where class = {}, name = {name}, version = {version}",
+                parse_debug_name(model).to_snake_case()
+            ),
         })?;
         Ok(model_info.hash)
     }

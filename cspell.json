@@ -78,7 +78,8 @@
         "strsim",
         "getrandom",
         "wasi",
-        "patchelf"
+        "patchelf",
+        "itertools"
     ],
     "useGitignore": false,
     "ignorePaths": [
