@@ -1,5 +1,6 @@
 use crate::uniffi::{error::Result, model::packet::Packet};
 use itertools::Itertools as _;
+use serde::{Deserialize, Serialize};
 use std::{clone::Clone as _, collections::HashMap, iter::IntoIterator as _, sync::Arc};
 use tokio::{sync::Mutex, task::JoinSet};
 
@@ -84,14 +85,9 @@ impl Operator for JoinOperator {
     }
 }
 
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct MapOperator {
     map: HashMap<String, String>,
-}
-
-impl MapOperator {
-    pub const fn new(map: HashMap<String, String>) -> Self {
-        Self { map }
-    }
 }
 
 impl Operator for MapOperator {

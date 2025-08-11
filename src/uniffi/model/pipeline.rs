@@ -3,6 +3,7 @@ use crate::{
         crypto::{hash_blob, make_random_hash},
         graph::make_graph,
         model::pipeline::PipelineNode,
+        operator::MapOperator,
         validation::validate_packet,
     },
     uniffi::{
@@ -30,9 +31,9 @@ pub struct Pipeline {
     #[getset(skip)]
     pub graph: DiGraph<PipelineNode, ()>,
     /// Exposed, internal input specification. Each input may be fed into more than one node/key if desired.
-    pub input_spec: HashMap<String, Vec<SpecURI>>,
+    pub input_spec: HashMap<String, Vec<NodeURI>>,
     /// Exposed, internal output specification. Each output is associated with only one node/key.
-    pub output_spec: HashMap<String, SpecURI>,
+    pub output_spec: HashMap<String, NodeURI>,
 }
 
 #[uniffi::export]
@@ -46,8 +47,8 @@ impl Pipeline {
     pub fn new(
         graph_dot: &str,
         metadata: HashMap<String, Kernel>,
-        input_spec: &HashMap<String, Vec<SpecURI>>,
-        output_spec: &HashMap<String, SpecURI>,
+        input_spec: &HashMap<String, Vec<NodeURI>>,
+        output_spec: &HashMap<String, NodeURI>,
     ) -> Result<Self> {
         let graph = make_graph(graph_dot, metadata)?;
         Ok(Self {
@@ -129,28 +130,36 @@ impl PipelineJob {
     }
 }
 
+/// Struct to hold the result of a pipeline execution.
+pub struct PipelineResult {
+    /// The pipeline job that was executed.
+    pub pipeline_job: Arc<PipelineJob>,
+    /// The result of the pipeline execution.
+    pub output_packets: HashMap<String, Vec<PathSet>>,
+}
+
 /// A node in a computational pipeline.
 #[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum Kernel {
     /// Pod reference.
     Pod {
         /// See [`Pod`](crate::uniffi::model::pod::Pod).
-        r#ref: Arc<Pod>,
+        pod: Arc<Pod>,
     },
     /// Cartesian product operation. See [`JoinOperator`](crate::core::operator::JoinOperator).
     JoinOperator,
     /// Rename a path set key operation.
     MapOperator {
         /// See [`MapOperator`](crate::core::operator::MapOperator).
-        map: HashMap<String, String>,
+        mapper: Arc<MapOperator>,
     },
 }
 
 /// Index from pipeline node into pod specification.
 #[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct SpecURI {
+pub struct NodeURI {
     /// Node reference name in pipeline.
-    pub node: String,
+    pub node_id: String,
     /// Specification key.
     pub key: String,
 }

@@ -13,7 +13,7 @@ use orcapod::uniffi::{
     error::Result,
     model::{
         packet::{Blob, BlobKind, PathInfo, PathSet, URI},
-        pipeline::{Kernel, Pipeline, PipelineJob, SpecURI},
+        pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
     },
 };
 use std::collections::HashMap;
@@ -45,8 +45,8 @@ fn input_packet_checksum() -> Result<()> {
         )]),
         &HashMap::from([(
             "pipeline_key_1".into(),
-            vec![SpecURI {
-                node: "A".into(),
+            vec![NodeURI {
+                node_id: "A".into(),
                 key: "node_key_1".into(),
             }],
         )]),

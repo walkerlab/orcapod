@@ -1,13 +1,19 @@
 use crate::{
-    core::{crypto::hash_buffer, model::serialize_hashmap, util::get},
+    core::{
+        crypto::hash_buffer,
+        model::{pipeline::PipelineNode, serialize_hashmap},
+        operator::{MapOperator, Operator},
+        util::get,
+    },
     uniffi::{
         error::{Kind, OrcaError, Result, selector},
         model::{
             packet::{PathSet, URI},
-            pipeline::{Kernel, Pipeline, PipelineJob},
+            pipeline::{Kernel, Pipeline, PipelineJob, PipelineResult},
             pod::{Pod, PodJob, PodResult},
         },
         orchestrator::{
+            PodStatus,
             agent::{Agent, AgentClient, Response},
             docker::LocalDockerOrchestrator,
         },
@@ -144,7 +150,7 @@ impl DockerPipelineRunner {
         };
 
         // Get the preexisting zenoh session from agent
-        let session = &self.agent.client.session.into();
+        let session = Arc::clone(&self.agent.client.session);
 
         // Spawn task for each of the processing node
         let orchestrator_agent_clone = Arc::clone(&pipeline_run.orchestrator_agent);
@@ -203,7 +209,7 @@ impl DockerPipelineRunner {
         // Group the output spec by node
         for (output_key, node_uri) in &pipeline_run.pipeline_job.pipeline.output_spec {
             node_output_spec
-                .entry(node_uri.node_name.clone())
+                .entry(node_uri.node_id.clone())
                 .or_insert_with(HashMap::new)
                 .insert(output_key.clone(), node_uri.key.clone());
         }
@@ -449,8 +455,10 @@ impl DockerPipelineRunner {
         let node_processor: Arc<Mutex<Box<dyn NodeProcessor>>> =
             Arc::new(Mutex::new(match &node.kernel {
                 Kernel::Pod { pod } => Box::new(PodProcessor::new(Arc::clone(pod), client)),
-                Kernel::Mapper { mapper } => Box::new(MapperProcessor::new(Arc::clone(mapper))),
-                Kernel::Joiner => {
+                Kernel::MapOperator { mapper } => {
+                    Box::new(MapOperatorProcessor::new(Arc::clone(mapper)))
+                }
+                Kernel::JoinOperator => {
                     // Need to get the parent node id for this joiner node
                     let mut parent_nodes = pipeline
                         .get_node_parents(&node)
@@ -814,11 +822,11 @@ impl PodProcessor {
 
         // Get the output packet for the pod result
         let output_packet = match pod_result.status {
-            PodResultStatus::Completed => {
+            PodStatus::Completed => {
                 // Get the output packet
-                pod_result.pod_job.get_output_packet(namespace_lookup)?
+                pod_result.output_packet
             }
-            PodResultStatus::Failed(exit_code) => {
+            PodStatus::Failed(exit_code) => {
                 // Processing failed, thus return the error
                 return Err(OrcaError {
                     kind: Kind::PodJobProcessingError {
@@ -828,7 +836,7 @@ impl PodProcessor {
                     },
                 });
             }
-            PodResultStatus::Unset => {
+            PodStatus::Unset | PodStatus::Running => {
                 // This should not happen, but if it does, we will return an error
                 return Err(OrcaError {
                     kind: Kind::PodJobProcessingError {
@@ -913,15 +921,20 @@ impl NodeProcessor for PodProcessor {
     }
 }
 
-/// Processor for Mapper nodes
-/// This processor renames the `input_keys` from the input packet to the `output_keys` defined by the map
-struct MapperProcessor {
-    mapper: Arc<Mapper>,
+struct OperatorProcessor<T: Operator> {
+    operator: Arc<T>,
     processing_tasks: JoinSet<()>,
 }
 
-impl MapperProcessor {
-    fn new(mapper: Arc<Mapper>) -> Self {
+/// Processor for Mapper nodes
+/// This processor renames the `input_keys` from the input packet to the `output_keys` defined by the map
+struct MapOperatorProcessor {
+    mapper: Arc<MapOperator>,
+    processing_tasks: JoinSet<()>,
+}
+
+impl MapOperatorProcessor {
+    fn new(mapper: Arc<MapOperator>) -> Self {
         Self {
             mapper,
             processing_tasks: JoinSet::new(),
@@ -930,7 +943,7 @@ impl MapperProcessor {
 }
 
 #[async_trait]
-impl NodeProcessor for MapperProcessor {
+impl NodeProcessor for MapOperatorProcessor {
     fn process_packet(
         &mut self,
         _sender_node_id: &str,
@@ -941,22 +954,15 @@ impl NodeProcessor for MapperProcessor {
         _namespace: &str,
         _namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<()> {
-        let mapping = self.mapper.mapping.clone();
+        let mapping = self.mapper;
         let packet_clone = packet.clone();
         let node_id_clone = node_id.to_owned();
         let output_key_exp_clone = base_output_key_exp.to_owned();
-
+        let mapper = Arc::clone(&self.mapper);
         self.processing_tasks.spawn(async move {
             let result = async {
                 // Apply the mapping to the input packet
-                let output_map = mapping
-                    .iter()
-                    .map(|(input_key, output_key)| {
-                        let input = get(&packet_clone, input_key)?.clone();
-                        Ok((output_key.to_owned(), input))
-                    })
-                    .collect::<Result<HashMap<_, _>>>()?;
-
+                let output_map = mapper.process_packets(packet_clone).await?;
                 // Send the packet outwards
                 session
                     .put(

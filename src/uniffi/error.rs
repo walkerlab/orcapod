@@ -41,6 +41,16 @@ pub(crate) enum Kind {
     },
     #[snafu(display("Out of generated random names."))]
     GeneratedNamesOverflow { backtrace: Option<Backtrace> },
+    #[snafu(display(
+        "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
+    ))]
+    FailedToGetPodJobOutput {
+        pod_job_hash: String,
+        packet_key: String,
+        path: Box<PathBuf>,
+        io_error: Box<io::Error>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
     IncompletePacket {
         kind: String,
@@ -96,21 +106,14 @@ pub(crate) enum Kind {
         path: PathBuf,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display(
-        "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
-    ))]
-    FailedToGetPodJobOutput {
-        pod_job_hash: String,
-        packet_key: String,
-        path: Box<PathBuf>,
-        io_error: Box<io::Error>,
+    #[snafu(display("Pod job submission failed with reason: {reason}."))]
+    PodJobSubmissionFailed {
+        reason: String,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display(
-        "Failed to convert status {status:?} to PodResultStatus with reason: {reason}."
-    ))]
-    StatusConversionFailure {
-        status: PodStatus,
+    #[snafu(display("Pod job {hash} failed to process with reason: {reason}."))]
+    PodJobProcessingError {
+        hash: String,
         reason: String,
         backtrace: Option<Backtrace>,
     },

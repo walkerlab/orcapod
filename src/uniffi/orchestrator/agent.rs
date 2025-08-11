@@ -47,7 +47,7 @@ pub struct AgentClient {
     /// Connecting agent's assigned name used for reference.
     pub host: String,
     #[getset(skip)]
-    pub(crate) session: zenoh::Session,
+    pub(crate) session: Arc<zenoh::Session>,
 }
 
 #[uniffi::export]
@@ -68,7 +68,8 @@ impl AgentClient {
                         .await
                         .context(selector::AgentCommunicationFailure {})?,
                 )
-            })?,
+            })?
+            .into(),
         })
     }
     /// Start many pod jobs to be processed in parallel.
