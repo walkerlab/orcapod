@@ -962,7 +962,7 @@ impl NodeProcessor for MapOperatorProcessor {
         self.processing_tasks.spawn(async move {
             let result = async {
                 // Apply the mapping to the input packet
-                let output_map = mapper.process_packets(packet_clone).await?;
+                let output_map = mapper.process_packets(vec![packet_clone]).await?;
                 // Send the packet outwards
                 session
                     .put(

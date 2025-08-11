@@ -81,7 +81,8 @@
         "patchelf",
         "itertools",
         "colinianking",
-        "itertools"
+        "itertools",
+        "pathset"
     ],
     "useGitignore": false,
     "ignorePaths": [
