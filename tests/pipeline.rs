@@ -29,7 +29,7 @@ fn input_packet_checksum() -> Result<()> {
         HashMap::from([(
             "A".into(),
             Kernel::Pod {
-                r#ref: pod_custom(
+                pod: pod_custom(
                     "alpine:3.14",
                     &["echo".into()],
                     HashMap::from([(

@@ -41,7 +41,7 @@ where
     })?)
 }
 
-pub fn create_key_expr(
+pub fn make_key_expr(
     group: &str,
     host: &str,
     topic: &str,
@@ -50,9 +50,9 @@ pub fn create_key_expr(
     // For each key-value pair in the content, we format it as "key/value" and join them with "/".
     // The final format will be "group/host/topic/key1/value1/key2/value
     let content_converted = content
-        .into_iter()
-        .map(|(k, v)| format!("{}/{}", k, v))
+        .iter()
+        .map(|(k, v)| format!("{k}/{v}"))
         .collect::<Vec<String>>()
         .join("/");
-    format!("{}/{}/{}/{}", group, host, topic, content_converted)
+    format!("{group}/{host}/{topic}/{content_converted}")
 }

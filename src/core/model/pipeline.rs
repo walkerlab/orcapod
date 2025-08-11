@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct PipelineNode {
-    pub name: String,
+    pub id: String,
     pub kernel: Kernel,
 }
 
@@ -58,7 +58,6 @@ impl PipelineJob {
     /// Will return `Err` if there is an issue getting the input packet per node.
     /// # Returns
     /// A `HashMap` where the key is the node name and the value is a vector of `HashMap<String, PathSet>` representing the input packets for that node.
-    #[expect(clippy::excessive_nesting, reason = "Nesting manageable")]
     pub fn get_input_packet_per_node(
         &self,
     ) -> Result<HashMap<String, Vec<HashMap<String, PathSet>>>> {

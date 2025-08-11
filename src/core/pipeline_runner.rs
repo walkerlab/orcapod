@@ -2,14 +2,14 @@ use crate::{
     core::{
         crypto::hash_buffer,
         model::{pipeline::PipelineNode, serialize_hashmap},
-        operator::{MapOperator, Operator},
-        util::get,
+        operator::{JoinOperator, Operator},
+        util::{get, make_key_expr},
     },
     uniffi::{
         error::{Kind, OrcaError, Result, selector},
         model::{
-            packet::{PathSet, URI},
-            pipeline::{Kernel, Pipeline, PipelineJob, PipelineResult},
+            packet::{Packet, PathSet, URI},
+            pipeline::{Kernel, PipelineJob, PipelineResult},
             pod::{Pod, PodJob, PodResult},
         },
         orchestrator::{
@@ -20,12 +20,12 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use itertools::Itertools as _;
+use names::{Generator, Name};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Serializer;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher},
     path::PathBuf,
@@ -58,13 +58,77 @@ struct ProcessingFailure {
 #[derive(Debug)]
 struct PipelineRun {
     /// `PipelineJob` that this run is associated with
+    group: String,
+    host: String,
+    assigned_name: String,
+    session: Arc<zenoh::Session>,   // Zenoh session for communication
+    agent_client: Arc<AgentClient>, // Zenoh agent client for communication with docker orchestrators
     pipeline_job: Arc<PipelineJob>, // The pipeline job that this run is associated with
-    node_tasks: JoinSet<Result<()>>, // JoinSet of tasks for each node in the pipeline
+    node_tasks: Arc<Mutex<JoinSet<Result<()>>>>, // JoinSet of tasks for each node in the pipeline
     outputs: Arc<RwLock<HashMap<String, Vec<PathSet>>>>, // String is the node key, while hash
     orchestrator_agent: Arc<Agent>, // This is placed in pipeline due to the current design requiring a namespace to operate on
     orchestrator_agent_task: JoinSet<Result<()>>, // JoinSet of tasks for the orchestrator agent
     failure_logs: Arc<RwLock<Vec<ProcessingFailure>>>, // Logs of processing failures
-    failure_logging_task: JoinSet<Result<()>>, // JoinSet of tasks for logging failures
+    failure_logging_task: Arc<Mutex<JoinSet<Result<()>>>>, // JoinSet of tasks for logging failures
+    namespace: String,
+    namespace_lookup: HashMap<String, PathBuf>,
+}
+
+impl PipelineRun {
+    fn make_key_expr(&self, node_id: &str, event: &str) -> String {
+        make_key_expr(
+            &self.group,
+            &self.host,
+            "pipeline_run",
+            &BTreeMap::from([
+                ("event".to_owned(), event.to_owned()),
+                ("node_id".to_owned(), node_id.to_owned()),
+                ("pipeline_run_id".to_owned(), self.assigned_name.clone()),
+            ]),
+        )
+    }
+
+    fn make_abort_request_key_exp(&self) -> String {
+        make_key_expr(
+            &self.group,
+            &self.host,
+            "pipeline_run",
+            &BTreeMap::from([
+                ("event".to_owned(), "abort".to_owned()),
+                ("pipeline_run_id".to_owned(), self.assigned_name.clone()),
+            ]),
+        )
+    }
+
+    // Utils functions
+    async fn send_packets(&self, node_id: &str, output_packets: &Vec<Packet>) -> Result<()> {
+        Ok(self
+            .session
+            .put(
+                self.make_key_expr(node_id, "output"),
+                serde_json::to_string(&output_packets)?,
+            )
+            .await
+            .context(selector::AgentCommunicationFailure {})?)
+    }
+
+    async fn send_err(&self, node_id: &str, err: OrcaError) {
+        try_to_forward_err_msg(
+            Arc::clone(&self.session),
+            err,
+            &self.make_key_expr(node_id, "error"),
+            node_id,
+        )
+        .await;
+    }
+
+    async fn send_abort_request(&self) -> Result<()> {
+        Ok(self
+            .session
+            .put(&self.make_abort_request_key_exp(), vec![])
+            .await
+            .context(selector::AgentCommunicationFailure {})?)
+    }
 }
 
 impl PartialEq for PipelineRun {
@@ -94,7 +158,7 @@ pub struct DockerPipelineRunner {
     /// The host name of the runner
     pub host: String,
     agent: Arc<Agent>,
-    pipeline_runs: HashMap<String, PipelineRun>,
+    pipeline_runs: HashMap<String, Arc<PipelineRun>>,
 }
 
 /// This is an implementation of a pipeline runner that uses Zenoh to communicate between the tasks
@@ -108,13 +172,13 @@ impl DockerPipelineRunner {
     /// Create a new Docker pipeline runner
     /// # Errors
     /// Will error out if the environment variable `HOSTNAME` is not set
-    pub fn new(group: String, host: String, agent: Arc<Agent>) -> Result<Self> {
-        Ok(Self {
+    pub fn new(group: String, host: String, agent: Arc<Agent>) -> Self {
+        Self {
             group,
             host,
             agent,
             pipeline_runs: HashMap::new(),
-        })
+        }
     }
 
     /// Will start a new pipeline run with the given `PipelineJob`
@@ -139,36 +203,33 @@ impl DockerPipelineRunner {
         )?;
 
         // Create a new pipeline run
-        let mut pipeline_run = PipelineRun {
+        let pipeline_run = Arc::new(PipelineRun {
             pipeline_job: pipeline_job.into(),
             outputs: Arc::new(RwLock::new(HashMap::new())),
-            node_tasks: JoinSet::new(),
+            node_tasks: Arc::new(Mutex::new(JoinSet::new())),
             orchestrator_agent: orchestrator_agent.into(),
             orchestrator_agent_task: JoinSet::new(),
             failure_logs: Arc::new(RwLock::new(Vec::new())),
-            failure_logging_task: JoinSet::new(),
-        };
-
-        // Get the preexisting zenoh session from agent
-        let session = Arc::clone(&self.agent.client.session);
-
-        // Spawn task for each of the processing node
-        let orchestrator_agent_clone = Arc::clone(&pipeline_run.orchestrator_agent);
-        let namespace_lookup_clone = namespace_lookup.clone();
-        // Start the orchestrator agent service
-        pipeline_run.orchestrator_agent_task.spawn(async move {
-            orchestrator_agent_clone
-                .start(&namespace_lookup_clone, None)
-                .await
+            failure_logging_task: Arc::new(Mutex::new(JoinSet::new())),
+            group: self.group.clone(),
+            host: self.host.clone(),
+            assigned_name: Generator::with_naming(Name::Plain).next().context(
+                selector::MissingInfo {
+                    details: "unable to generate a random name",
+                },
+            )?,
+            session: Arc::clone(&self.agent.client.session),
+            agent_client: Arc::clone(&self.agent.client),
+            namespace: namespace.to_owned(),
+            namespace_lookup: namespace_lookup.clone(),
         });
 
         // Create failure logging task
         pipeline_run
             .failure_logging_task
-            .spawn(Self::failure_capture_task(
-                Arc::clone(&session),
-                Arc::clone(&pipeline_run.failure_logs),
-            ));
+            .lock()
+            .await
+            .spawn(Self::failure_capture_task(Arc::clone(&pipeline_run)));
 
         // Create the processor task for each node
         // The id for the pipeline_run is the pipeline_job hash
@@ -177,8 +238,9 @@ impl DockerPipelineRunner {
         let graph = &pipeline_run.pipeline_job.pipeline.graph;
 
         // Create the subscriber that listen for ready messages
-        let subscriber = session
-            .declare_subscriber(self.get_base_key_exp(&pipeline_run_id) + "/*/status/ready")
+        let subscriber = pipeline_run
+            .session
+            .declare_subscriber(pipeline_run.make_key_expr("*", "node_ready"))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -192,15 +254,12 @@ impl DockerPipelineRunner {
             // Spawn the task
             pipeline_run
                 .node_tasks
+                .lock()
+                .await
                 .spawn(Self::spawn_node_processing_task(
-                    node.clone(),
-                    Arc::clone(&pipeline_run.pipeline_job.pipeline),
-                    input_nodes.contains(&node.name),
-                    self.get_base_key_exp(&pipeline_run_id),
-                    namespace.to_owned(),
-                    namespace_lookup.clone(),
-                    Arc::clone(&session),
-                    Arc::clone(&pipeline_run.orchestrator_agent.client),
+                    graph[node_idx].clone(),
+                    Arc::clone(&pipeline_run),
+                    input_nodes.contains(&node.id),
                 ));
         }
 
@@ -215,22 +274,15 @@ impl DockerPipelineRunner {
         }
 
         for (node_id, key_mapping) in node_output_spec {
-            // Create the key expression to subscribe to
-            let key_exp_to_sub = format!(
-                "{}/{}/outputs/{}",
-                self.get_base_key_exp(&pipeline_run_id),
-                node_id,
-                SUCCESS_KEY_EXP,
-            );
-
             // Spawn the task that captures the outputs
             pipeline_run
                 .node_tasks
+                .lock()
+                .await
                 .spawn(Self::create_output_capture_task_for_node(
                     key_mapping,
-                    Arc::clone(&pipeline_run.outputs),
-                    Arc::clone(&session),
-                    key_exp_to_sub,
+                    Arc::clone(&pipeline_run),
+                    node_id.clone(),
                 ));
         }
 
@@ -247,40 +299,27 @@ impl DockerPipelineRunner {
             }
         }
 
-        // Submit the input_packets to the correct key_exp
-        let base_input_node_key_exp = format!(
-            "{}/{}",
-            self.get_base_key_exp(&pipeline_run_id),
-            INPUT_KEY_EXP,
-        );
-
         // For each node send all the packets associate with it
-        for (node_name, input_packets) in pipeline_run.pipeline_job.get_input_packet_per_node()? {
-            for packet in input_packets {
-                // Send the packet to the input node key_exp
-                let output_key_exp = format!("{base_input_node_key_exp}/{node_name}");
-                session
-                    .put(
-                        &output_key_exp,
-                        serde_json::to_string(&NodeOutput::Packet(
-                            "input_node".to_owned(),
-                            packet.clone(),
-                        ))?,
-                    )
-                    .await
-                    .context(selector::AgentCommunicationFailure {})?;
+        for (node_id, input_packets) in pipeline_run.pipeline_job.get_input_packet_per_node()? {
+            // Send the packet to the input node key_exp
+            pipeline_run
+                .session
+                .put(
+                    pipeline_run.make_key_expr(&node_id, INPUT_KEY_EXP),
+                    serde_json::to_string(&input_packets)?,
+                )
+                .await
+                .context(selector::AgentCommunicationFailure {})?;
 
-                // All packets associate with node are sent, we can send processing complete msg now
-                session
-                    .put(
-                        &output_key_exp,
-                        serde_json::to_string(&NodeOutput::ProcessingCompleted(
-                            "input_node".to_owned(),
-                        ))?,
-                    )
-                    .await
-                    .context(selector::AgentCommunicationFailure {})?;
-            }
+            // All packets associate with node are sent, we can send processing complete msg now
+            pipeline_run
+                .session
+                .put(
+                    pipeline_run.make_key_expr(&node_id, INPUT_KEY_EXP),
+                    serde_json::to_string(&Vec::<Packet>::new())?,
+                )
+                .await
+                .context(selector::AgentCommunicationFailure {})?;
         }
 
         // Insert into the list of pipeline runs
@@ -306,7 +345,7 @@ impl DockerPipelineRunner {
                 })?;
 
         // Wait for all the tasks to complete
-        while let Some(result) = pipeline_run.node_tasks.join_next().await {
+        while let Some(result) = pipeline_run.node_tasks.lock().await.join_next().await {
             match result {
                 Ok(Ok(())) => {} // Task completed successfully
                 Ok(Err(err)) => {
@@ -334,13 +373,7 @@ impl DockerPipelineRunner {
     /// # Errors
     /// Will error out if the pipeline run is not found or if any of the tasks fail to stop correctly
     pub async fn stop(&mut self, pipeline_run_id: &str) -> Result<()> {
-        let stop_key_exp = format!(
-            "{}/{}/stop",
-            self.get_base_key_exp(pipeline_run_id),
-            pipeline_run_id
-        );
-        // To stop the pipeline run, we need to send a stop message to all the tasks
-        // Get the pipeline run first
+        // Get the pipeline run first then broadcast the abort request signal
         let pipeline_run =
             self.pipeline_runs
                 .get_mut(pipeline_run_id)
@@ -348,17 +381,17 @@ impl DockerPipelineRunner {
                     key: pipeline_run_id.to_owned(),
                 })?;
 
-        let session = zenoh::open(zenoh::Config::default())
-            .await
-            .context(selector::AgentCommunicationFailure {})?;
+        // Send the abort request signal
+        pipeline_run.send_abort_request().await?;
 
-        // Send the stop message into the stop key_exp, the msg is just an empty vector
-        session
-            .put(stop_key_exp, Vec::new())
+        while pipeline_run
+            .node_tasks
+            .lock()
             .await
-            .context(selector::AgentCommunicationFailure {})?;
-
-        while pipeline_run.node_tasks.join_next().await.is_some() {}
+            .join_next()
+            .await
+            .is_some()
+        {}
         Ok(())
     }
 
@@ -366,15 +399,15 @@ impl DockerPipelineRunner {
     async fn create_output_capture_task_for_node(
         //<Key to pull from the node, Key that will be mapped to in the outputs>
         key_mapping: HashMap<String, String>,
-        outputs: Arc<RwLock<HashMap<String, Vec<PathSet>>>>,
-        session: Arc<zenoh::Session>,
-        key_exp_to_sub: String,
+        pipeline_run: Arc<PipelineRun>,
+        node_id: String,
     ) -> Result<()> {
         // Determine which keys we are interested in for the given node_id
 
         // Create a zenoh session
-        let subscriber = session
-            .declare_subscriber(key_exp_to_sub)
+        let subscriber = pipeline_run
+            .session
+            .declare_subscriber(pipeline_run.make_key_expr(&node_id, SUCCESS_KEY_EXP))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -386,7 +419,7 @@ impl DockerPipelineRunner {
                 NodeOutput::Packet(_, packet) => {
                     // Figure out which keys
                     // Store the output packet in the outputs map
-                    let mut outputs_lock = outputs.write().await;
+                    let mut outputs_lock = pipeline_run.outputs.write().await;
                     for (output_key, node_key) in &key_mapping {
                         outputs_lock
                             .entry(output_key.to_owned())
@@ -403,12 +436,10 @@ impl DockerPipelineRunner {
         Ok(())
     }
 
-    async fn failure_capture_task(
-        session: Arc<zenoh::Session>,
-        failure_logs: Arc<RwLock<Vec<ProcessingFailure>>>,
-    ) -> Result<()> {
-        let sub = session
-            .declare_subscriber(format!("**/outputs/{FAILURE_KEY_EXP}"))
+    async fn failure_capture_task(pipeline_run: Arc<PipelineRun>) -> Result<()> {
+        let sub = pipeline_run
+            .session
+            .declare_subscriber(pipeline_run.make_key_expr("*", FAILURE_KEY_EXP))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -418,7 +449,11 @@ impl DockerPipelineRunner {
             let process_failure: ProcessingFailure =
                 serde_json::from_slice(&payload.payload().to_bytes())?;
             // Store the failure message in the logs
-            failure_logs.write().await.push(process_failure.clone());
+            pipeline_run
+                .failure_logs
+                .write()
+                .await
+                .push(process_failure.clone());
             if let Some(first_line) = process_failure.error.lines().next() {
                 println!(
                     "Node {} processing failed with error: {}",
@@ -443,94 +478,82 @@ impl DockerPipelineRunner {
     /// Will error out if the kernel for the node is not found or if the
     async fn spawn_node_processing_task(
         node: PipelineNode,
-        pipeline: Arc<Pipeline>,
+        pipeline_run: Arc<PipelineRun>,
         is_input_node: bool,
-        base_key_exp: String,
-        namespace: String,
-        namespace_lookup: HashMap<String, PathBuf>,
-        session: Arc<zenoh::Session>,
-        client: Arc<AgentClient>,
     ) -> Result<()> {
+        // Get the node parents
+        let parent_nodes = pipeline_run
+            .pipeline_job
+            .pipeline
+            .get_node_parents(&node)
+            .collect::<Vec<_>>();
+
         // Create the correct processor for the node based on the kernel type
         let node_processor: Arc<Mutex<Box<dyn NodeProcessor>>> =
             Arc::new(Mutex::new(match &node.kernel {
-                Kernel::Pod { pod } => Box::new(PodProcessor::new(Arc::clone(pod), client)),
-                Kernel::MapOperator { mapper } => {
-                    Box::new(MapOperatorProcessor::new(Arc::clone(mapper)))
-                }
-                Kernel::JoinOperator => {
-                    // Need to get the parent node id for this joiner node
-                    let mut parent_nodes = pipeline
-                        .get_node_parents(&node)
-                        .map(|parent_node| parent_node.name.clone())
-                        .collect::<Vec<_>>();
-
-                    // Check if it this node takes input from input_nodes, if so we need ot add it to parent_node
-                    if is_input_node {
-                        parent_nodes.push("input_node".to_owned());
-                    }
-
-                    Box::new(JoinerProcessor::new(parent_nodes))
-                }
+                Kernel::Pod { pod } => Box::new(PodProcessor::new(
+                    Arc::clone(&pipeline_run),
+                    node.id.clone(),
+                    Arc::clone(pod),
+                )),
+                Kernel::MapOperator { mapper } => Box::new(OperatorProcessor::new(
+                    Arc::clone(&pipeline_run),
+                    node.id.clone(),
+                    Arc::clone(mapper),
+                    parent_nodes.len(),
+                )),
+                Kernel::JoinOperator => Box::new(OperatorProcessor::new(
+                    Arc::clone(&pipeline_run),
+                    node.id.clone(),
+                    JoinOperator::new(parent_nodes.len()).into(),
+                    parent_nodes.len(),
+                )),
             }));
 
         // Create a join set to spawn and handle incoming messages tasks
         let mut listener_tasks = JoinSet::new();
 
         // Create the list of key_expressions to subscribe to
-        let mut key_exps_to_subscribe_to = pipeline
-            .get_node_parents(&node)
+        let mut key_exps_to_subscribe_to = parent_nodes
+            .into_iter()
             .map(|parent_node| {
-                format!(
-                    "{base_key_exp}/{}/outputs/{SUCCESS_KEY_EXP}",
-                    parent_node.name
-                )
+                // Make the parent key to listen to
+                pipeline_run.make_key_expr(&parent_node.id, SUCCESS_KEY_EXP)
             })
             .collect::<Vec<_>>();
 
         // Check if node is an input_node, if so we need to add the input node key expression
         if is_input_node {
-            key_exps_to_subscribe_to
-                .push(format!("{base_key_exp}/input_node/outputs/{}", node.name));
+            key_exps_to_subscribe_to.push(pipeline_run.make_key_expr("input", SUCCESS_KEY_EXP));
         }
 
         // Create a subscriber for each of the parent nodes (Should only be 1, unless it is a joiner node)
         for key_exp in &key_exps_to_subscribe_to {
-            let subscriber = session
-                .declare_subscriber(key_exp)
-                .await
-                .context(selector::AgentCommunicationFailure {})?;
-
-            listener_tasks.spawn(Self::start_async_processor_task(
-                subscriber,
+            listener_tasks.spawn(Self::event_handler(
+                Arc::clone(&pipeline_run),
+                node.id.clone(),
+                pipeline_run
+                    .session
+                    .declare_subscriber(key_exp)
+                    .await
+                    .context(selector::AgentCommunicationFailure {})?,
                 Arc::clone(&node_processor),
-                node.name.clone(),
-                base_key_exp.clone(),
-                namespace.clone(),
-                namespace_lookup.clone(),
-                Arc::clone(&session),
             ));
         }
 
         // Create the listener task for the stop request
-        let mut stop_listener_task = JoinSet::new();
-
-        stop_listener_task.spawn(Self::start_stop_request_task(
-            Arc::clone(&node_processor),
-            format!("{base_key_exp}/{}/stop", node.name),
-            Arc::clone(&session),
+        let abort_request_handler_task = tokio::spawn(Self::abort_request_event_handler(
+            node_processor,
+            Arc::clone(&pipeline_run),
         ));
 
         // Wait for all tasks to be spawned and reply with ready message
         // This is to ensure that the pipeline run knows when all tasks are ready to receive inputs
-
         let mut num_of_ready_subscribers: usize = 0;
         // Build the subscriber
-        let status_subscriber = session
-            .declare_subscriber(format!(
-                "{base_key_exp}/{}/subscriber/status/ready",
-                node.name
-            ))
+        let status_subscriber = pipeline_run
+            .session
+            .declare_subscriber(pipeline_run.make_key_expr(&node.id, "event_handler_ready"))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -543,11 +566,9 @@ impl DockerPipelineRunner {
         }
 
         // Send a ready message so the pipeline knows when to start sending inputs
-        session
-            .put(
-                format!("{base_key_exp}/{}/status/ready", node.name),
-                &node.name,
-            )
+        pipeline_run
+            .session
+            .put(pipeline_run.make_key_expr(&node.id, "node_ready"), vec![])
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -555,80 +576,51 @@ impl DockerPipelineRunner {
         listener_tasks.join_all().await;
 
         // Abort the stop listener task since we don't need it anymore
-        stop_listener_task.abort_all();
+        abort_request_handler_task.abort();
 
         Ok(())
     }
 
     /// This is the actual handler for incoming messages for the node
-    async fn start_async_processor_task(
+    async fn event_handler(
+        pipeline_run: Arc<PipelineRun>,
+        node_id: String,
         subscriber: Subscriber<FifoChannelHandler<Sample>>,
-        node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
-        node_name: String,
-        base_key_exp: String,
-        namespace: String,
-        namespace_lookup: HashMap<String, PathBuf>,
-        session: Arc<zenoh::Session>,
+        processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
     ) -> Result<()> {
         // We do not know when tokio will start executing this task, therefore we need to send a ready message
         // back to our spawner task
-        session
+
+        pipeline_run
+            .session
             .put(
-                format!("{base_key_exp}/{node_name}/subscriber/status/ready"),
-                &node_name,
+                pipeline_run.make_key_expr(&node_id, "event_handler_ready"),
+                vec![],
             )
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
-        let node_base_output_key_exp = format!("{base_key_exp}/{node_name}/outputs");
-        while let Ok(payload) = subscriber.recv_async().await {
-            // Extract the message from the payload
-            match serde_json::from_slice(&payload.payload().to_bytes())? {
-                NodeOutput::Packet(sender_id, hash_map) => {
-                    // Process the packet using the node processor
-                    let result = node_processor.lock().await.process_packet(
-                        &sender_id,
-                        &node_name,
-                        &hash_map,
-                        Arc::clone(&session),
-                        &node_base_output_key_exp,
-                        &namespace,
-                        &namespace_lookup,
-                    );
+        while let Ok(sample) = subscriber.recv_async().await {
+            // Extract out the packets
+            let packets: Vec<Packet> = serde_json::from_slice(&sample.payload().to_bytes())?;
 
-                    if let Err(err) = result {
-                        try_to_forward_err_msg(
-                            Arc::clone(&session),
-                            err,
-                            &node_base_output_key_exp,
-                            &node_name,
-                        )
-                        .await;
-                    }
-                }
-                NodeOutput::ProcessingCompleted(sender_id) => {
-                    // Notify the processor that the parent node has completed processing
-                    if node_processor
-                        .lock()
-                        .await
-                        .mark_parent_as_complete(&sender_id)
-                        .await
-                    {
-                        // This was the last parent, thus we need to send the processing complete message
-                        let output_key_exp =
-                            format!("{base_key_exp}/{node_name}/outputs/{SUCCESS_KEY_EXP}");
-                        session
-                            .put(
-                                output_key_exp,
-                                serde_json::to_string(&NodeOutput::ProcessingCompleted(
-                                    node_name.clone(),
-                                ))?,
-                            )
-                            .await
-                            .context(selector::AgentCommunicationFailure {})?;
-                    }
-                    break;
-                }
+            // Check if the packets are empty, if so that means the node is finished processing
+            if packets.is_empty() {
+                processor
+                    .lock()
+                    .await
+                    .mark_parent_as_complete(&node_id)
+                    .await;
+                break;
+            }
+
+            // For each packet, we need to process it
+            for packet in packets {
+                processor
+                    .lock()
+                    .await
+                    .process_incoming_packet(&node_id, &packet)
+                    .await;
             }
         }
 
@@ -636,13 +628,13 @@ impl DockerPipelineRunner {
     }
 
     /// This task will listen for stop requests on the given key expression
-    async fn start_stop_request_task(
+    async fn abort_request_event_handler(
         node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
-        base_key_exp: String,
-        session: Arc<zenoh::Session>,
+        pipeline_run: Arc<PipelineRun>,
     ) -> Result<()> {
-        let subscriber = session
-            .declare_subscriber(format!("{base_key_exp}/stop"))
+        let subscriber = pipeline_run
+            .session
+            .declare_subscriber(pipeline_run.make_abort_request_key_exp())
             .await
             .context(selector::AgentCommunicationFailure {})?;
         while subscriber.recv_async().await.is_ok() {
@@ -650,10 +642,6 @@ impl DockerPipelineRunner {
             node_processor.lock().await.stop();
         }
         Ok::<(), OrcaError>(())
-    }
-
-    fn get_base_key_exp(&self, pipeline_run_id: &str) -> String {
-        format!("{}/{}/{}", self.group, self.host, pipeline_run_id)
     }
 }
 
@@ -664,29 +652,12 @@ impl DockerPipelineRunner {
 /// As a result, each processor only needs to worry about writing their own function to process the msg
 #[async_trait]
 trait NodeProcessor: Send + Sync {
-    fn process_packet(
-        &mut self,
-        sender_node_id: &str,
-        node_id: &str,
-        packet: &HashMap<String, PathSet>,
-        session: Arc<zenoh::Session>,
-        base_output_key_exp: &str,
-        namespace: &str,
-        namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<()>;
+    async fn process_incoming_packet(&mut self, sender_node_id: &str, incoming_packet: &Packet);
 
     /// Notifies the processor that the parent node has completed processing
-    /// If the parent node was the last one to complete, this function will wait till all task are done
-    /// and send the node processing complete message then return.
-    ///
-    /// Otherwise it will return immediately
-    ///
-    /// # Returns
-    /// true if the parent node was the last one to complete processing, user send
-    /// the processing completion message to the output
-    ///
-    /// false if there are still other parent nodes that need to complete processing
-    async fn mark_parent_as_complete(&mut self, parent_node_id: &str) -> bool;
+    /// If it is the last parent to complete, it will wait for all processing task to finish
+    /// Then send a completion signal
+    async fn mark_parent_as_complete(&mut self, parent_node_id: &str);
 
     fn stop(&mut self);
 }
@@ -695,13 +666,13 @@ trait NodeProcessor: Send + Sync {
 async fn try_to_forward_err_msg(
     session: Arc<zenoh::Session>,
     err: OrcaError,
-    node_base_output_key_exp: &str,
+    key_expression: &str,
     node_id: &str,
 ) {
     match async {
         session
             .put(
-                format!("{node_base_output_key_exp}/{FAILURE_KEY_EXP}"),
+                format!("{key_expression}/{FAILURE_KEY_EXP}"),
                 serde_json::to_string(&ProcessingFailure {
                     node_id: node_id.to_owned(),
                     error: err.to_string(),
@@ -723,65 +694,71 @@ async fn try_to_forward_err_msg(
 /// Processor for Pods
 /// Currently missing implementation to call agents for actual pod processing
 struct PodProcessor {
+    pipeline_run: Arc<PipelineRun>,
+    node_id: String,
     pod: Arc<Pod>,
     processing_tasks: JoinSet<()>,
-    client: Arc<AgentClient>,
 }
 
 impl PodProcessor {
-    fn new(pod: Arc<Pod>, client: Arc<AgentClient>) -> Self {
+    fn new(pipeline_run: Arc<PipelineRun>, node_id: String, pod: Arc<Pod>) -> Self {
         Self {
+            pipeline_run,
+            node_id,
             pod,
             processing_tasks: JoinSet::new(),
-            client,
         }
     }
+}
 
+impl PodProcessor {
     /// Will handle the creation of the pod job, submission to the agent, listening for completion, and extracting the `output_packet` if successful
-    async fn start_pod_job_task(
+    async fn process_packet(
+        pipeline_run: Arc<PipelineRun>,
         node_id: String,
         pod: Arc<Pod>,
-        packet: HashMap<String, PathSet>,
-        client: Arc<AgentClient>,
-        session: Arc<zenoh::Session>,
-        base_output_key_exp: String,
-        namespace: String,
-        namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<()> {
-        // For now we will just send the input_packet to the success channel
-        let node_id_bytes = node_id.as_bytes().to_vec();
+        incoming_packet: HashMap<String, PathSet>,
+    ) -> Result<Packet> {
+        // Hash the input_packet to create a unique identifier for the pod job
         let input_packet_hash = {
-            let mut buf = node_id_bytes;
+            let mut buf = Vec::new();
             let mut serializer = Serializer::new(&mut buf);
-            serialize_hashmap(&packet, &mut serializer)?;
+            serialize_hashmap(&incoming_packet, &mut serializer)?;
             hash_buffer(buf)
         };
-        let output_dir = URI {
-            namespace: namespace.clone(),
-            path: PathBuf::from(format!("pod_runs/{node_id}/{input_packet_hash}")),
-        };
-
-        let cpu_limit = pod.recommended_cpus;
-        let memory_limit = pod.recommended_memory;
 
         // Create the pod job
         let pod_job = PodJob::new(
             None,
             Arc::clone(&pod),
-            packet,
-            output_dir,
-            cpu_limit,
-            memory_limit,
+            incoming_packet,
+            URI {
+                namespace: pipeline_run.namespace.clone(),
+                path: format!(
+                    "pipeline_outputs/{}/{node_id}/{input_packet_hash}",
+                    pipeline_run.assigned_name
+                )
+                .into(),
+            },
+            pod.recommended_cpus,
+            pod.recommended_memory,
             None,
-            namespace_lookup,
+            &pipeline_run.namespace_lookup,
         )?;
 
         // Create listener for pod_job
-        let target_key_exp = format!("group/{}/success/pod_job/{}/**", client.group, pod_job.hash);
-
         // Create the subscriber
-        let pod_job_subscriber = session
-            .declare_subscriber(target_key_exp)
+        let pod_job_subscriber = pipeline_run
+            .session
+            .declare_subscriber(make_key_expr(
+                &pipeline_run.group,
+                "*",
+                "pod_job",
+                &BTreeMap::from([
+                    ("id".to_owned(), pod_job.hash.clone()),
+                    ("action".to_owned(), "success".to_owned()),
+                ]),
+            ))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -798,7 +775,10 @@ impl PodProcessor {
         });
 
         // Submit it to the client and get the response to make sure it was successful
-        let responses = client.start_pod_jobs(vec![pod_job.into()]).await;
+        let responses = pipeline_run
+            .agent_client
+            .start_pod_jobs(vec![pod_job.clone().into()])
+            .await;
         let response = responses
             .first()
             .context(selector::InvalidIndex { idx: 0_usize })?;
@@ -807,7 +787,8 @@ impl PodProcessor {
             Response::Ok => (),
             Response::Err(err) => {
                 return Err(OrcaError {
-                    kind: Kind::PodJobSubmissionFailed {
+                    kind: Kind::PodJobProcessingError {
+                        hash: pod_job.hash,
                         reason: err.clone(),
                         backtrace: Some(snafu::Backtrace::capture()),
                     },
@@ -816,12 +797,10 @@ impl PodProcessor {
         }
 
         // Get the pod result from the listener task
-        let temp = pod_job_listener_task.await?;
-
-        let pod_result = temp?;
+        let pod_result = pod_job_listener_task.await??;
 
         // Get the output packet for the pod result
-        let output_packet = match pod_result.status {
+        Ok(match pod_result.status {
             PodStatus::Completed => {
                 // Get the output packet
                 pod_result.output_packet
@@ -836,84 +815,81 @@ impl PodProcessor {
                     },
                 });
             }
-            PodStatus::Unset | PodStatus::Running => {
+            PodStatus::Running | PodStatus::Unset => {
                 // This should not happen, but if it does, we will return an error
                 return Err(OrcaError {
                     kind: Kind::PodJobProcessingError {
                         hash: pod_result.pod_job.hash.clone(),
-                        reason: "Pod processing status is unset".to_owned(),
+                        reason: "Pod result status is running or unset".to_owned(),
                         backtrace: Some(snafu::Backtrace::capture()),
                     },
                 });
             }
-        };
-
-        session
-            .put(
-                base_output_key_exp.clone() + "/" + SUCCESS_KEY_EXP,
-                serde_json::to_string(&NodeOutput::Packet(node_id.clone(), output_packet))?,
-            )
-            .await
-            .context(selector::AgentCommunicationFailure {})?;
-        Ok::<(), OrcaError>(())
+        })
     }
 }
 
+#[expect(clippy::excessive_nesting, reason = "Nesting is manageable")]
 #[async_trait]
 impl NodeProcessor for PodProcessor {
-    fn process_packet(
+    async fn process_incoming_packet(
         &mut self,
         _sender_node_id: &str,
-        node_id: &str,
-        packet: &HashMap<String, PathSet>,
-        session: Arc<zenoh::Session>,
-        base_output_key_exp: &str,
-        namespace: &str,
-        namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<()> {
-        // We need a unique hash for this given input packet process by the node
-        // therefore we need to generate a hash that has the pod_id + input_packet
-        let pod_clone = Arc::clone(&self.pod);
-        let client_clone = Arc::clone(&self.client);
-        let node_id_owned = node_id.to_owned();
-        let packet_owned = packet.clone();
-        let base_output_key_exp_owned = base_output_key_exp.to_owned();
-        let namespace_owned = namespace.to_owned();
-        let namespace_lookup_owned = namespace_lookup.clone();
+        incoming_packet: &HashMap<String, PathSet>,
+    ) {
+        // Clone all necessary fields from self to move into the async block
+        let pipeline_run = Arc::clone(&self.pipeline_run);
+        let node_id = self.node_id.clone();
+        let pod = Arc::clone(&self.pod);
+
+        let incoming_packet_inner = incoming_packet.clone();
 
         self.processing_tasks.spawn(async move {
-            let results = Self::start_pod_job_task(
-                node_id_owned.clone(),
-                pod_clone,
-                packet_owned,
-                client_clone,
-                Arc::clone(&session),
-                base_output_key_exp_owned.clone(),
-                namespace_owned.clone(),
-                &namespace_lookup_owned,
+            let result = match Self::process_packet(
+                Arc::clone(&pipeline_run),
+                node_id.clone(),
+                Arc::clone(&pod),
+                incoming_packet_inner.clone(),
             )
-            .await;
+            .await
+            {
+                Ok(output_packet) => {
+                    match pipeline_run
+                        .send_packets(&node_id, &vec![output_packet])
+                        .await
+                    {
+                        Ok(()) => Ok(()),
+                        Err(err) => Err(err),
+                    }
+                }
+                Err(err) => Err(err),
+            };
 
-            match results {
-                Ok(()) => {}
+            match result {
+                Ok(()) => {
+                    // Successfully processed the packet, nothing to do
+                }
                 Err(err) => {
-                    try_to_forward_err_msg(
-                        session,
-                        err,
-                        &base_output_key_exp_owned,
-                        &node_id_owned,
-                    )
-                    .await;
+                    pipeline_run.send_err(&node_id, err).await;
                 }
             }
         });
-        Ok(())
     }
 
-    async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) -> bool {
+    async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) {
         // For pod we only have one parent, thus execute the exit case
         while self.processing_tasks.join_next().await.is_some() {}
-        true
+        // Send out completion signal
+        match self
+            .pipeline_run
+            .send_packets(&self.node_id, &Vec::new())
+            .await
+        {
+            Ok(()) => {}
+            Err(err) => {
+                self.pipeline_run.send_err(&self.node_id, err).await;
+            }
+        }
     }
 
     fn stop(&mut self) {
@@ -921,220 +897,98 @@ impl NodeProcessor for PodProcessor {
     }
 }
 
-struct OperatorProcessor<T: Operator> {
+struct OperatorProcessor<T: Operator + Send + Sync> {
+    pipeline_run: Arc<PipelineRun>,
+    node_id: String,
     operator: Arc<T>,
+    num_of_parents: usize,
+    num_of_completed_parents: usize,
     processing_tasks: JoinSet<()>,
 }
 
-/// Processor for Mapper nodes
-/// This processor renames the `input_keys` from the input packet to the `output_keys` defined by the map
-struct MapOperatorProcessor {
-    mapper: Arc<MapOperator>,
-    processing_tasks: JoinSet<()>,
-}
-
-impl MapOperatorProcessor {
-    fn new(mapper: Arc<MapOperator>) -> Self {
+impl<T: Operator + Send + Sync + 'static> OperatorProcessor<T> {
+    /// Create a new operator processor
+    pub fn new(
+        pipeline_run: Arc<PipelineRun>,
+        node_id: String,
+        operator: Arc<T>,
+        num_of_parents: usize,
+    ) -> Self {
         Self {
-            mapper,
+            pipeline_run,
+            node_id,
+            operator,
+            num_of_parents,
+            num_of_completed_parents: 0,
             processing_tasks: JoinSet::new(),
         }
     }
 }
 
+#[expect(clippy::excessive_nesting, reason = "Nesting is manageable")]
 #[async_trait]
-impl NodeProcessor for MapOperatorProcessor {
-    fn process_packet(
-        &mut self,
-        _sender_node_id: &str,
-        node_id: &str,
-        packet: &HashMap<String, PathSet>,
-        session: Arc<zenoh::Session>,
-        base_output_key_exp: &str,
-        _namespace: &str,
-        _namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<()> {
-        let mapping = self.mapper;
-        let packet_clone = packet.clone();
-        let node_id_clone = node_id.to_owned();
-        let output_key_exp_clone = base_output_key_exp.to_owned();
-        let mapper = Arc::clone(&self.mapper);
-        self.processing_tasks.spawn(async move {
-            let result = async {
-                // Apply the mapping to the input packet
-                let output_map = mapper.process_packets(vec![packet_clone]).await?;
-                // Send the packet outwards
-                session
-                    .put(
-                        format!("{output_key_exp_clone}/{SUCCESS_KEY_EXP}"),
-                        &serde_json::to_string(&NodeOutput::Packet(
-                            node_id_clone.clone(),
-                            output_map,
-                        ))?,
-                    )
-                    .await
-                    .context(selector::AgentCommunicationFailure {})?;
-                Ok::<(), OrcaError>(())
-            }
-            .await;
-
-            if let Err(err) = result {
-                try_to_forward_err_msg(session, err, &output_key_exp_clone, &node_id_clone).await;
-            }
-        });
-        Ok(())
-    }
-
-    async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) -> bool {
-        // For mapper we only have one parent, thus execute the exit case
-        while (self.processing_tasks.join_next().await).is_some() {
-            // The only error that should be forwarded here is the failure to send the output packet
-        }
-        true
-    }
-
-    fn stop(&mut self) {
-        self.processing_tasks.abort_all();
-    }
-}
-
-/// Processor for Joiner nodes
-/// This processor combines packets from multiple parent nodes into a single output packet
-/// It uses a cartesian product to combine packets from different parents
-#[derive(Debug)]
-struct JoinerProcessor {
-    /// Cache for all packets received by the node
-    input_packet_cache: HashMap<String, Vec<HashMap<String, PathSet>>>,
-    completed_parents: Vec<String>,
-    processing_tasks: JoinSet<()>,
-}
-
-impl JoinerProcessor {
-    fn new(parents_node_id: Vec<String>) -> Self {
-        let input_packet_cache = parents_node_id
-            .into_iter()
-            .map(|id| (id, Vec::new()))
-            .collect();
-        Self {
-            input_packet_cache,
-            completed_parents: Vec::new(),
-            processing_tasks: JoinSet::new(),
-        }
-    }
-
-    fn compute_cartesian_product(
-        factors: &[Vec<HashMap<String, PathSet>>],
-    ) -> Vec<HashMap<String, PathSet>> {
-        factors
-            .iter()
-            .multi_cartesian_product()
-            .map(|packets_to_combined| {
-                packets_to_combined
-                    .into_iter()
-                    .fold(HashMap::new(), |mut acc, packet| {
-                        acc.extend(packet.clone());
-                        acc
-                    })
-            })
-            .collect::<Vec<_>>()
-    }
-}
-
-#[async_trait]
-impl NodeProcessor for JoinerProcessor {
-    fn process_packet(
+impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T> {
+    async fn process_incoming_packet(
         &mut self,
         sender_node_id: &str,
-        node_id: &str,
-        packet: &HashMap<String, PathSet>,
-        session: Arc<zenoh::Session>,
-        base_output_key_exp: &str,
-        _namespace: &str,
-        _namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<()> {
-        self.input_packet_cache
-            .get_mut(sender_node_id)
-            .context(selector::KeyMissing {
-                key: sender_node_id.to_owned(),
-            })?
-            .push(packet.clone());
+        incoming_packet: &HashMap<String, PathSet>,
+    ) {
+        // Clone all necessary fields from self to move into the async block
+        let operator = Arc::clone(&self.operator);
+        let pipeline_run = Arc::clone(&self.pipeline_run);
+        let node_id = self.node_id.clone();
 
-        // Check if we have all the other parents needed to compute the cartesian product
-        if self.input_packet_cache.values().all(|v| !v.is_empty()) {
-            // Get all the cached packets from other parents
-            let other_parent_ids = self
-                .input_packet_cache
-                .keys()
-                .filter(|key| *key != sender_node_id);
+        let sender_node_id_inner = sender_node_id.to_owned();
+        let incoming_packet_inner = incoming_packet.clone();
 
-            // Build the factors of the product as owned values to avoid lifetime issues
-            let mut factors = other_parent_ids
-                .map(|id| get(&self.input_packet_cache, id).cloned())
-                .collect::<Result<Vec<_>>>()?;
+        self.processing_tasks.spawn(async move {
+            let processing_result = operator
+                .process_packets(vec![(sender_node_id_inner, incoming_packet_inner)])
+                .await;
 
-            // Add the new packet as a factor
-            factors.push(vec![packet.clone()]);
-
-            // Compute the cartesian product of the factors
-            let node_id_clone = node_id.to_owned();
-            let output_key_exp_clone = base_output_key_exp.to_owned();
-
-            self.processing_tasks.spawn(async move {
-                // Convert Vec<Vec<HashMap<...>>> to Vec<&Vec<HashMap<...>>> for compute_cartesian_product
-                let cartesian_product = Self::compute_cartesian_product(&factors);
-                // Post all products to the output channel
-                let session_clone = Arc::clone(&session);
-                for output_packet in cartesian_product {
-                    let result = async {
-                        session_clone
-                            .put(
-                                format!("{output_key_exp_clone}/{SUCCESS_KEY_EXP}"),
-                                serde_json::to_string(&NodeOutput::Packet(
-                                    node_id_clone.clone(),
-                                    output_packet,
-                                ))?,
-                            )
-                            .await
-                            .context(selector::AgentCommunicationFailure {})?;
-                        Ok::<(), OrcaError>(())
-                    }
-                    .await;
-
-                    // If the result is an error, we will just send it to the error channel
-                    if let Err(err) = result {
-                        try_to_forward_err_msg(
-                            Arc::clone(&session_clone),
-                            err,
-                            &output_key_exp_clone,
-                            &node_id_clone,
-                        )
-                        .await;
+            match processing_result {
+                Ok(output_packets) => {
+                    if !output_packets.is_empty() {
+                        // Send out all the packets
+                        match pipeline_run.send_packets(&node_id, &output_packets).await {
+                            Ok(()) => {}
+                            Err(err) => {
+                                pipeline_run.send_err(&node_id, err).await;
+                            }
+                        }
                     }
                 }
-            });
-        }
-        Ok(())
+                Err(err) => {
+                    pipeline_run.send_err(&node_id, err).await;
+                }
+            }
+        });
     }
 
-    async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) -> bool {
-        // For Joiner, we need to determine if all parents are complete, if so then wait for task to complete
-        // before returning true
-        self.completed_parents.push(_parent_node_id.to_owned());
+    async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) {
+        // Figure out if this is the last parent or not
+        self.num_of_completed_parents += 1;
 
-        // If we have all parents completed, we can wait for the tasks to complete
-        if self.completed_parents.len() == self.input_packet_cache.len() {
+        if self.num_of_completed_parents == self.num_of_parents {
+            // All parents are complete, thus we need to wait on all processing tasks then exit
             while (self.processing_tasks.join_next().await).is_some() {
                 // Wait for all tasks to complete
             }
-            return true;
+            // Send out completion signal which is same as success but it is an empty vec of packets
+            match self
+                .pipeline_run
+                .send_packets(&self.node_id, &Vec::new())
+                .await
+            {
+                Ok(()) => {}
+                Err(err) => {
+                    self.pipeline_run.send_err(&self.node_id, err).await;
+                }
+            }
         }
-
-        // If not all parents are completed, we return false
-        false
     }
 
     fn stop(&mut self) {
-        // We want to abort any computation
-        self.processing_tasks.abort_all();
+        todo!()
     }
 }

@@ -19,7 +19,6 @@ use std::{
 use tokio::task;
 use uniffi;
 
-use crate::uniffi::orchestrator::PodStatus;
 /// Shorthand for a Result that returns an [`OrcaError`].
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.

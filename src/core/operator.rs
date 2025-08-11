@@ -1,11 +1,13 @@
 use crate::uniffi::{error::Result, model::packet::Packet};
+use async_trait::async_trait;
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
 use std::{clone::Clone as _, collections::HashMap, iter::IntoIterator as _, sync::Arc};
 use tokio::{sync::Mutex, task::JoinSet};
 
 #[allow(async_fn_in_trait, reason = "We only use this internally")]
-pub trait Operator {
+#[async_trait]
+pub trait Operator: Send + Sync {
     async fn process_packets(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
 }
 
@@ -63,6 +65,7 @@ impl JoinOperator {
     }
 }
 
+#[async_trait]
 impl Operator for JoinOperator {
     async fn process_packets(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
         let mut processing_task = JoinSet::new();
@@ -85,11 +88,12 @@ impl Operator for JoinOperator {
     }
 }
 
-#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct MapOperator {
-    map: HashMap<String, String>,
+    pub map: HashMap<String, String>,
 }
 
+#[async_trait]
 impl Operator for MapOperator {
     async fn process_packets(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
         Ok(packets

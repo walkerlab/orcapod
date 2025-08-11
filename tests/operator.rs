@@ -183,7 +183,9 @@ async fn join_spotty() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn map_once() -> Result<()> {
-    let operator = MapOperator::new(HashMap::from([("key_old".into(), "key_new".into())]));
+    let operator = MapOperator {
+        map: HashMap::from([("key_old".into(), "key_new".into())]),
+    };
     assert_contains_packet(
         &operator
             .process_packets(vec![(
