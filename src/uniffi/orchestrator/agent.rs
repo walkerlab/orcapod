@@ -156,15 +156,15 @@ impl Agent {
     /// # Errors
     ///
     /// Will stop and return an error if encounters an error while processing any pod job request.
-    #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
     pub async fn start(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
         available_store: Option<Arc<LocalFileStore>>,
     ) -> Result<()> {
         let mut services = JoinSet::new();
+        let self_ref = Arc::new(self.clone());
         services.spawn(start_service(
-            Arc::new(self.clone()),
+            Arc::clone(&self_ref),
             "pod_job",
             BTreeMap::from([("action", "request".to_owned())]),
             namespace_lookup.clone(),
@@ -204,7 +204,7 @@ impl Agent {
         ));
         if let Some(store) = available_store {
             services.spawn(start_service(
-                Arc::new(self.clone()),
+                Arc::clone(&self_ref),
                 "pod_job",
                 BTreeMap::from([("action", "success".to_owned())]),
                 namespace_lookup.clone(),
@@ -218,7 +218,7 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
             services.spawn(start_service(
-                Arc::new(self.clone()),
+                Arc::clone(&self_ref),
                 "pod_job",
                 BTreeMap::from([("action", "failure".to_owned())]),
                 namespace_lookup.clone(),
@@ -229,6 +229,15 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
         }
+        // // Spawn PipelineRunner service
+        // services.spawn(start_service(
+        //     self_ref,
+        //     "pipeline_job",
+        //     BTreeMap::from([("action", "request".to_owned())]),
+        //     namespace_lookup.clone(),
+        //     async move |agent, inner_namespace_lookup, _, pipeline_job| Ok(()),
+        //     async |_, ()| Ok(()),
+        // ));
         services.join_next().await.context(selector::MissingInfo {
             details: "no available services".to_owned(),
         })??

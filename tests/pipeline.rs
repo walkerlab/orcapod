@@ -43,14 +43,14 @@ fn input_packet_checksum() -> Result<()> {
                 .into(),
             },
         )]),
-        &HashMap::from([(
+        HashMap::from([(
             "pipeline_key_1".into(),
             vec![NodeURI {
                 node_id: "A".into(),
                 key: "node_key_1".into(),
             }],
         )]),
-        &HashMap::new(),
+        HashMap::new(),
     )?;
 
     let pipeline_job = PipelineJob::new(
@@ -66,7 +66,7 @@ fn input_packet_checksum() -> Result<()> {
                 checksum: String::new(),
             }])],
         )]),
-        &URI {
+        URI {
             namespace: "default".into(),
             path: "output/pipeline".into(),
         },

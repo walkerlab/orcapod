@@ -15,7 +15,6 @@ use crate::{
         orchestrator::{
             PodStatus,
             agent::{Agent, AgentClient, Response},
-            docker::LocalDockerOrchestrator,
         },
     },
 };
@@ -37,9 +36,8 @@ use tokio::{
 };
 use zenoh::{handlers::FifoChannelHandler, pubsub::Subscriber, sample::Sample};
 
-static SUCCESS_KEY_EXP: &str = "success";
+static NODE_OUTPUT_KEY_EXPR: &str = "output";
 static FAILURE_KEY_EXP: &str = "failure";
-static INPUT_KEY_EXP: &str = "input_node/outputs";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 enum NodeOutput {
@@ -58,16 +56,12 @@ struct ProcessingFailure {
 #[derive(Debug)]
 struct PipelineRun {
     /// `PipelineJob` that this run is associated with
-    group: String,
-    host: String,
     assigned_name: String,
     session: Arc<zenoh::Session>,   // Zenoh session for communication
     agent_client: Arc<AgentClient>, // Zenoh agent client for communication with docker orchestrators
     pipeline_job: Arc<PipelineJob>, // The pipeline job that this run is associated with
     node_tasks: Arc<Mutex<JoinSet<Result<()>>>>, // JoinSet of tasks for each node in the pipeline
     outputs: Arc<RwLock<HashMap<String, Vec<PathSet>>>>, // String is the node key, while hash
-    orchestrator_agent: Arc<Agent>, // This is placed in pipeline due to the current design requiring a namespace to operate on
-    orchestrator_agent_task: JoinSet<Result<()>>, // JoinSet of tasks for the orchestrator agent
     failure_logs: Arc<RwLock<Vec<ProcessingFailure>>>, // Logs of processing failures
     failure_logging_task: Arc<Mutex<JoinSet<Result<()>>>>, // JoinSet of tasks for logging failures
     namespace: String,
@@ -77,8 +71,8 @@ struct PipelineRun {
 impl PipelineRun {
     fn make_key_expr(&self, node_id: &str, event: &str) -> String {
         make_key_expr(
-            &self.group,
-            &self.host,
+            &self.agent_client.group,
+            &self.agent_client.host,
             "pipeline_run",
             &BTreeMap::from([
                 ("event".to_owned(), event.to_owned()),
@@ -90,8 +84,8 @@ impl PipelineRun {
 
     fn make_abort_request_key_exp(&self) -> String {
         make_key_expr(
-            &self.group,
-            &self.host,
+            &self.agent_client.group,
+            &self.agent_client.host,
             "pipeline_run",
             &BTreeMap::from([
                 ("event".to_owned(), "abort".to_owned()),
@@ -105,7 +99,7 @@ impl PipelineRun {
         Ok(self
             .session
             .put(
-                self.make_key_expr(node_id, "output"),
+                self.make_key_expr(node_id, NODE_OUTPUT_KEY_EXPR),
                 serde_json::to_string(&output_packets)?,
             )
             .await
@@ -152,11 +146,8 @@ impl Display for PipelineRun {
 }
 
 /// Runner that uses a docker agent to run pipelines
+#[derive(Debug, Clone)]
 pub struct DockerPipelineRunner {
-    /// User label on which group of agents this runner is associated with
-    pub group: String,
-    /// The host name of the runner
-    pub host: String,
     agent: Arc<Agent>,
     pipeline_runs: HashMap<String, Arc<PipelineRun>>,
 }
@@ -172,10 +163,8 @@ impl DockerPipelineRunner {
     /// Create a new Docker pipeline runner
     /// # Errors
     /// Will error out if the environment variable `HOSTNAME` is not set
-    pub fn new(group: String, host: String, agent: Arc<Agent>) -> Self {
+    pub fn new(agent: Arc<Agent>) -> Self {
         Self {
-            group,
-            host,
             agent,
             pipeline_runs: HashMap::new(),
         }
@@ -195,24 +184,13 @@ impl DockerPipelineRunner {
         namespace: &str, // Name space to save pod_results to
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<String> {
-        // Create the orchestrator
-        let orchestrator_agent = Agent::new(
-            self.group.clone(),
-            self.host.clone(),
-            LocalDockerOrchestrator::new()?.into(),
-        )?;
-
         // Create a new pipeline run
         let pipeline_run = Arc::new(PipelineRun {
             pipeline_job: pipeline_job.into(),
             outputs: Arc::new(RwLock::new(HashMap::new())),
             node_tasks: Arc::new(Mutex::new(JoinSet::new())),
-            orchestrator_agent: orchestrator_agent.into(),
-            orchestrator_agent_task: JoinSet::new(),
             failure_logs: Arc::new(RwLock::new(Vec::new())),
             failure_logging_task: Arc::new(Mutex::new(JoinSet::new())),
-            group: self.group.clone(),
-            host: self.host.clone(),
             assigned_name: Generator::with_naming(Name::Plain).next().context(
                 selector::MissingInfo {
                     details: "unable to generate a random name",
@@ -287,6 +265,7 @@ impl DockerPipelineRunner {
         }
 
         // Wait for all nodes to be ready before sending inputs
+
         let num_of_nodes = graph.node_count();
         let mut ready_nodes = 0;
 
@@ -305,7 +284,8 @@ impl DockerPipelineRunner {
             pipeline_run
                 .session
                 .put(
-                    pipeline_run.make_key_expr(&node_id, INPUT_KEY_EXP),
+                    pipeline_run
+                        .make_key_expr(&format!("input_node_{node_id}"), NODE_OUTPUT_KEY_EXPR),
                     serde_json::to_string(&input_packets)?,
                 )
                 .await
@@ -315,7 +295,7 @@ impl DockerPipelineRunner {
             pipeline_run
                 .session
                 .put(
-                    pipeline_run.make_key_expr(&node_id, INPUT_KEY_EXP),
+                    pipeline_run.make_key_expr(&node_id, NODE_OUTPUT_KEY_EXPR),
                     serde_json::to_string(&Vec::<Packet>::new())?,
                 )
                 .await
@@ -407,29 +387,26 @@ impl DockerPipelineRunner {
         // Create a zenoh session
         let subscriber = pipeline_run
             .session
-            .declare_subscriber(pipeline_run.make_key_expr(&node_id, SUCCESS_KEY_EXP))
+            .declare_subscriber(pipeline_run.make_key_expr(&node_id, NODE_OUTPUT_KEY_EXPR))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
         while let Ok(payload) = subscriber.recv_async().await {
             // Extract the message from the payload
-            let msg: NodeOutput = serde_json::from_slice(&payload.payload().to_bytes())?;
+            let packets: Vec<Packet> = serde_json::from_slice(&payload.payload().to_bytes())?;
 
-            match msg {
-                NodeOutput::Packet(_, packet) => {
-                    // Figure out which keys
-                    // Store the output packet in the outputs map
-                    let mut outputs_lock = pipeline_run.outputs.write().await;
-                    for (output_key, node_key) in &key_mapping {
-                        outputs_lock
-                            .entry(output_key.to_owned())
-                            .or_default()
-                            .push(get(&packet, node_key.as_str())?.clone());
-                    }
-                }
-                NodeOutput::ProcessingCompleted(_) => {
-                    // Processing is completed, thus we can exit this task
-                    break;
+            if packets.is_empty() {
+                // Output node exited, thus we can exit the capture task too
+                break;
+            }
+            let mut outputs_lock = pipeline_run.outputs.write().await;
+
+            for packet in packets {
+                for (output_key, node_key) in &key_mapping {
+                    outputs_lock
+                        .entry(output_key.to_owned())
+                        .or_default()
+                        .push(get(&packet, node_key)?.clone());
                 }
             }
         }
@@ -518,13 +495,21 @@ impl DockerPipelineRunner {
             .into_iter()
             .map(|parent_node| {
                 // Make the parent key to listen to
-                pipeline_run.make_key_expr(&parent_node.id, SUCCESS_KEY_EXP)
+                pipeline_run.make_key_expr(&parent_node.id, NODE_OUTPUT_KEY_EXPR)
             })
             .collect::<Vec<_>>();
 
+        println!(
+            "Spawning node processing task for node: {}, with {:?} parents",
+            node.id, key_exps_to_subscribe_to
+        );
+
         // Check if node is an input_node, if so we need to add the input node key expression
         if is_input_node {
-            key_exps_to_subscribe_to.push(pipeline_run.make_key_expr("input", SUCCESS_KEY_EXP));
+            key_exps_to_subscribe_to.push(
+                pipeline_run
+                    .make_key_expr(&format!("input_node_{}", node.id), NODE_OUTPUT_KEY_EXPR),
+            );
         }
 
         // Create a subscriber for each of the parent nodes (Should only be 1, unless it is a joiner node)
@@ -601,6 +586,7 @@ impl DockerPipelineRunner {
             .context(selector::AgentCommunicationFailure {})?;
 
         while let Ok(sample) = subscriber.recv_async().await {
+            println!("Received sample for node: {node_id}");
             // Extract out the packets
             let packets: Vec<Packet> = serde_json::from_slice(&sample.payload().to_bytes())?;
 
@@ -750,14 +736,17 @@ impl PodProcessor {
         // Create the subscriber
         let pod_job_subscriber = pipeline_run
             .session
-            .declare_subscriber(make_key_expr(
-                &pipeline_run.group,
-                "*",
-                "pod_job",
-                &BTreeMap::from([
-                    ("id".to_owned(), pod_job.hash.clone()),
-                    ("action".to_owned(), "success".to_owned()),
-                ]),
+            .declare_subscriber(format!(
+                "{}/*",
+                make_key_expr(
+                    &pipeline_run.agent_client.group,
+                    "*",
+                    "pod_job",
+                    &BTreeMap::from([
+                        ("id".to_owned(), pod_job.hash.clone()),
+                        ("action".to_owned(), "success".to_owned()),
+                    ]),
+                )
             ))
             .await
             .context(selector::AgentCommunicationFailure {})?;
