@@ -27,10 +27,6 @@ edition = "2024"
 default = []
 test = []
 
-[features]
-default = []
-test = []
-
 [lib]
 crate-type = ["rlib", "cdylib"]
 
