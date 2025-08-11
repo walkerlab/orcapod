@@ -57,7 +57,7 @@ heck = "0.5.0"
 hex = "0.4.3"
 # hashmaps that preserve insertion order
 indexmap = { version = "2.9.0", features = ["serde"] }
-# support for cartesian products
+# utilities for iterables e.g. cartesian products
 itertools = "0.14.0"
 # random name generator
 names = "0.14.0"

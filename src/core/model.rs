@@ -50,10 +50,7 @@ where
     sorted.serialize(serializer)
 }
 
-#[allow(
-    clippy::ref_option,
-    reason = "Function signature required by serde API."
-)]
+#[allow(clippy::ref_option, reason = "Serde requires this signature.")]
 pub fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
     map_option: &Option<HashMap<K, V, BH>>,
     serializer: S,
@@ -67,10 +64,7 @@ where
     sorted.serialize(serializer)
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Function signature required by serde API."
-)]
+#[expect(clippy::expect_used, reason = "Serde requires this signature.")]
 pub fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
 where
     D: Deserializer<'de>,
@@ -93,10 +87,7 @@ where
     )
 }
 
-#[expect(
-    clippy::expect_used,
-    reason = "Function signature required by serde API."
-)]
+#[expect(clippy::expect_used, reason = "Serde requires this signature.")]
 pub fn deserialize_pod_job<'de, D>(deserializer: D) -> result::Result<Arc<PodJob>, D::Error>
 where
     D: Deserializer<'de>,

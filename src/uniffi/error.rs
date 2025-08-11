@@ -30,15 +30,6 @@ pub(crate) enum Kind {
         source: Box<dyn Error + Send + Sync>,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display(
-        "Received an empty response when attempting to load the alternate container image file: {path:?}."
-    ))]
-    EmptyResponseWhenLoadingContainerAltImage {
-        path: PathBuf,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("Out of generated random names."))]
-    GeneratedNamesOverflow { backtrace: Option<Backtrace> },
     #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
     IncompletePacket {
         kind: String,
@@ -51,42 +42,9 @@ pub(crate) enum Kind {
         source: io::Error,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display(
-        "An invalid datetime was set for pod result for pod job (hash: {pod_job_hash})."
-    ))]
-    InvalidPodResultTerminatedDatetime {
-        pod_job_hash: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("Key '{key}' was not found in map."))]
-    KeyMissing {
-        key: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No annotation found for `{name}:{version}` {class}."))]
-    NoAnnotationFound {
-        class: String,
-        name: String,
-        version: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No known container names."))]
-    NoContainerNames { backtrace: Option<Backtrace> },
-    #[snafu(display("Missing file or directory name ({path:?})."))]
-    NoFileName {
-        path: PathBuf,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No corresponding pod run found for pod job (hash: {pod_job_hash})."))]
-    NoMatchingPodRun {
-        pod_job_hash: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("All services have completed."))]
-    NoRemainingServices { backtrace: Option<Backtrace> },
-    #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
-    NoTagFoundInContainerAltImage {
-        path: PathBuf,
+    #[snafu(display("Missing info. Details: {details}."))]
+    MissingInfo {
+        details: String,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
@@ -151,11 +109,11 @@ pub struct OrcaError {
 #[uniffi::export]
 impl OrcaError {
     /// Returns `true` if the error was caused by an invalid model annotation.
-    pub const fn is_invalid_annotation(&self) -> bool {
-        matches!(self.kind, Kind::NoAnnotationFound { .. })
+    pub fn is_invalid_annotation(&self) -> bool {
+        matches!(&self.kind, Kind::MissingInfo { details, .. } if details.contains("annotation"))
     }
     /// Returns `true` if the error was caused by querying a purged pod run.
-    pub const fn is_purged_pod_run(&self) -> bool {
-        matches!(self.kind, Kind::NoMatchingPodRun { .. })
+    pub fn is_purged_pod_run(&self) -> bool {
+        matches!(&self.kind, Kind::MissingInfo { details, .. } if details.contains("pod run"))
     }
 }

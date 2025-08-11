@@ -1,4 +1,7 @@
 {
+    "[markdown]": {
+        "editor.defaultFormatter": null
+    },
     "editor.formatOnPaste": false,
     "editor.formatOnSave": true,
     "editor.rulers": [
@@ -6,9 +9,6 @@
     ],
     "files.autoSave": "off",
     "files.insertFinalNewline": true,
-    "[markdown]": {
-        "editor.defaultFormatter": null
-    },
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,
     "lldb.consoleMode": "evaluate",
