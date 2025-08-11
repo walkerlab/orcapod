@@ -122,18 +122,9 @@ impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
             Kind::AgentCommunicationFailure { backtrace, .. }
-            | Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
-            | Kind::GeneratedNamesOverflow { backtrace, .. }
             | Kind::IncompletePacket { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
-            | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
-            | Kind::KeyMissing { backtrace, .. }
-            | Kind::NoAnnotationFound { backtrace, .. }
-            | Kind::NoContainerNames { backtrace, .. }
-            | Kind::NoFileName { backtrace, .. }
-            | Kind::NoMatchingPodRun { backtrace, .. }
-            | Kind::NoRemainingServices { backtrace, .. }
-            | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
+            | Kind::MissingInfo { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChronoParseError { backtrace, .. }
             | Kind::DOTError { backtrace, .. }

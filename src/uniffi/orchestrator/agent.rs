@@ -108,11 +108,14 @@ impl AgentClient {
             .declare_subscriber(&key_expr)
             .await
             .context(selector::AgentCommunicationFailure {})?;
-        while let Ok(sample) = subscriber.recv_async().await {
+        loop {
+            let sample = subscriber
+                .recv_async()
+                .await
+                .context(selector::AgentCommunicationFailure {})?;
             let value = serde_json::from_slice::<Value>(&sample.payload().to_bytes())?;
             println!("{}: {value:#}", sample.key_expr().as_str().yellow());
         }
-        Ok(())
     }
 }
 
@@ -225,9 +228,8 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
         }
-        services
-            .join_next()
-            .await
-            .context(selector::NoRemainingServices {})??
+        services.join_next().await.context(selector::MissingInfo {
+            details: "no available services".to_owned(),
+        })??
     }
 }

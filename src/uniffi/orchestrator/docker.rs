@@ -109,14 +109,15 @@ impl Orchestrator for LocalDockerOrchestrator {
                 let mut local_image = String::new();
                 while let Some(response) = stream.next().await {
                     local_image = RE_IMAGE_TAG
-                        .captures_iter(&response?.stream.context(
-                            selector::EmptyResponseWhenLoadingContainerAltImage {
-                                path: location.clone(),
-                            },
-                        )?)
+                        .captures_iter(&response?.stream.context(selector::MissingInfo {
+                            details: location.to_string_lossy(),
+                        })?)
                         .find_map(|x| x.name("image").map(|name| name.as_str().to_owned()))
-                        .context(selector::NoTagFoundInContainerAltImage {
-                            path: location.clone(),
+                        .context(selector::MissingInfo {
+                            details: format!(
+                                "container tags in provided container alternate image where path = {}",
+                                location.to_string_lossy()
+                            ),
                         })?;
                 }
                 Self::prepare_container_start_inputs(
@@ -192,8 +193,8 @@ impl Orchestrator for LocalDockerOrchestrator {
             .list_containers(HashMap::from([("label".to_owned(), labels)]))
             .await?
             .next()
-            .context(selector::NoMatchingPodRun {
-                pod_job_hash: pod_run.pod_job.hash.clone(),
+            .context(selector::MissingInfo {
+                details: format!("pod run where pod_job.hash = {}", pod_run.pod_job.hash),
             })?;
         Ok(run_info)
     }
@@ -233,11 +234,12 @@ impl Orchestrator for LocalDockerOrchestrator {
             pod_run.assigned_name.clone(),
             result_info.status,
             result_info.created,
-            result_info
-                .terminated
-                .context(selector::InvalidPodResultTerminatedDatetime {
-                    pod_job_hash: pod_run.pod_job.hash.clone(),
-                })?,
+            result_info.terminated.context(selector::MissingInfo {
+                details: format!(
+                    "terminated where pod_run.assigned_name = {}, pod_run.pod_job.hash = {}",
+                    pod_run.assigned_name, pod_run.pod_job.hash
+                ),
+            })?,
             namespace_lookup,
         )
     }

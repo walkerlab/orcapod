@@ -2,7 +2,7 @@ use crate::uniffi::{
     error::{OrcaError, Result, selector},
     orchestrator::agent::{Agent, AgentClient},
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use futures_util::future::FutureExt as _;
 use itertools::Itertools as _;
 use serde::{Deserialize, Serialize};
@@ -111,7 +111,12 @@ pub async fn start_service<
 ) -> Result<()>
 where
     RequestI: for<'serde> Deserialize<'serde> + Send + 'static,
-    RequestF: FnOnce(Arc<Agent>, HashMap<String, PathBuf>, HashMap<String, String>, RequestI) -> RequestR
+    RequestF: FnOnce(
+            Arc<Agent>,
+            HashMap<String, PathBuf>,
+            (DateTime<Utc>, HashMap<String, String>),
+            RequestI,
+        ) -> RequestR
         + Clone
         + Send
         + 'static,
@@ -144,44 +149,54 @@ where
                 ))
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
-            while let Ok(sample) = subscriber.recv_async().await {
-                if let Ok(input) = serde_json::from_slice::<RequestI>(&sample.payload().to_bytes())
-                {
-                    let inner_response_tx = response_tx.clone();
-                    let event_metadata = extract_metadata(sample.key_expr().as_str());
-                    tasks.spawn({
-                        let inner_request_task = request_task.clone();
-                        let inner_inner_agent = Arc::clone(&inner_agent);
-                        let inner_namespace_lookup = namespace_lookup.clone();
-                        async move {
-                            inner_request_task(
-                                inner_inner_agent,
-                                inner_namespace_lookup,
-                                event_metadata,
-                                input,
-                            )
-                            .then(move |response| async move {
-                                let _: Result<(), SendError<Result<ResponseI>>> =
-                                    inner_response_tx.send(response).await;
-                                Ok::<_, OrcaError>(())
-                            })
-                            .await
-                        }
-                    });
-                }
+            loop {
+                let sample = subscriber
+                    .recv_async()
+                    .await
+                    .context(selector::AgentCommunicationFailure {})?;
+                let input = serde_json::from_slice::<RequestI>(&sample.payload().to_bytes())?;
+                let inner_response_tx = response_tx.clone();
+                let mut event_metadata = extract_metadata(sample.key_expr().as_str());
+                let timestamp =
+                    event_metadata
+                        .remove("timestamp")
+                        .context(selector::MissingInfo {
+                            details: "timestamp",
+                        })?;
+                let event_timestamp =
+                    DateTime::<Utc>::from(DateTime::parse_from_rfc3339(&timestamp)?);
+                tasks.spawn({
+                    let inner_request_task = request_task.clone();
+                    let inner_inner_agent = Arc::clone(&inner_agent);
+                    let inner_namespace_lookup = namespace_lookup.clone();
+                    async move {
+                        inner_request_task(
+                            inner_inner_agent,
+                            inner_namespace_lookup,
+                            (event_timestamp, event_metadata),
+                            input,
+                        )
+                        .then(move |response| async move {
+                            let _: Result<(), SendError<Result<ResponseI>>> =
+                                inner_response_tx.send(response).await;
+                            Ok::<_, OrcaError>(())
+                        })
+                        .await
+                    }
+                });
             }
-            Ok(())
         }
     });
     services.spawn(async move {
-        while let Some(response) = response_rx.recv().await {
+        loop {
+            let response = response_rx.recv().await.context(selector::MissingInfo {
+                details: "channel empty or closed",
+            })?;
             response_task(Arc::clone(&agent.client), response?).await?;
         }
-        Ok(())
     });
 
-    services
-        .join_next()
-        .await
-        .context(selector::NoRemainingServices {})??
+    services.join_next().await.context(selector::MissingInfo {
+        details: "no available services",
+    })??
 }

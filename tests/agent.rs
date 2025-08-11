@@ -96,7 +96,11 @@ async fn parallel_four_cores() -> Result<()> {
             .expect("Unable to create subscriber.");
         let mut success_counter = 0;
         let mut failure_counter = 0;
-        while let Ok(sample) = subscriber.recv_async().await {
+        loop {
+            let sample = subscriber
+                .recv_async()
+                .await
+                .expect("All senders have dropped.");
             let metadata = extract_metadata(sample.key_expr().as_str());
             let topic_kind = metadata["action"].as_str();
             if ["success", "failure"].contains(&topic_kind) {
