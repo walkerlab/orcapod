@@ -79,7 +79,8 @@
         "getrandom",
         "wasi",
         "patchelf",
-        "itertools"
+        "itertools",
+        "colinianking"
     ],
     "useGitignore": false,
     "ignorePaths": [
