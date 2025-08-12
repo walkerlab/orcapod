@@ -1,7 +1,7 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
 
 use orcapod::{
-    core::operator::{JoinOperator, MapOperator, Operator as _},
+    core::operator::{JoinOperator, MapOperator, Operator},
     uniffi::{
         error::Result,
         model::packet::{Blob, BlobKind, Packet, PathSet, URI},
@@ -21,6 +21,17 @@ fn make_packet_key(key_name: String, filepath: String) -> (String, PathSet) {
             checksum: String::new(),
         }),
     )
+}
+
+async fn next_batch(
+    operator: impl Operator,
+    packets: Vec<(String, Packet)>,
+) -> Result<Vec<Packet>> {
+    let mut next_packets = vec![];
+    for (stream_name, packet) in packets {
+        next_packets.extend(operator.next(stream_name, packet).await?);
+    }
+    Ok(next_packets)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -55,7 +66,7 @@ async fn join_once() -> Result<()> {
     input_streams.extend(right_stream);
 
     assert_eq!(
-        operator.next(input_streams).await?,
+        next_batch(operator, input_streams).await?,
         vec![
             Packet::from([
                 make_packet_key("subject".into(), "left/subject0.png".into()),
@@ -94,10 +105,10 @@ async fn join_spotty() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(vec![(
+            .next(
                 "right".into(),
-                Packet::from([make_packet_key("style".into(), "right/style0.t7".into(),)]),
-            )])
+                Packet::from([make_packet_key("style".into(), "right/style0.t7".into())])
+            )
             .await?,
         vec![],
         "Unexpected streams."
@@ -105,10 +116,10 @@ async fn join_spotty() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(vec![(
+            .next(
                 "right".into(),
-                Packet::from([make_packet_key("style".into(), "right/style1.t7".into(),)]),
-            )])
+                Packet::from([make_packet_key("style".into(), "right/style1.t7".into())])
+            )
             .await?,
         vec![],
         "Unexpected streams."
@@ -116,13 +127,13 @@ async fn join_spotty() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(vec![(
+            .next(
                 "left".into(),
                 Packet::from([make_packet_key(
                     "subject".into(),
-                    "left/subject0.png".into(),
-                )]),
-            )])
+                    "left/subject0.png".into()
+                )])
+            )
             .await?,
         vec![
             Packet::from([
@@ -138,21 +149,21 @@ async fn join_spotty() -> Result<()> {
     );
 
     assert_eq!(
-        operator
-            .next(
-                (1..3)
-                    .map(|i| {
-                        (
-                            "left".into(),
-                            Packet::from([make_packet_key(
-                                "subject".into(),
-                                format!("left/subject{i}.png"),
-                            )]),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            )
-            .await?,
+        next_batch(
+            operator,
+            (1..3)
+                .map(|i| {
+                    (
+                        "left".into(),
+                        Packet::from([make_packet_key(
+                            "subject".into(),
+                            format!("left/subject{i}.png"),
+                        )]),
+                    )
+                })
+                .collect::<Vec<_>>()
+        )
+        .await?,
         vec![
             Packet::from([
                 make_packet_key("subject".into(), "left/subject1.png".into()),
@@ -183,13 +194,13 @@ async fn map_once() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(vec![(
+            .next(
                 "parent".into(),
                 Packet::from([
                     make_packet_key("key_old".into(), "some/key.txt".into()),
                     make_packet_key("subject".into(), "some/subject.txt".into()),
                 ]),
-            )])
+            )
             .await?,
         vec![Packet::from([
             make_packet_key("key_new".into(), "some/key.txt".into()),
