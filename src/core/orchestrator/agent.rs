@@ -157,6 +157,7 @@ where
                 let input = serde_json::from_slice::<RequestI>(&sample.payload().to_bytes())?;
                 let inner_response_tx = response_tx.clone();
                 let mut event_metadata = extract_metadata(sample.key_expr().as_str());
+                println!("asdhfjkashdfkj{:?}", event_metadata);
                 let timestamp =
                     event_metadata
                         .remove("timestamp")

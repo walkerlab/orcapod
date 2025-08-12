@@ -186,7 +186,7 @@ impl Agent {
                         "pod_job",
                         BTreeMap::from([
                             (
-                                "action",
+                                "event",
                                 match &pod_result.status {
                                     PodStatus::Completed => "success",
                                     PodStatus::Running
@@ -206,7 +206,7 @@ impl Agent {
             services.spawn(start_service(
                 Arc::clone(&self_ref),
                 "pod_job",
-                BTreeMap::from([("action", "success".to_owned())]),
+                BTreeMap::from([("event", "success".to_owned())]),
                 namespace_lookup.clone(),
                 {
                     let inner_store = Arc::clone(&store);
@@ -220,7 +220,7 @@ impl Agent {
             services.spawn(start_service(
                 Arc::clone(&self_ref),
                 "pod_job",
-                BTreeMap::from([("action", "failure".to_owned())]),
+                BTreeMap::from([("event", "failure".to_owned())]),
                 namespace_lookup.clone(),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;

@@ -562,6 +562,10 @@ impl DockerPipelineRunner {
 
         // Abort the stop listener task since we don't need it anymore
         abort_request_handler_task.abort();
+        println!(
+            "Node {} processing completed, exiting capture task",
+            node.id
+        );
 
         Ok(())
     }
@@ -736,17 +740,13 @@ impl PodProcessor {
         // Create the subscriber
         let pod_job_subscriber = pipeline_run
             .session
-            .declare_subscriber(format!(
-                "{}/*",
-                make_key_expr(
-                    &pipeline_run.agent_client.group,
-                    "*",
-                    "pod_job",
-                    &BTreeMap::from([
-                        ("id".to_owned(), pod_job.hash.clone()),
-                        ("action".to_owned(), "success".to_owned()),
-                    ]),
-                )
+            .declare_subscriber(pipeline_run.agent_client.make_key_expr(
+                true,
+                "pod_job",
+                BTreeMap::from([
+                    ("hash", pod_job.hash.clone()),
+                    ("event", "success".to_owned()),
+                ]),
             ))
             .await
             .context(selector::AgentCommunicationFailure {})?;
@@ -754,14 +754,25 @@ impl PodProcessor {
         // Create the async task to listen for the pod job completion
         let pod_job_listener_task = tokio::spawn(async move {
             // Wait for the pod job to complete and extract the result
+            println!("Listening on {}", pod_job_subscriber.key_expr());
             let sample = pod_job_subscriber
                 .recv_async()
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
             // Extract the pod_result from the payload
+            println!("Received pod job completion message: {:?}", sample);
             let pod_result: PodResult = serde_json::from_slice(&sample.payload().to_bytes())?;
+            println!(
+                "Pod job {} completed with status: {:?}",
+                pod_result.pod_job.hash, pod_result.status
+            );
             Ok::<_, OrcaError>(pod_result)
         });
+
+        println!(
+            "Submitting pod job {} for node {} with input packet hash: {}",
+            pod_job.hash, node_id, input_packet_hash
+        );
 
         // Submit it to the client and get the response to make sure it was successful
         let responses = pipeline_run
@@ -787,6 +798,11 @@ impl PodProcessor {
 
         // Get the pod result from the listener task
         let pod_result = pod_job_listener_task.await??;
+
+        println!(
+            "Pod job {} completed with status: {:?}",
+            pod_result.pod_job.hash, pod_result.status
+        );
 
         // Get the output packet for the pod result
         Ok(match pod_result.status {

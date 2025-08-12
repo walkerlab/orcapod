@@ -54,7 +54,7 @@ async fn basic_run() -> Result<()> {
 
     // Create and agent and start it (temporary for now, will be merge later)
     let agent = Arc::new(Agent::new(
-        "test/basic_run".to_owned(),
+        "test:basic_run".to_owned(),
         "localhost".to_owned(),
         Arc::new(LocalDockerOrchestrator::new().unwrap()),
     )?);
