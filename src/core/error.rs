@@ -7,8 +7,7 @@ use serde_yaml;
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
     fmt::{self, Formatter},
-    io,
-    path::{self},
+    io, path,
 };
 use tokio::task;
 
