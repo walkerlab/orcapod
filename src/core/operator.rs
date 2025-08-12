@@ -1,61 +1,63 @@
 use crate::uniffi::{error::Result, model::packet::Packet};
+use async_trait;
 use itertools::Itertools as _;
-use std::{
-    clone::Clone,
-    collections::HashMap,
-    iter::IntoIterator,
-    sync::{Arc, Mutex},
-};
+use std::{clone::Clone, collections::HashMap, iter::IntoIterator, sync::Arc};
+use tokio::sync::Mutex;
 
+#[async_trait::async_trait]
 pub trait Operator {
-    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
+    async fn next(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>>;
 }
 
 pub struct JoinOperator {
     parent_count: usize,
-    received_streams: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
+    received_packets: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
 }
 
 impl JoinOperator {
     pub fn new(parent_count: usize) -> Self {
         Self {
             parent_count,
-            received_streams: Arc::new(Mutex::new(HashMap::new())),
+            received_packets: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
 
-#[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
+#[async_trait::async_trait]
 impl Operator for JoinOperator {
-    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
-        let mut next_packets = vec![];
-        for (stream, packet) in &packets {
-            let mut received_streams = self.received_streams.lock()?;
-            if self.parent_count - usize::from(!received_streams.contains_key(stream))
-                == received_streams.len()
+    async fn next(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>> {
+        let mut received_packets = self.received_packets.lock().await;
+        received_packets
+            .entry(stream_name.clone())
+            .or_default()
+            .push(packet.clone());
+        Ok(
+            if self.parent_count - usize::from(!received_packets.contains_key(&stream_name))
+                == received_packets.len()
             {
-                let packets_to_multiplex = received_streams
+                let packets_to_multiplex = received_packets
                     .iter()
                     .filter_map(|(parent_stream, parent_packets)| {
-                        (parent_stream != stream).then_some(parent_packets.clone())
+                        (parent_stream != &stream_name).then_some(parent_packets.clone())
                     })
-                    .chain(vec![vec![packet.clone()]].into_iter());
-                let current_packets = packets_to_multiplex.multi_cartesian_product().map(
-                    |packet_combinations_to_merge| {
+                    .chain(vec![vec![packet.clone()]].into_iter())
+                    .collect::<Vec<_>>();
+                drop(received_packets);
+
+                packets_to_multiplex
+                    .into_iter()
+                    .multi_cartesian_product()
+                    .map(|packet_combinations_to_merge| {
                         packet_combinations_to_merge
                             .into_iter()
                             .flat_map(IntoIterator::into_iter)
                             .collect::<HashMap<_, _>>()
-                    },
-                );
-                next_packets.extend(current_packets);
-            }
-            received_streams
-                .entry(stream.clone())
-                .or_default()
-                .push(packet.clone());
-        }
-        Ok(next_packets)
+                    })
+                    .collect()
+            } else {
+                vec![]
+            },
+        )
     }
 }
 
@@ -69,23 +71,21 @@ impl MapOperator {
     }
 }
 
+#[async_trait::async_trait]
 impl Operator for MapOperator {
-    fn next(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
-        Ok(packets
-            .iter()
-            .map(|(_, packet)| {
-                packet
-                    .iter()
-                    .map(|(packet_key, path_set)| {
-                        (
-                            self.map
-                                .get(packet_key)
-                                .map_or_else(|| packet_key.clone(), Clone::clone),
-                            path_set.clone(),
-                        )
-                    })
-                    .collect()
-            })
-            .collect())
+    async fn next(&self, _: String, packet: Packet) -> Result<Vec<Packet>> {
+        Ok(vec![
+            packet
+                .iter()
+                .map(|(packet_key, path_set)| {
+                    (
+                        self.map
+                            .get(packet_key)
+                            .map_or_else(|| packet_key.clone(), Clone::clone),
+                        path_set.clone(),
+                    )
+                })
+                .collect(),
+        ])
     }
 }

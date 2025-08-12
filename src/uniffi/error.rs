@@ -78,11 +78,6 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
-    PoisonError {
-        source: Box<dyn Error + Send + Sync>,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(transparent)]
     SerdeJsonError {
         source: Box<serde_json::Error>,
         backtrace: Option<Backtrace>,

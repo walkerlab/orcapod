@@ -16,7 +16,7 @@ use heck::ToSnakeCase as _;
 use regex::Regex;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_yaml;
-use snafu::OptionExt as _;
+use snafu::{OptionExt as _, ResultExt as _};
 use std::{
     fmt, fs,
     path::{Path, PathBuf},
@@ -189,15 +189,17 @@ impl LocalFileStore {
         model_id: &ModelID,
     ) -> Result<(T, Option<Annotation>, String)> {
         match model_id {
-            ModelID::Hash(hash) => Ok((
-                serde_yaml::from_str(&fs::read_to_string(self.make_path(
-                    &T::default(),
-                    hash,
-                    Self::SPEC_RELPATH,
-                ))?)?,
-                None,
-                hash.to_owned(),
-            )),
+            ModelID::Hash(hash) => {
+                let path = self.make_path(&T::default(), hash, Self::SPEC_RELPATH);
+                Ok((
+                    serde_yaml::from_str(
+                        &fs::read_to_string(path.clone())
+                            .context(selector::InvalidFilepath { path })?,
+                    )?,
+                    None,
+                    hash.to_owned(),
+                ))
+            }
             ModelID::Annotation(name, version) => {
                 let hash = self.lookup_hash(&T::default(), name, version)?;
                 Ok((
