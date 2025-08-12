@@ -18,6 +18,7 @@ inner_attr_to_each! {
     #![cfg(feature = "default")]
     pub(crate) mod crypto;
     pub(crate) mod model;
+    pub(crate) mod operator;
     pub(crate) mod orchestrator;
 }
 
@@ -34,5 +35,6 @@ inner_attr_to_each! {
     )]
     pub mod crypto;
     pub mod model;
+    pub mod operator;
     pub mod orchestrator;
 }

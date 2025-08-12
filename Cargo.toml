@@ -57,7 +57,7 @@ heck = "0.5.0"
 hex = "0.4.3"
 # hashmaps that preserve insertion order
 indexmap = { version = "2.9.0", features = ["serde"] }
-# utilities for iterables
+# utilities for iterables e.g. cartesian products
 itertools = "0.14.0"
 # random name generator
 names = "0.14.0"
@@ -160,6 +160,7 @@ std_instead_of_core = { level = "allow", priority = 127 }              # we shou
 string_add = { level = "allow", priority = 127 }                       # simple concat ok
 string_lit_chars_any = { level = "allow", priority = 127 }             # favor readability until a perf case comes up
 use_debug = { level = "warn", priority = 127 }                         # debug print
+wildcard_enum_match_arm = { level = "allow", priority = 127 }          # allow wildcard match arm in enums
 
 # temporary
 single_call_fn = { level = "allow", priority = 127 }            # remove once more models need pointer serializers/deserializers
