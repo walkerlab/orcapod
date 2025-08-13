@@ -9,7 +9,7 @@ macro_rules! inner_attr_to_each {
 
 pub(crate) mod error;
 pub(crate) mod graph;
-
+pub(crate) mod pipeline;
 pub(crate) mod store;
 pub(crate) mod util;
 pub(crate) mod validation;
@@ -18,6 +18,7 @@ inner_attr_to_each! {
     #![cfg(feature = "default")]
     pub(crate) mod crypto;
     pub(crate) mod model;
+    pub(crate) mod operator;
     pub(crate) mod orchestrator;
     pub(crate) mod pipeline_runner;
     pub(crate) mod operator;

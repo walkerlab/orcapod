@@ -5,6 +5,7 @@ use crate::uniffi::{
         pod::{PodJob, PodResult},
     },
 };
+use async_trait;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
 use uniffi;

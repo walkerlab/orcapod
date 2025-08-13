@@ -1,14 +1,12 @@
 use crate::uniffi::{error::Result, model::packet::Packet};
-use async_trait::async_trait;
+use async_trait;
 use itertools::Itertools as _;
-use serde::{Deserialize, Serialize};
-use std::{clone::Clone as _, collections::HashMap, iter::IntoIterator as _, sync::Arc};
-use tokio::{sync::Mutex, task::JoinSet};
+use std::{clone::Clone, collections::HashMap, iter::IntoIterator, sync::Arc};
+use tokio::sync::Mutex;
 
-#[allow(async_fn_in_trait, reason = "We only use this internally")]
-#[async_trait]
-pub trait Operator: Send + Sync {
-    async fn process_packets(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>>;
+#[async_trait::async_trait]
+pub trait Operator {
+    async fn next(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>>;
 }
 
 pub struct JoinOperator {
@@ -23,68 +21,43 @@ impl JoinOperator {
             received_packets: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-
-    async fn process_packet(
-        parent_count: usize,
-        received_packets: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
-        parent_id: String,
-        packet: Packet,
-    ) -> Vec<Packet> {
-        let mut received_packet_lock = received_packets.lock().await;
-        received_packet_lock
-            .entry(parent_id.clone())
-            .or_insert_with(|| vec![packet.clone()])
-            .push(packet.clone());
-
-        // If we still don't have at least 1 packet for each parent, skip computation
-        if received_packet_lock.len() < parent_count {
-            return vec![];
-        }
-
-        // Build the factors for the cartesian product, silently missing key since it shouldn't be possible
-        let factors = received_packet_lock
-            .iter()
-            .filter_map(|(id, parent_packets)| (*id != parent_id).then_some(parent_packets.clone()))
-            .chain(vec![vec![packet]])
-            .collect::<Vec<_>>();
-
-        // We don't need the lock after this point, thus release for other tasks
-        drop(received_packet_lock);
-
-        // Compute the cartesian product of the factors, this might take a while
-        factors
-            .into_iter()
-            .multi_cartesian_product()
-            .map(|packets_to_combined| {
-                packets_to_combined
-                    .into_iter()
-                    .flat_map(IntoIterator::into_iter)
-                    .collect::<HashMap<_, _>>()
-            })
-            .collect::<Vec<_>>()
-    }
 }
 
-#[async_trait]
+#[async_trait::async_trait]
 impl Operator for JoinOperator {
-    async fn process_packets(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
-        let mut processing_task = JoinSet::new();
+    async fn next(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>> {
+        let mut received_packets = self.received_packets.lock().await;
+        received_packets
+            .entry(stream_name.clone())
+            .or_default()
+            .push(packet.clone());
+        Ok(
+            if self.parent_count - usize::from(!received_packets.contains_key(&stream_name))
+                == received_packets.len()
+            {
+                let packets_to_multiplex = received_packets
+                    .iter()
+                    .filter_map(|(parent_stream, parent_packets)| {
+                        (parent_stream != &stream_name).then_some(parent_packets.clone())
+                    })
+                    .chain(vec![vec![packet.clone()]].into_iter())
+                    .collect::<Vec<_>>();
+                drop(received_packets);
 
-        for (parent_id, packet) in packets {
-            processing_task.spawn(Self::process_packet(
-                self.parent_count,
-                Arc::clone(&self.received_packets),
-                parent_id,
-                packet,
-            ));
-        }
-
-        let mut new_packets = vec![];
-        while let Some(product_packets) = processing_task.join_next().await {
-            new_packets.extend(product_packets?);
-        }
-
-        Ok(new_packets)
+                packets_to_multiplex
+                    .into_iter()
+                    .multi_cartesian_product()
+                    .map(|packet_combinations_to_merge| {
+                        packet_combinations_to_merge
+                            .into_iter()
+                            .flat_map(IntoIterator::into_iter)
+                            .collect::<HashMap<_, _>>()
+                    })
+                    .collect()
+            } else {
+                vec![]
+            },
+        )
     }
 }
 
@@ -93,24 +66,27 @@ pub struct MapOperator {
     pub map: HashMap<String, String>,
 }
 
-#[async_trait]
+impl MapOperator {
+    pub fn new(map: &HashMap<String, String>) -> Self {
+        Self { map: map.clone() }
+    }
+}
+
+#[async_trait::async_trait]
 impl Operator for MapOperator {
-    async fn process_packets(&self, packets: Vec<(String, Packet)>) -> Result<Vec<Packet>> {
-        Ok(packets
-            .into_iter()
-            .map(|(_, packet)| {
-                packet
-                    .iter()
-                    .map(|(packet_key, path_set)| {
-                        (
-                            self.map
-                                .get(packet_key)
-                                .map_or_else(|| packet_key.clone(), Clone::clone),
-                            path_set.clone(),
-                        )
-                    })
-                    .collect()
-            })
-            .collect::<Vec<_>>())
+    async fn next(&self, _: String, packet: Packet) -> Result<Vec<Packet>> {
+        Ok(vec![
+            packet
+                .iter()
+                .map(|(packet_key, path_set)| {
+                    (
+                        self.map
+                            .get(packet_key)
+                            .map_or_else(|| packet_key.clone(), Clone::clone),
+                        path_set.clone(),
+                    )
+                })
+                .collect(),
+        ])
     }
 }

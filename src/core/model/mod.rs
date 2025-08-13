@@ -8,7 +8,6 @@ use std::{
     hash::BuildHasher,
     result,
 };
-
 /// Converts a model instance into a consistent yaml.
 ///
 /// # Errors
