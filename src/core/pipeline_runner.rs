@@ -3,10 +3,14 @@ use crate::{
         crypto::hash_buffer,
         model::{pipeline::PipelineNode, serialize_hashmap},
         operator::{JoinOperator, Operator},
+        orchestrator::agent::extract_metadata,
         util::{get, make_key_expr},
     },
     uniffi::{
-        error::{Kind, OrcaError, Result, selector},
+        error::{
+            Kind, OrcaError, Result,
+            selector::{self},
+        },
         model::{
             packet::{Packet, PathSet, URI},
             pipeline::{Kernel, PipelineJob, PipelineResult},
@@ -100,13 +104,14 @@ impl PipelineRun {
             .session
             .put(
                 self.make_key_expr(node_id, NODE_OUTPUT_KEY_EXPR),
-                serde_json::to_string(&output_packets)?,
+                serde_json::to_string(output_packets)?,
             )
             .await
             .context(selector::AgentCommunicationFailure {})?)
     }
 
     async fn send_err(&self, node_id: &str, err: OrcaError) {
+        println!("{}", err);
         try_to_forward_err_msg(
             Arc::clone(&self.session),
             err,
@@ -282,24 +287,13 @@ impl DockerPipelineRunner {
         for (node_id, input_packets) in pipeline_run.pipeline_job.get_input_packet_per_node()? {
             // Send the packet to the input node key_exp
             pipeline_run
-                .session
-                .put(
-                    pipeline_run
-                        .make_key_expr(&format!("input_node_{node_id}"), NODE_OUTPUT_KEY_EXPR),
-                    serde_json::to_string(&input_packets)?,
-                )
-                .await
-                .context(selector::AgentCommunicationFailure {})?;
+                .send_packets(&format!("input_node_{node_id}"), &input_packets)
+                .await?;
 
-            // All packets associate with node are sent, we can send processing complete msg now
+            // Packets are sent, thus we can send the empty vec which signify processing is done
             pipeline_run
-                .session
-                .put(
-                    pipeline_run.make_key_expr(&node_id, NODE_OUTPUT_KEY_EXPR),
-                    serde_json::to_string(&Vec::<Packet>::new())?,
-                )
-                .await
-                .context(selector::AgentCommunicationFailure {})?;
+                .send_packets(&format!("input_node_{node_id}"), &Vec::new())
+                .await?;
         }
 
         // Insert into the list of pipeline runs
@@ -490,38 +484,23 @@ impl DockerPipelineRunner {
         // Create a join set to spawn and handle incoming messages tasks
         let mut listener_tasks = JoinSet::new();
 
-        // Create the list of key_expressions to subscribe to
-        let mut key_exps_to_subscribe_to = parent_nodes
-            .into_iter()
-            .map(|parent_node| {
-                // Make the parent key to listen to
-                pipeline_run.make_key_expr(&parent_node.id, NODE_OUTPUT_KEY_EXPR)
-            })
+        // Create a list of node_ids that this node should listen to
+        let mut nodes_to_sub_to = parent_nodes
+            .iter()
+            .map(|parent_node| parent_node.id.clone())
             .collect::<Vec<_>>();
 
-        println!(
-            "Spawning node processing task for node: {}, with {:?} parents",
-            node.id, key_exps_to_subscribe_to
-        );
-
-        // Check if node is an input_node, if so we need to add the input node key expression
         if is_input_node {
-            key_exps_to_subscribe_to.push(
-                pipeline_run
-                    .make_key_expr(&format!("input_node_{}", node.id), NODE_OUTPUT_KEY_EXPR),
-            );
+            // If the node is an input node, we need to add the input node key expression
+            nodes_to_sub_to.push(format!("input_node_{}", node.id));
         }
 
-        // Create a subscriber for each of the parent nodes (Should only be 1, unless it is a joiner node)
-        for key_exp in &key_exps_to_subscribe_to {
+        // For each node in nodes_to_subscribe_to, call the event handler func
+        for node_to_sub in &nodes_to_sub_to {
             listener_tasks.spawn(Self::event_handler(
                 Arc::clone(&pipeline_run),
                 node.id.clone(),
-                pipeline_run
-                    .session
-                    .declare_subscriber(key_exp)
-                    .await
-                    .context(selector::AgentCommunicationFailure {})?,
+                node_to_sub.to_owned(),
                 Arc::clone(&node_processor),
             ));
         }
@@ -534,7 +513,7 @@ impl DockerPipelineRunner {
 
         // Wait for all tasks to be spawned and reply with ready message
         // This is to ensure that the pipeline run knows when all tasks are ready to receive inputs
-        let mut num_of_ready_subscribers: usize = 0;
+        let mut num_of_ready_event_handler: usize = 0;
         // Build the subscriber
         let status_subscriber = pipeline_run
             .session
@@ -543,8 +522,8 @@ impl DockerPipelineRunner {
             .context(selector::AgentCommunicationFailure {})?;
 
         while status_subscriber.recv_async().await.is_ok() {
-            num_of_ready_subscribers += 1;
-            if num_of_ready_subscribers == key_exps_to_subscribe_to.len() {
+            num_of_ready_event_handler += 1;
+            if num_of_ready_event_handler == nodes_to_sub_to.len() {
                 // +1 for the stop request task
                 break; // All tasks are ready, we can start sending inputs
             }
@@ -558,12 +537,22 @@ impl DockerPipelineRunner {
             .context(selector::AgentCommunicationFailure {})?;
 
         // Wait for all task to complete
-        listener_tasks.join_all().await;
+        while let Some(result) = listener_tasks.join_next().await {
+            match result {
+                Ok(Ok(())) => {} // Task completed successfully
+                Ok(Err(err)) => {
+                    pipeline_run.send_err(&node.id, err).await;
+                }
+                Err(err) => {
+                    pipeline_run.send_err(&node.id, OrcaError::from(err)).await;
+                }
+            }
+        }
 
         // Abort the stop listener task since we don't need it anymore
         abort_request_handler_task.abort();
         println!(
-            "Node {} processing completed, exiting capture task",
+            "Node {} processing completed, exiting node processing task",
             node.id
         );
 
@@ -574,12 +563,17 @@ impl DockerPipelineRunner {
     async fn event_handler(
         pipeline_run: Arc<PipelineRun>,
         node_id: String,
-        subscriber: Subscriber<FifoChannelHandler<Sample>>,
+        node_to_sub_to: String,
         processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
     ) -> Result<()> {
-        // We do not know when tokio will start executing this task, therefore we need to send a ready message
-        // back to our spawner task
+        // Create the subscriber
+        let subscriber = pipeline_run
+            .session
+            .declare_subscriber(pipeline_run.make_key_expr(&node_to_sub_to, NODE_OUTPUT_KEY_EXPR))
+            .await
+            .context(selector::AgentCommunicationFailure {})?;
 
+        // Send out ready signal
         pipeline_run
             .session
             .put(
@@ -589,18 +583,30 @@ impl DockerPipelineRunner {
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
-        while let Ok(sample) = subscriber.recv_async().await {
-            println!("Received sample for node: {node_id}");
+        // Listen to the key
+        loop {
+            let sample = subscriber
+                .recv_async()
+                .await
+                .context(selector::AgentCommunicationFailure)?;
+
+            println!(
+                "Received sample from node: {node_to_sub_to} for node {node_id} and key expr {}",
+                subscriber.key_expr().as_str()
+            );
             // Extract out the packets
             let packets: Vec<Packet> = serde_json::from_slice(&sample.payload().to_bytes())?;
+            println!("Packet len: {}", packets.len());
 
             // Check if the packets are empty, if so that means the node is finished processing
             if packets.is_empty() {
                 processor
                     .lock()
                     .await
-                    .mark_parent_as_complete(&node_id)
+                    .mark_parent_as_complete(&node_to_sub_to)
                     .await;
+
+                println!("Node {node_id} processing completed");
                 break;
             }
 
@@ -609,11 +615,11 @@ impl DockerPipelineRunner {
                 processor
                     .lock()
                     .await
-                    .process_incoming_packet(&node_id, &packet)
+                    .process_incoming_packet(&node_to_sub_to, &packet)
                     .await;
             }
         }
-
+        println!("Node {node_id} event handler exiting");
         Ok::<(), OrcaError>(())
     }
 
@@ -743,10 +749,7 @@ impl PodProcessor {
             .declare_subscriber(pipeline_run.agent_client.make_key_expr(
                 true,
                 "pod_job",
-                BTreeMap::from([
-                    ("hash", pod_job.hash.clone()),
-                    ("event", "success".to_owned()),
-                ]),
+                BTreeMap::from([("hash", pod_job.hash.clone()), ("event", "*".to_owned())]),
             ))
             .await
             .context(selector::AgentCommunicationFailure {})?;
@@ -754,25 +757,14 @@ impl PodProcessor {
         // Create the async task to listen for the pod job completion
         let pod_job_listener_task = tokio::spawn(async move {
             // Wait for the pod job to complete and extract the result
-            println!("Listening on {}", pod_job_subscriber.key_expr());
             let sample = pod_job_subscriber
                 .recv_async()
                 .await
                 .context(selector::AgentCommunicationFailure {})?;
             // Extract the pod_result from the payload
-            println!("Received pod job completion message: {:?}", sample);
             let pod_result: PodResult = serde_json::from_slice(&sample.payload().to_bytes())?;
-            println!(
-                "Pod job {} completed with status: {:?}",
-                pod_result.pod_job.hash, pod_result.status
-            );
             Ok::<_, OrcaError>(pod_result)
         });
-
-        println!(
-            "Submitting pod job {} for node {} with input packet hash: {}",
-            pod_job.hash, node_id, input_packet_hash
-        );
 
         // Submit it to the client and get the response to make sure it was successful
         let responses = pipeline_run
@@ -798,12 +790,6 @@ impl PodProcessor {
 
         // Get the pod result from the listener task
         let pod_result = pod_job_listener_task.await??;
-
-        println!(
-            "Pod job {} completed with status: {:?}",
-            pod_result.pod_job.hash, pod_result.status
-        );
-
         // Get the output packet for the pod result
         Ok(match pod_result.status {
             PodStatus::Completed => {
@@ -863,7 +849,7 @@ impl NodeProcessor for PodProcessor {
                         .send_packets(&node_id, &vec![output_packet])
                         .await
                     {
-                        Ok(()) => Ok(()),
+                        Ok(()) => Ok(println!("Node {}: Sending packet ", node_id)),
                         Err(err) => Err(err),
                     }
                 }
@@ -882,8 +868,18 @@ impl NodeProcessor for PodProcessor {
     }
 
     async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) {
+        println!(
+            "Number of task waiting to be join {} for node {}",
+            self.processing_tasks.len(),
+            self.node_id
+        );
         // For pod we only have one parent, thus execute the exit case
-        while self.processing_tasks.join_next().await.is_some() {}
+        while self.processing_tasks.join_next().await.is_some() {
+            println!(
+                "Waiting for pod node {} processing tasks to complete",
+                self.node_id
+            );
+        }
         // Send out completion signal
         match self
             .pipeline_run
@@ -895,6 +891,10 @@ impl NodeProcessor for PodProcessor {
                 self.pipeline_run.send_err(&self.node_id, err).await;
             }
         }
+        println!(
+            "Pod node {} processing completed, exiting pod processing task",
+            self.node_id
+        );
     }
 
     fn stop(&mut self) {
@@ -938,6 +938,10 @@ impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T>
         sender_node_id: &str,
         incoming_packet: &HashMap<String, PathSet>,
     ) {
+        println!(
+            "Processing incoming packet from node: {} for operator: {}",
+            sender_node_id, self.node_id
+        );
         // Clone all necessary fields from self to move into the async block
         let operator = Arc::clone(&self.operator);
         let pipeline_run = Arc::clone(&self.pipeline_run);
@@ -948,7 +952,7 @@ impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T>
 
         self.processing_tasks.spawn(async move {
             let processing_result = operator
-                .process_packets(vec![(sender_node_id_inner, incoming_packet_inner)])
+                .process_packet(sender_node_id_inner, incoming_packet_inner)
                 .await;
 
             match processing_result {

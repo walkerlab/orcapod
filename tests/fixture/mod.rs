@@ -337,12 +337,16 @@ pub fn pipeline() -> Result<Pipeline> {
     let mut kernel_map = HashMap::new();
 
     // Insert the pod into the kernel map
-    for pod_name in ["A", "B", "C", "D"] {
+    for pod_name in ["A", "B", "C", "D", "E"] {
         kernel_map.insert(pod_name.into(), combine_txt_pod(pod_name)?.into());
     }
 
     let output_to_input_1 = Arc::new(MapOperator {
         map: HashMap::from([("output".to_owned(), "input_1".to_owned())]),
+    });
+
+    let output_to_input_2 = Arc::new(MapOperator {
+        map: HashMap::from([("output".to_owned(), "input_2".to_owned())]),
     });
 
     // Create a mapper for A, B, and C
@@ -354,10 +358,9 @@ pub fn pipeline() -> Result<Pipeline> {
     );
     kernel_map.insert(
         "pod_b_mapper".into(),
-        MapOperator {
-            map: HashMap::from([("output".to_owned(), "input_2".to_owned())]),
-        }
-        .into(),
+        Kernel::MapOperator {
+            mapper: Arc::clone(&output_to_input_2),
+        },
     );
     kernel_map.insert(
         "pod_c_mapper".into(),
@@ -365,19 +368,25 @@ pub fn pipeline() -> Result<Pipeline> {
             mapper: Arc::clone(&output_to_input_1),
         },
     );
+    kernel_map.insert(
+        "pod_d_mapper".into(),
+        Kernel::MapOperator {
+            mapper: Arc::clone(&output_to_input_2),
+        },
+    );
 
-    // Add the joiner node
-    kernel_map.insert("pod_c_joiner".into(), Kernel::JoinOperator);
-
-    // Add joiner node for D
-    kernel_map.insert("pod_d_joiner".into(), Kernel::JoinOperator);
+    for joiner_name in ['c', 'd', 'e'] {
+        kernel_map.insert(format!("pod_{}_joiner", joiner_name), Kernel::JoinOperator);
+    }
 
     // Write all the edges in DOT format
     let dot = "
         digraph {
         A -> pod_a_mapper -> pod_c_joiner;
         B -> pod_b_mapper -> pod_c_joiner;
-        pod_c_joiner -> C -> pod_d_joiner -> D;
+        pod_c_joiner -> C -> pod_c_mapper-> pod_e_joiner;
+        D -> pod_d_mapper -> pod_e_joiner;
+        pod_e_joiner -> E;
         }
     ";
 
@@ -393,30 +402,37 @@ pub fn pipeline() -> Result<Pipeline> {
                 }],
             ),
             (
-                "is_the".into(),
+                "is".into(),
                 vec![NodeURI {
                     node_id: "A".into(),
                     key: "input_2".into(),
                 }],
             ),
             (
-                "cat_color".into(),
+                "the".into(),
                 vec![NodeURI {
                     node_id: "B".into(),
                     key: "input_1".into(),
                 }],
             ),
             (
-                "cat".into(),
+                "cat_color".into(),
                 vec![NodeURI {
                     node_id: "B".into(),
                     key: "input_2".into(),
                 }],
             ),
             (
+                "cat".into(),
+                vec![NodeURI {
+                    node_id: "D".into(),
+                    key: "input_1".into(),
+                }],
+            ),
+            (
                 "action".into(),
                 vec![NodeURI {
-                    node_id: "pod_d_joiner".into(),
+                    node_id: "D".into(),
                     key: "input_2".into(),
                 }],
             ),
@@ -434,6 +450,7 @@ pub fn pipeline() -> Result<Pipeline> {
 #[expect(clippy::implicit_hasher, reason = "Could be a false positive?")]
 pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<PipelineJob> {
     // Create a simple pipeline_job
+    let namespace: String = "default".into();
     PipelineJob::new(
         pipeline()?.into(),
         &HashMap::from([
@@ -442,19 +459,30 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
                 vec![PathSet::Unary(Blob {
                     kind: BlobKind::File,
                     location: URI {
-                        namespace: "default".into(),
+                        namespace: namespace.clone(),
                         path: "input_txt/Where.txt".into(),
                     },
                     checksum: String::new(),
                 })],
             ),
             (
-                "is_the".into(),
+                "is".into(),
                 vec![PathSet::Unary(Blob {
                     kind: BlobKind::File,
                     location: URI {
-                        namespace: "default".into(),
-                        path: "input_txt/is_the.txt".into(),
+                        namespace: namespace.clone(),
+                        path: "input_txt/is.txt".into(),
+                    },
+                    checksum: String::new(),
+                })],
+            ),
+            (
+                "the".into(),
+                vec![PathSet::Unary(Blob {
+                    kind: BlobKind::File,
+                    location: URI {
+                        namespace: namespace.clone(),
+                        path: "input_txt/the.txt".into(),
                     },
                     checksum: String::new(),
                 })],
@@ -465,7 +493,7 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
                     PathSet::Unary(Blob {
                         kind: BlobKind::File,
                         location: URI {
-                            namespace: "default".into(),
+                            namespace: namespace.clone(),
                             path: "input_txt/black.txt".into(),
                         },
                         checksum: String::new(),
@@ -473,7 +501,7 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
                     PathSet::Unary(Blob {
                         kind: BlobKind::File,
                         location: URI {
-                            namespace: "default".into(),
+                            namespace: namespace.clone(),
                             path: "input_txt/tabby.txt".into(),
                         },
                         checksum: String::new(),
@@ -485,7 +513,7 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
                 vec![PathSet::Unary(Blob {
                     kind: BlobKind::File,
                     location: URI {
-                        namespace: "default".into(),
+                        namespace: namespace.clone(),
                         path: "input_txt/cat.txt".into(),
                     },
                     checksum: String::new(),
@@ -497,7 +525,7 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
                     PathSet::Unary(Blob {
                         kind: BlobKind::File,
                         location: URI {
-                            namespace: "default".into(),
+                            namespace: namespace.clone(),
                             path: "input_txt/hiding.txt".into(),
                         },
                         checksum: String::new(),
@@ -505,7 +533,7 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
                     PathSet::Unary(Blob {
                         kind: BlobKind::File,
                         location: URI {
-                            namespace: "default".into(),
+                            namespace: namespace.clone(),
                             path: "input_txt/playing.txt".into(),
                         },
                         checksum: String::new(),
