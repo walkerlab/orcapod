@@ -102,7 +102,7 @@ async fn parallel_four_cores() -> Result<()> {
                 .await
                 .expect("All senders have dropped.");
             let metadata = extract_metadata(sample.key_expr().as_str());
-            let topic_kind = metadata["action"].as_str();
+            let topic_kind = metadata["event"].as_str();
             if ["success", "failure"].contains(&topic_kind) {
                 let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;
                 assert!(
