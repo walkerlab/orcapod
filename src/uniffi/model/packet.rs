@@ -37,9 +37,6 @@ pub struct URI {
     pub path: PathBuf,
 }
 
-#[uniffi::export]
-impl URI {}
-
 /// BLOB with metadata.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub struct Blob {
@@ -50,9 +47,6 @@ pub struct Blob {
     /// BLOB contents checksum.
     pub checksum: String,
 }
-
-#[uniffi::export]
-impl Blob {}
 
 /// A single BLOB or a collection of BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
