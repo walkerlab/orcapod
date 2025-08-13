@@ -1,5 +1,5 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
-pub mod fixture;
+
 use orcapod::{
     core::operator::{JoinOperator, MapOperator, Operator},
     uniffi::{
@@ -73,16 +73,16 @@ async fn join_once() -> Result<()> {
                 make_packet_key("style".into(), "right/style0.t7".into()),
             ]),
             Packet::from([
-                make_packet_key("subject".into(), "left/subject0.png".into()),
-                make_packet_key("style".into(), "right/style1.t7".into()),
-            ]),
-            Packet::from([
                 make_packet_key("subject".into(), "left/subject1.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
             ]),
             Packet::from([
                 make_packet_key("subject".into(), "left/subject2.png".into()),
                 make_packet_key("style".into(), "right/style0.t7".into()),
+            ]),
+            Packet::from([
+                make_packet_key("subject".into(), "left/subject0.png".into()),
+                make_packet_key("style".into(), "right/style1.t7".into()),
             ]),
             Packet::from([
                 make_packet_key("subject".into(), "left/subject1.png".into()),
@@ -93,7 +93,9 @@ async fn join_once() -> Result<()> {
                 make_packet_key("style".into(), "right/style1.t7".into()),
             ]),
         ],
+        "Unexpected streams."
     );
+
     Ok(())
 }
 
@@ -143,15 +145,7 @@ async fn join_spotty() -> Result<()> {
                 make_packet_key("style".into(), "right/style1.t7".into()),
             ]),
         ],
-        &operator
-            .process_packets(vec![(
-                "left".into(),
-                Packet::from([make_packet_key(
-                    "subject".into(),
-                    "left/subject0.png".into(),
-                )]),
-            )])
-            .await?,
+        "Unexpected streams."
     );
 
     assert_eq!(
@@ -188,7 +182,9 @@ async fn join_spotty() -> Result<()> {
                 make_packet_key("style".into(), "right/style1.t7".into()),
             ]),
         ],
+        "Unexpected streams."
     );
+
     Ok(())
 }
 
@@ -209,7 +205,9 @@ async fn map_once() -> Result<()> {
         vec![Packet::from([
             make_packet_key("key_new".into(), "some/key.txt".into()),
             make_packet_key("subject".into(), "some/subject.txt".into()),
-        ])],
+        ]),],
+        "Unexpected packet."
     );
+
     Ok(())
 }

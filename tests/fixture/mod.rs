@@ -289,14 +289,17 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
     Pod::new(
         Some(Annotation {
             name: pod_name.to_owned(),
-            description: "Pod append it's own name to the end of the file.".to_owned(),
+            description: "Takes two input files, remove the final next line and combine them"
+                .to_owned(),
             version: "1.0.0".to_owned(),
         }),
         "alpine:3.14".to_owned(),
         vec![
             "sh".into(),
             "-c".into(),
-            format!("cat input/input_1.txt input/input_2.txt > /output/output.txt"),
+            format!(
+                "printf '%s %s\\n' \"$(cat input/input_1.txt | head -c -1)\" \"$(cat input/input_2.txt | head -c -1)\" > /output/output.txt"
+            ),
         ],
         HashMap::from([
             (
@@ -329,6 +332,7 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
     )
 }
 
+#[expect(clippy::too_many_lines, reason = "OK in tests.")]
 pub fn pipeline() -> Result<Pipeline> {
     // Create a simple pipeline where the functions job is to add append their name into the input file
     // Structure: A -> Mapper -> Joiner -> B -> Mapper -> C, D -> Mapper -> Joiner
@@ -376,7 +380,7 @@ pub fn pipeline() -> Result<Pipeline> {
     );
 
     for joiner_name in ['c', 'd', 'e'] {
-        kernel_map.insert(format!("pod_{}_joiner", joiner_name), Kernel::JoinOperator);
+        kernel_map.insert(format!("pod_{joiner_name}_joiner"), Kernel::JoinOperator);
     }
 
     // Write all the edges in DOT format
@@ -440,7 +444,7 @@ pub fn pipeline() -> Result<Pipeline> {
         HashMap::from([(
             "output".to_owned(),
             NodeURI {
-                node_id: "D".into(),
+                node_id: "E".into(),
                 key: "output".into(),
             },
         )]),
@@ -533,7 +537,7 @@ pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<Pipel
                     PathSet::Unary(Blob {
                         kind: BlobKind::File,
                         location: URI {
-                            namespace: namespace.clone(),
+                            namespace,
                             path: "input_txt/playing.txt".into(),
                         },
                         checksum: String::new(),

@@ -1,7 +1,7 @@
 #![expect(
     missing_docs,
     clippy::panic_in_result_fn,
-    clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::unwrap_used,
     reason = "OK in tests."
 )]
@@ -12,7 +12,10 @@
 pub mod fixture;
 
 // Example for a local module:
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use orcapod::{
     core::pipeline_runner::DockerPipelineRunner,
@@ -21,6 +24,7 @@ use orcapod::{
         orchestrator::{agent::Agent, docker::LocalDockerOrchestrator},
     },
 };
+use tokio::fs::read_to_string;
 
 use crate::fixture::TestDirs;
 use fixture::pipeline_job;
@@ -33,24 +37,6 @@ async fn basic_run() -> Result<()> {
         Some("./tests/extra/data/"),
     )]))?;
     let namespace_lookup = test_dirs.namespace_lookup();
-
-    // create a zenoh session to print out all communication message
-    let session = zenoh::open(zenoh::Config::default())
-        .await
-        .expect("Failed to open zenoh session");
-
-    tokio::spawn(async move {
-        // Subscribe to all messages in the 'test' group
-        let sub = session
-            .declare_subscriber("**")
-            .await
-            .expect("Failed to declare subscriber");
-
-        while let Ok(sample) = sub.recv_async().await {
-            // Print the key expression and payload of each message
-            println!("Received message: {}:", sample.key_expr().as_str(),);
-        }
-    });
 
     // Create and agent and start it (temporary for now, will be merge later)
     let agent = Arc::new(Agent::new(
@@ -80,14 +66,26 @@ async fn basic_run() -> Result<()> {
     // Wait for the pipeline run to complete
     let pipeline_result = runner.get_result(&pipeline_run).await?;
 
-    println!(
-        "Pipeline run completed: {:?}",
-        pipeline_result.output_packets
-    );
+    // Check the output packet content
+    assert_eq!(pipeline_result.output_packets["output"].len(), 4);
 
-    assert!(
-        pipeline_result.output_packets.len() == 1,
-        "Expected exactly one output packet."
+    // Get all the output file content and read them in
+    let mut output_content = HashSet::new();
+
+    for output_packet in &pipeline_result.output_packets["output"] {
+        output_content
+            .insert(read_to_string(&output_packet.to_path_buf(&namespace_lookup)?[0]).await?);
+    }
+
+    // Check if the output_content matches
+    assert_eq!(
+        output_content,
+        HashSet::from([
+            "Where is the black cat playing\n".to_owned(),
+            "Where is the black cat hiding\n".to_owned(),
+            "Where is the tabby cat playing\n".to_owned(),
+            "Where is the tabby cat hiding\n".to_owned(),
+        ])
     );
 
     Ok(())
