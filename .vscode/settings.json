@@ -24,6 +24,10 @@
     "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,
     "lldb.consoleMode": "evaluate",
+    "jupyter.kernels.excludePythonEnvironments": [
+        "/bin/python3",
+        "/usr/bin/python3",
+    ],
     "python.defaultInterpreterPath": "~/.local/share/base/bin/python3",
     "python.terminal.activateEnvironment": false,
     "notebook.formatOnSave.enabled": true,
