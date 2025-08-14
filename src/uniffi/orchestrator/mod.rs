@@ -56,7 +56,7 @@ pub struct PodRunInfo {
     pub memory_limit: u64,
 }
 /// Current computation managed by orchestrator.
-#[derive(uniffi::Record, Debug)]
+#[derive(uniffi::Record, Debug, PartialEq, Clone)]
 pub struct PodRun {
     /// Original compute request.
     pub pod_job: Arc<PodJob>,

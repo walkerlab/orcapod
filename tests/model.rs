@@ -102,9 +102,9 @@ fn pod_job_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_result() -> Result<()> {
-    assert_eq!(
+    pretty_assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "35abb8180349bed1f3ea8c0d84e98000ec3ace904624e94e678783891a7e710e",
+        "e752d86d4fc5435bfa4564ba951851530f5cf2228586c2f488c2ca9e7bcc7ed1",
         "Hash didn't match."
     );
     Ok(())
@@ -129,7 +129,7 @@ fn pod_result_to_yaml() -> Result<()> {
                 location:
                   namespace: default
                   path: output/result2.jpeg
-                checksum: da71a1b5f8ca6ebd1edfd11df4c83078fc50d0e6a4c9b3d642ba397d81d8e883
+                checksum: a1458fc7d7d9d23a66feae88b5a89f1756055bdbb6be02fdf672f7d31ed92735
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307

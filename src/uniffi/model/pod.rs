@@ -9,7 +9,7 @@ use crate::{
         validation::validate_packet,
     },
     uniffi::{
-        error::{Kind, OrcaError, Result},
+        error::{OrcaError, Result},
         model::{
             Annotation,
             packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
@@ -20,7 +20,7 @@ use crate::{
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
 
 /// A reusable, containerized computational unit.
@@ -225,70 +225,44 @@ impl PodResult {
             .pod
             .output_spec
             .iter()
-            .map(|(packet_key, path_info)| {
-                let rel_path = &pod_job.output_dir.path.join(&path_info.path);
-                let full_path =
-                    get(namespace_lookup, &pod_job.output_dir.namespace)?.join(rel_path);
-
-                // Check if exists and any permissions issues
-                match full_path.try_exists() {
-                    Ok(true) => (),
-                    Ok(false) => {
-                        return Err(OrcaError {
-                            kind: Kind::FailedToGetPodJobOutput {
-                                pod_job_hash: pod_job.hash.clone(),
-                                packet_key: packet_key.clone(),
-                                path: full_path.into(),
-                                io_error: Box::new(io::ErrorKind::NotFound.into()),
-                                backtrace: Some(snafu::Backtrace::capture()),
-                            },
-                        });
-                    }
-                    Err(err) => {
-                        return Err(OrcaError {
-                            kind: Kind::FailedToGetPodJobOutput {
-                                pod_job_hash: pod_job.hash.clone(),
-                                packet_key: packet_key.clone(),
-                                path: full_path.into(),
-                                io_error: Box::new(err),
-                                backtrace: Some(snafu::Backtrace::capture()),
-                            },
-                        });
-                    }
-                }
-
-                // Determine if file or directory and handle other cases such as socket, named_pipe, etc.
-                let blob_kind = if full_path.is_file() {
-                    BlobKind::File
-                } else if full_path.is_dir() {
-                    BlobKind::Directory
-                } else {
-                    // Will fail on socket, named pipe, etc.
-                    return Err(OrcaError {
-                        kind: Kind::UnexpectedPathType {
-                            path: full_path,
-                            backtrace: Some(snafu::Backtrace::capture()),
-                        },
-                    });
+            .filter_map(|(packet_key, path_info)| {
+                let location = URI {
+                    namespace: pod_job.output_dir.namespace.clone(),
+                    path: pod_job.output_dir.path.join(&path_info.path),
                 };
 
+                let local_location = match get(namespace_lookup, &location.namespace) {
+                    Ok(root_path) => root_path.join(&location.path),
+                    Err(error) => return Some(Err(error)),
+                };
+
+                match local_location.try_exists() {
+                    Ok(false) => None,
+                    Err(error) => Some(Err(OrcaError::from(error))),
+                    Ok(true) => Some(Ok((
+                        packet_key,
+                        Blob {
+                            kind: if local_location.is_file() {
+                                BlobKind::File
+                            } else {
+                                BlobKind::Directory
+                            },
+                            location,
+                            checksum: String::new(),
+                        },
+                    ))),
+                }
+            })
+            .map(|result| {
+                let (packet_key, blob) = result?;
                 Ok((
                     packet_key.clone(),
-                    PathSet::Unary(hash_blob(
-                        namespace_lookup,
-                        &Blob {
-                            kind: blob_kind,
-                            location: URI {
-                                namespace: pod_job.output_dir.namespace.clone(),
-                                path: rel_path.into(),
-                            },
-                            ..Default::default()
-                        },
-                    )?),
+                    PathSet::Unary(hash_blob(namespace_lookup, &blob)?),
                 ))
             })
-            .collect::<Result<HashMap<_, _>>>()?;
+            .collect::<Result<_>>()?;
 
+        // If packet is completed, the output packet must meet the output spec
         if matches!(status, PodStatus::Completed) {
             validate_packet("output".into(), &pod_job.pod.output_spec, &output_packet)?;
         }

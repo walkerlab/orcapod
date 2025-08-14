@@ -38,9 +38,9 @@ where
     assert_eq!(
         orchestrator
             .list_blocking()?
-            .iter()
-            .filter(|container| container.pod_job == pod_run.pod_job)
-            .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
+            .into_iter()
+            .filter(|pod_run_from_list| *pod_run_from_list == pod_run)
+            .map(|run| Ok(orchestrator.get_info_blocking(&run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command.clone()],
         "Unexpected list."
@@ -59,9 +59,9 @@ where
     assert_eq!(
         orchestrator
             .list_blocking()?
-            .iter()
-            .filter(|container| container.pod_job == pod_run.pod_job)
-            .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
+            .into_iter()
+            .filter(|pod_run_from_list| *pod_run_from_list == pod_run)
+            .map(|run| Ok(orchestrator.get_info_blocking(&run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command],
         "Unexpected list."
