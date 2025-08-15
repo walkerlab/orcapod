@@ -130,13 +130,33 @@ impl PipelineJob {
 }
 
 /// Struct to hold the result of a pipeline execution.
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, Display, CloneGetters)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
 pub struct PipelineResult {
     /// The pipeline job that was executed.
     pub pipeline_job: Arc<PipelineJob>,
     /// The result of the pipeline execution.
     pub output_packets: HashMap<String, Vec<PathSet>>,
+    /// Logs of any failures that occurred during the pipeline execution.
+    pub failure_logs: Vec<String>,
+    /// The status of the pipeline execution.
+    pub status: PipelineStatus,
 }
 
+/// The status of a pipeline execution.
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum PipelineStatus {
+    /// The pipeline is currently running.
+    Running,
+    /// The pipeline has completed successfully.
+    Succeeded,
+    /// The pipeline has failed.
+    Failed,
+    /// The pipeline has partially succeeded. There should be some failure logs
+    PartiallySucceeded,
+}
 /// A node in a computational pipeline.
 #[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum Kernel {

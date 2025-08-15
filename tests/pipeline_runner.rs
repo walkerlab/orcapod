@@ -21,6 +21,7 @@ use orcapod::{
     core::pipeline_runner::DockerPipelineRunner,
     uniffi::{
         error::Result,
+        model::pipeline::PipelineStatus,
         orchestrator::{agent::Agent, docker::LocalDockerOrchestrator},
     },
 };
@@ -69,6 +70,9 @@ async fn basic_run() -> Result<()> {
     // Check the output packet content
     assert_eq!(pipeline_result.output_packets["output"].len(), 4);
 
+    // Check the status
+    assert_eq!(pipeline_result.status, PipelineStatus::Succeeded);
+
     // Get all the output file content and read them in
     let mut output_content = HashSet::new();
 
@@ -90,31 +94,3 @@ async fn basic_run() -> Result<()> {
 
     Ok(())
 }
-
-// #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// async fn stop() -> Result<()> {
-//     // Create the test_dir and get the namespace lookup
-//     let test_dirs = TestDirs::new(&HashMap::from([(
-//         "default".to_owned(),
-//         Some(
-//             "./tests/extra
-//         /data/",
-//         ),
-//     )]))?;
-
-//     let namespace_lookup = test_dirs.namespace_lookup();
-
-//     let pipeline_job = pipeline_job(&namespace_lookup)?;
-
-//     // Create the runner
-//     let mut runner = DockerPipelineRunner::new("test".to_owned())?;
-
-//     let pipeline_run = runner
-//         .start(pipeline_job, "default", &namespace_lookup)
-//         .await?;
-
-//     // Abort the pipeline run
-//     runner.stop(&pipeline_run).await?;
-
-//     Ok(())
-// }

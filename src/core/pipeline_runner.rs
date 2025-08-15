@@ -12,7 +12,7 @@ use crate::{
         },
         model::{
             packet::{Packet, PathSet, URI},
-            pipeline::{Kernel, PipelineJob, PipelineResult},
+            pipeline::{Kernel, PipelineJob, PipelineResult, PipelineStatus},
             pod::{Pod, PodJob, PodResult},
         },
         orchestrator::{
@@ -56,7 +56,7 @@ struct ProcessingFailure {
 /// Internal representation of a pipeline run, this should not be made public due to the fact that it contains
 /// internal states and tasks
 #[derive(Debug)]
-struct PipelineRun {
+struct PipelineRunInternal {
     /// `PipelineJob` that this run is associated with
     assigned_name: String,
     session: Arc<zenoh::Session>,   // Zenoh session for communication
@@ -64,13 +64,13 @@ struct PipelineRun {
     pipeline_job: Arc<PipelineJob>, // The pipeline job that this run is associated with
     node_tasks: Arc<Mutex<JoinSet<Result<()>>>>, // JoinSet of tasks for each node in the pipeline
     outputs: Arc<RwLock<HashMap<String, Vec<PathSet>>>>, // String is the node key, while hash
-    failure_logs: Arc<RwLock<Vec<ProcessingFailure>>>, // Logs of processing failures
+    failure_logs: Arc<RwLock<Vec<String>>>, // Logs of processing failures
     failure_logging_task: Arc<Mutex<JoinSet<Result<()>>>>, // JoinSet of tasks for logging failures
     namespace: String,
     namespace_lookup: HashMap<String, PathBuf>,
 }
 
-impl PipelineRun {
+impl PipelineRunInternal {
     fn make_key_expr(&self, node_id: &str, event: &str) -> String {
         make_key_expr(
             &self.agent_client.group,
@@ -108,14 +108,12 @@ impl PipelineRun {
             .context(selector::AgentCommunicationFailure {})?)
     }
 
-    async fn send_err(&self, node_id: &str, err: OrcaError) {
-        let payload = match serde_json::to_string(&err.to_string()) {
-            Ok(json) => json,
-            Err(serialize_err) => serialize_err.to_string(),
-        };
-
+    async fn send_err_msg(&self, node_id: &str, err: OrcaError) {
         self.session
-            .put(&self.make_key_expr(node_id, FAILURE_KEY_EXP), payload)
+            .put(
+                &self.make_key_expr(node_id, FAILURE_KEY_EXP),
+                format!("Node {node_id}: {err}"),
+            )
             .await
             .context(selector::AgentCommunicationFailure {})
             .unwrap_or_else(|send_err| {
@@ -130,23 +128,35 @@ impl PipelineRun {
             .await
             .context(selector::AgentCommunicationFailure {})?)
     }
+
+    async fn get_status(&self) -> PipelineStatus {
+        if !self.node_tasks.lock().await.is_empty() {
+            PipelineStatus::Running
+        } else if self.outputs.read().await.is_empty() {
+            PipelineStatus::Failed
+        } else if self.failure_logs.read().await.is_empty() {
+            PipelineStatus::Succeeded
+        } else {
+            PipelineStatus::PartiallySucceeded
+        }
+    }
 }
 
-impl PartialEq for PipelineRun {
+impl PartialEq for PipelineRunInternal {
     fn eq(&self, other: &Self) -> bool {
         self.pipeline_job.hash == other.pipeline_job.hash
     }
 }
 
-impl Eq for PipelineRun {}
+impl Eq for PipelineRunInternal {}
 
-impl Hash for PipelineRun {
+impl Hash for PipelineRunInternal {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.pipeline_job.hash.hash(state);
     }
 }
 
-impl Display for PipelineRun {
+impl Display for PipelineRunInternal {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "PipelineRun({})", self.pipeline_job.hash)
     }
@@ -156,7 +166,7 @@ impl Display for PipelineRun {
 #[derive(Debug, Clone)]
 pub struct DockerPipelineRunner {
     agent: Arc<Agent>,
-    pipeline_runs: HashMap<String, Arc<PipelineRun>>,
+    pipeline_runs: HashMap<String, Arc<PipelineRunInternal>>,
 }
 
 /// This is an implementation of a pipeline runner that uses Zenoh to communicate between the tasks
@@ -192,7 +202,7 @@ impl DockerPipelineRunner {
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<String> {
         // Create a new pipeline run
-        let pipeline_run = Arc::new(PipelineRun {
+        let pipeline_run = Arc::new(PipelineRunInternal {
             pipeline_job: pipeline_job.into(),
             outputs: Arc::new(RwLock::new(HashMap::new())),
             node_tasks: Arc::new(Mutex::new(JoinSet::new())),
@@ -327,6 +337,8 @@ impl DockerPipelineRunner {
 
         Ok(PipelineResult {
             pipeline_job: Arc::clone(&pipeline_run.pipeline_job),
+            failure_logs: pipeline_run.failure_logs.read().await.clone(),
+            status: pipeline_run.get_status().await,
             output_packets: pipeline_run.outputs.read().await.clone(),
         })
     }
@@ -364,7 +376,7 @@ impl DockerPipelineRunner {
     async fn create_output_capture_task_for_node(
         //<Key to pull from the node, Key that will be mapped to in the outputs>
         key_mapping: HashMap<String, String>,
-        pipeline_run: Arc<PipelineRun>,
+        pipeline_run: Arc<PipelineRunInternal>,
         node_id: String,
     ) -> Result<()> {
         // Determine which keys we are interested in for the given node_id
@@ -403,7 +415,7 @@ impl DockerPipelineRunner {
         Ok(())
     }
 
-    async fn failure_capture_task(pipeline_run: Arc<PipelineRun>) -> Result<()> {
+    async fn failure_capture_task(pipeline_run: Arc<PipelineRunInternal>) -> Result<()> {
         let sub = pipeline_run
             .session
             .declare_subscriber(pipeline_run.make_key_expr("*", FAILURE_KEY_EXP))
@@ -413,14 +425,9 @@ impl DockerPipelineRunner {
         // Listen to any failure messages and write it the logs
         while let Ok(payload) = sub.recv_async().await {
             // Extract the message from the payload
-            let process_failure: ProcessingFailure =
-                serde_json::from_slice(&payload.payload().to_bytes())?;
+            let failure_msg: String = serde_json::from_slice(&payload.payload().to_bytes())?;
             // Store the failure message in the logs
-            pipeline_run
-                .failure_logs
-                .write()
-                .await
-                .push(process_failure.clone());
+            pipeline_run.failure_logs.write().await.push(failure_msg);
         }
 
         Ok(())
@@ -439,7 +446,7 @@ impl DockerPipelineRunner {
     /// Will error out if the kernel for the node is not found or if the
     async fn spawn_node_processing_task(
         node: PipelineNode,
-        pipeline_run: Arc<PipelineRun>,
+        pipeline_run: Arc<PipelineRunInternal>,
         is_input_node: bool,
     ) -> Result<()> {
         // Get the node parents
@@ -531,10 +538,12 @@ impl DockerPipelineRunner {
             match result {
                 Ok(Ok(())) => {} // Task completed successfully
                 Ok(Err(err)) => {
-                    pipeline_run.send_err(&node.id, err).await;
+                    pipeline_run.send_err_msg(&node.id, err).await;
                 }
                 Err(err) => {
-                    pipeline_run.send_err(&node.id, OrcaError::from(err)).await;
+                    pipeline_run
+                        .send_err_msg(&node.id, OrcaError::from(err))
+                        .await;
                 }
             }
         }
@@ -547,7 +556,7 @@ impl DockerPipelineRunner {
 
     /// This is the actual handler for incoming messages for the node
     async fn event_handler(
-        pipeline_run: Arc<PipelineRun>,
+        pipeline_run: Arc<PipelineRunInternal>,
         node_id: String,
         node_to_sub_to: String,
         processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
@@ -604,7 +613,7 @@ impl DockerPipelineRunner {
     /// This task will listen for stop requests on the given key expression
     async fn abort_request_event_handler(
         node_processor: Arc<Mutex<Box<dyn NodeProcessor>>>,
-        pipeline_run: Arc<PipelineRun>,
+        pipeline_run: Arc<PipelineRunInternal>,
     ) -> Result<()> {
         let subscriber = pipeline_run
             .session
@@ -639,14 +648,14 @@ trait NodeProcessor: Send + Sync {
 /// Processor for Pods
 /// Currently missing implementation to call agents for actual pod processing
 struct PodProcessor {
-    pipeline_run: Arc<PipelineRun>,
+    pipeline_run: Arc<PipelineRunInternal>,
     node_id: String,
     pod: Arc<Pod>,
     processing_tasks: JoinSet<()>,
 }
 
 impl PodProcessor {
-    fn new(pipeline_run: Arc<PipelineRun>, node_id: String, pod: Arc<Pod>) -> Self {
+    fn new(pipeline_run: Arc<PipelineRunInternal>, node_id: String, pod: Arc<Pod>) -> Self {
         Self {
             pipeline_run,
             node_id,
@@ -659,7 +668,7 @@ impl PodProcessor {
 impl PodProcessor {
     /// Will handle the creation of the pod job, submission to the agent, listening for completion, and extracting the `output_packet` if successful
     async fn process_packet(
-        pipeline_run: Arc<PipelineRun>,
+        pipeline_run: Arc<PipelineRunInternal>,
         node_id: String,
         pod: Arc<Pod>,
         incoming_packet: HashMap<String, PathSet>,
@@ -809,7 +818,7 @@ impl NodeProcessor for PodProcessor {
                     // Successfully processed the packet, nothing to do
                 }
                 Err(err) => {
-                    pipeline_run.send_err(&node_id, err).await;
+                    pipeline_run.send_err_msg(&node_id, err).await;
                 }
             }
         });
@@ -826,7 +835,7 @@ impl NodeProcessor for PodProcessor {
         {
             Ok(()) => {}
             Err(err) => {
-                self.pipeline_run.send_err(&self.node_id, err).await;
+                self.pipeline_run.send_err_msg(&self.node_id, err).await;
             }
         }
     }
@@ -837,7 +846,7 @@ impl NodeProcessor for PodProcessor {
 }
 
 struct OperatorProcessor<T: Operator + Send + Sync> {
-    pipeline_run: Arc<PipelineRun>,
+    pipeline_run: Arc<PipelineRunInternal>,
     node_id: String,
     operator: Arc<T>,
     num_of_parents: usize,
@@ -848,7 +857,7 @@ struct OperatorProcessor<T: Operator + Send + Sync> {
 impl<T: Operator + Send + Sync + 'static> OperatorProcessor<T> {
     /// Create a new operator processor
     pub fn new(
-        pipeline_run: Arc<PipelineRun>,
+        pipeline_run: Arc<PipelineRunInternal>,
         node_id: String,
         operator: Arc<T>,
         num_of_parents: usize,
@@ -891,13 +900,13 @@ impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T>
                         match pipeline_run.send_packets(&node_id, &output_packets).await {
                             Ok(()) => {}
                             Err(err) => {
-                                pipeline_run.send_err(&node_id, err).await;
+                                pipeline_run.send_err_msg(&node_id, err).await;
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    pipeline_run.send_err(&node_id, err).await;
+                    pipeline_run.send_err_msg(&node_id, err).await;
                 }
             }
         });
@@ -920,7 +929,7 @@ impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T>
             {
                 Ok(()) => {}
                 Err(err) => {
-                    self.pipeline_run.send_err(&self.node_id, err).await;
+                    self.pipeline_run.send_err_msg(&self.node_id, err).await;
                 }
             }
         }
