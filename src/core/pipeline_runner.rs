@@ -28,8 +28,6 @@ use serde_yaml::Serializer;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
     collections::{BTreeMap, HashMap},
-    fmt::{Display, Formatter, Result as FmtResult},
-    hash::{Hash, Hasher},
     path::PathBuf,
     sync::Arc,
 };
