@@ -142,26 +142,6 @@ impl PipelineRunInternal {
     }
 }
 
-impl PartialEq for PipelineRunInternal {
-    fn eq(&self, other: &Self) -> bool {
-        self.pipeline_job.hash == other.pipeline_job.hash
-    }
-}
-
-impl Eq for PipelineRunInternal {}
-
-impl Hash for PipelineRunInternal {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.pipeline_job.hash.hash(state);
-    }
-}
-
-impl Display for PipelineRunInternal {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "PipelineRun({})", self.pipeline_job.hash)
-    }
-}
-
 /// Runner that uses a docker agent to run pipelines
 #[derive(Debug, Clone)]
 pub struct DockerPipelineRunner {
