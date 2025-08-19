@@ -1,7 +1,7 @@
 use crate::{
     core::util::get_type_name,
     uniffi::{
-        model::PodJob,
+        model::pod::PodJob,
         orchestrator::{Orchestrator, PodRun},
     },
 };
@@ -25,4 +25,5 @@ impl PodRun {
     }
 }
 
+pub mod agent;
 pub mod docker;

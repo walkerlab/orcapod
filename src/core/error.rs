@@ -1,20 +1,41 @@
 use crate::uniffi::error::{Kind, OrcaError};
 use bollard::errors::Error as BollardError;
+use dot_parser::ast::PestError;
 use glob;
 use serde_json;
 use serde_yaml;
 use std::{
     backtrace::{Backtrace, BacktraceStatus},
     fmt::{self, Formatter},
-    io,
-    path::{self},
+    io, path,
 };
+use tokio::task;
 
 impl From<BollardError> for OrcaError {
     fn from(error: BollardError) -> Self {
         Self {
             kind: Kind::BollardError {
-                source: error,
+                source: error.into(),
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<chrono::ParseError> for OrcaError {
+    fn from(error: chrono::ParseError) -> Self {
+        Self {
+            kind: Kind::ChronoParseError {
+                source: error.into(),
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<PestError> for OrcaError {
+    fn from(error: PestError) -> Self {
+        Self {
+            kind: Kind::DOTError {
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -24,7 +45,7 @@ impl From<glob::PatternError> for OrcaError {
     fn from(error: glob::PatternError) -> Self {
         Self {
             kind: Kind::GlobPatternError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -34,7 +55,7 @@ impl From<io::Error> for OrcaError {
     fn from(error: io::Error) -> Self {
         Self {
             kind: Kind::IoError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -44,7 +65,7 @@ impl From<path::StripPrefixError> for OrcaError {
     fn from(error: path::StripPrefixError) -> Self {
         Self {
             kind: Kind::PathPrefixError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -54,7 +75,7 @@ impl From<serde_json::Error> for OrcaError {
     fn from(error: serde_json::Error) -> Self {
         Self {
             kind: Kind::SerdeJsonError {
-                source: error,
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -64,7 +85,17 @@ impl From<serde_yaml::Error> for OrcaError {
     fn from(error: serde_yaml::Error) -> Self {
         Self {
             kind: Kind::SerdeYamlError {
-                source: error,
+                source: error.into(),
+                backtrace: Some(Backtrace::capture()),
+            },
+        }
+    }
+}
+impl From<task::JoinError> for OrcaError {
+    fn from(error: task::JoinError) -> Self {
+        Self {
+            kind: Kind::TokioTaskJoinError {
+                source: error.into(),
                 backtrace: Some(Backtrace::capture()),
             },
         }
@@ -89,23 +120,20 @@ fn format_stack(backtrace: Option<&Backtrace>) -> String {
 impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            Kind::EmptyResponseWhenLoadingContainerAltImage { backtrace, .. }
+            Kind::AgentCommunicationFailure { backtrace, .. }
             | Kind::FailedToStartPod { backtrace, .. }
-            | Kind::GeneratedNamesOverflow { backtrace, .. }
+            | Kind::IncompletePacket { backtrace, .. }
             | Kind::InvalidFilepath { backtrace, .. }
-            | Kind::InvalidPodResultTerminatedDatetime { backtrace, .. }
-            | Kind::KeyMissing { backtrace, .. }
-            | Kind::NoAnnotationFound { backtrace, .. }
-            | Kind::NoContainerNames { backtrace, .. }
-            | Kind::NoFileName { backtrace, .. }
-            | Kind::NoMatchingPodRun { backtrace, .. }
-            | Kind::NoTagFoundInContainerAltImage { backtrace, .. }
+            | Kind::MissingInfo { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
+            | Kind::ChronoParseError { backtrace, .. }
+            | Kind::DOTError { backtrace, .. }
             | Kind::GlobPatternError { backtrace, .. }
             | Kind::IoError { backtrace, .. }
             | Kind::PathPrefixError { backtrace, .. }
             | Kind::SerdeJsonError { backtrace, .. }
-            | Kind::SerdeYamlError { backtrace, .. } => {
+            | Kind::SerdeYamlError { backtrace, .. }
+            | Kind::TokioTaskJoinError { backtrace, .. } => {
                 write!(f, "{}{}", self.kind, format_stack(backtrace.as_ref()))
             }
         }

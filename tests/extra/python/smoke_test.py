@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # build: maturin develop --uv
-# debugger: select "Python: Debug File" + F5
+# debugger: select "Python: Debug smoke test" + F5
 # script: /path/to/this/test/file.py /path/to/directory (must exist, will create subdirectory)
 import shutil
 from pathlib import Path
@@ -28,7 +28,7 @@ def create_pod(data, _):
             version="1.0.0",
         ),
         image="alpine:3.14",
-        command="sleep 1",
+        command="sleep 1".split(" "),
         input_spec={},
         output_dir="/tmp/output",
         output_spec={},
@@ -73,10 +73,12 @@ def start_pod_job(data, config):
     return data["pod_run"], data
 
 
-def wait_for_pod_result(data, _):
+def wait_for_pod_result(data, config):
     print([str(p) for p in asyncio.run(data["orch"].list())])
     print("waiting to finish...")
-    data["pod_result"] = data["orch"].get_result_blocking(pod_run=data["pod_run"])
+    data["pod_result"] = data["orch"].get_result_blocking(
+        namespace_lookup=config["namespace_lookup"], pod_run=data["pod_run"]
+    )
     return data["pod_result"], data
 
 

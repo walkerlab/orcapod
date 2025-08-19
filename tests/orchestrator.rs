@@ -60,6 +60,10 @@ fn basic_test(
         "Unexpected state."
     );
     assert_eq!(
+        pod_result_1.output_packet, expected_output_packet,
+        "Unexpected output packet.",
+    );
+    assert_eq!(
         orchestrator
             .list_blocking()?
             .iter()
@@ -232,4 +236,62 @@ fn fail_during_execution() -> Result<()> {
 
         Ok(())
     })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn remote_container_image_failed() -> Result<()> {
+    let orch = LocalDockerOrchestrator::new()?;
+    let pod_job = pod_job_custom(
+        &pod_custom("alpine:3.14", &str_to_vec("sleep crash"), HashMap::new())?,
+        HashMap::new(),
+        &NAMESPACE_LOOKUP_READ_ONLY,
+    )?;
+    let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job).await?;
+    let pod_result = orch
+        .get_result(&NAMESPACE_LOOKUP_READ_ONLY, &pod_run)
+        .await?;
+    orch.delete(&pod_run).await?;
+
+    assert!(
+        matches!(pod_result.status, PodStatus::Failed(1)),
+        "Expected to fail but did not."
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[expect(clippy::use_debug, reason = "Useful in debugging from CI.")]
+async fn verify_pod_result_not_running() -> Result<()> {
+    let results = join_all(
+        pod_jobs_stresser(
+            "ghcr.io/colinianking/stress-ng:e2f96874f951a72c1c83ff49098661f0e013ac40",
+            5,
+            16,
+            0,
+        )?
+        .iter()
+        .map(|pod_job| async move {
+            let orch = LocalDockerOrchestrator::new()?;
+            let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, pod_job).await?;
+            let pod_result = orch
+                .get_result(&NAMESPACE_LOOKUP_READ_ONLY, &pod_run)
+                .await?;
+            orch.delete(&pod_run).await?;
+            Ok::<_, OrcaError>(pod_result)
+        }),
+    )
+    .await;
+
+    let statuses = results
+        .into_iter()
+        .map(|result| Ok(result?.status))
+        .filter(|status| !matches!(status, Ok(PodStatus::Completed)))
+        .collect::<Result<Vec<_>>>()?;
+
+    println!("statuses: {statuses:?}");
+    assert!(
+        statuses.is_empty(),
+        "Some pod results returned in a status other than `Completed`."
+    );
+    Ok(())
 }

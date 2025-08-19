@@ -2,30 +2,26 @@ use crate::{
     core::{
         crypto::{hash_blob, hash_buffer},
         model::{
-            deserialize_pod, deserialize_pod_job, serialize_hashmap, serialize_hashmap_option,
-            to_yaml,
+            pod::{deserialize_pod, deserialize_pod_job},
+            serialize_hashmap, serialize_hashmap_option, to_yaml,
         },
+        util::get,
+        validation::validate_packet,
     },
-    uniffi::{error::Result, orchestrator::Status},
+    uniffi::{
+        error::{OrcaError, Result},
+        model::{
+            Annotation,
+            packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
+        },
+        orchestrator::PodStatus,
+    },
 };
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
-
-/// Available models.
-#[derive(uniffi::Enum, Debug)]
-pub enum ModelType {
-    /// A reusable, containerized computational unit.
-    Pod,
-    /// A compute job that specifies resource requests and input/output targets.
-    PodJob,
-    /// Result from a compute job run.
-    PodResult,
-}
-
-// --- core model structs ---
 
 /// A reusable, containerized computational unit.
 #[derive(
@@ -42,14 +38,15 @@ pub struct Pod {
     pub hash: String,
     /// Reproducible environment for compute.
     pub image: String,
-    /// Space-delimited shell command to begin computation.
-    pub command: String,
-    /// Exposed, internal input streams.
+    /// Shell command to begin computation. First element is the executable and remaining elements
+    /// are the arguments.
+    pub command: Vec<String>,
+    /// Exposed, internal input specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub input_spec: HashMap<String, PathInfo>,
     /// Exposed, internal output directory.
     pub output_dir: PathBuf,
-    /// Exposed, internal output streams.
+    /// Exposed, internal output specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub output_spec: HashMap<String, PathInfo>,
     /// Link to source associated with image binary.
@@ -73,7 +70,7 @@ impl Pod {
     pub fn new(
         annotation: Option<Annotation>,
         image: String,
-        command: String,
+        command: Vec<String>,
         input_spec: HashMap<String, PathInfo>,
         output_dir: PathBuf,
         output_spec: HashMap<String, PathInfo>,
@@ -118,9 +115,9 @@ pub struct PodJob {
     /// A pod to base the pod job on.
     #[serde(deserialize_with = "deserialize_pod")]
     pub pod: Arc<Pod>,
-    /// Attached, external input streams.
+    /// Attached, external input packet.
     #[serde(serialize_with = "serialize_hashmap")]
-    pub input_packet: HashMap<String, PathSet>,
+    pub input_packet: Packet,
     /// Attached, external output directory.
     pub output_dir: URI,
     /// Maximum allowable cores in fractional cores for the computation.
@@ -143,25 +140,26 @@ impl PodJob {
     pub fn new(
         annotation: Option<Annotation>,
         pod: Arc<Pod>,
-        mut input_packet: HashMap<String, PathSet>,
+        mut input_packet: Packet,
         output_dir: URI,
         cpu_limit: f32,
         memory_limit: u64,
         env_vars: Option<HashMap<String, String>>,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        validate_packet("input".into(), &pod.input_spec, &input_packet)?;
         input_packet = input_packet
-            .into_iter()
+            .iter()
             .map(|(stream_name, stream_input)| match stream_input {
                 PathSet::Unary(blob) => Ok((
-                    stream_name,
+                    stream_name.clone(),
                     PathSet::Unary(hash_blob(namespace_lookup, blob)?),
                 )),
                 PathSet::Collection(blobs) => Ok((
-                    stream_name,
+                    stream_name.clone(),
                     PathSet::Collection(
                         blobs
-                            .into_iter()
+                            .iter()
                             .map(|blob| hash_blob(namespace_lookup, blob))
                             .collect::<Result<Vec<_>>>()?,
                     ),
@@ -196,10 +194,13 @@ pub struct PodResult {
     /// A pod job that originated the pod result.
     #[serde(deserialize_with = "deserialize_pod_job")]
     pub pod_job: Arc<PodJob>,
+    /// Produced, external output packet.
+    #[serde(serialize_with = "serialize_hashmap")]
+    pub output_packet: Packet,
     /// Name given by orchestrator.
     pub assigned_name: String,
     /// Status of compute run when terminated.
-    pub status: Status,
+    pub status: PodStatus,
     /// Time in epoch when created in seconds.
     pub created: u64,
     /// Time in epoch when terminated in seconds.
@@ -216,14 +217,61 @@ impl PodResult {
         annotation: Option<Annotation>,
         pod_job: Arc<PodJob>,
         assigned_name: String,
-        status: Status,
+        status: PodStatus,
         created: u64,
         terminated: u64,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
+        let output_packet = pod_job
+            .pod
+            .output_spec
+            .iter()
+            .filter_map(|(packet_key, path_info)| {
+                let location = URI {
+                    namespace: pod_job.output_dir.namespace.clone(),
+                    path: pod_job.output_dir.path.join(&path_info.path),
+                };
+
+                let local_location = match get(namespace_lookup, &location.namespace) {
+                    Ok(root_path) => root_path.join(&location.path),
+                    Err(error) => return Some(Err(error)),
+                };
+
+                match local_location.try_exists() {
+                    Ok(false) => None,
+                    Err(error) => Some(Err(OrcaError::from(error))),
+                    Ok(true) => Some(Ok((
+                        packet_key,
+                        Blob {
+                            kind: if local_location.is_file() {
+                                BlobKind::File
+                            } else {
+                                BlobKind::Directory
+                            },
+                            location,
+                            checksum: String::new(),
+                        },
+                    ))),
+                }
+            })
+            .map(|result| {
+                let (packet_key, blob) = result?;
+                Ok((
+                    packet_key.clone(),
+                    PathSet::Unary(hash_blob(namespace_lookup, &blob)?),
+                ))
+            })
+            .collect::<Result<_>>()?;
+
+        if matches!(status, PodStatus::Completed) {
+            validate_packet("output".into(), &pod_job.pod.output_spec, &output_packet)?;
+        }
+
         let pod_result_no_hash = Self {
             annotation,
             hash: String::new(),
             pod_job,
+            output_packet,
             assigned_name,
             status,
             created,
@@ -236,18 +284,6 @@ impl PodResult {
     }
 }
 
-// --- util types ---
-
-/// Standard metadata structure for all model instances.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
-pub struct Annotation {
-    /// A unique name.
-    pub name: String,
-    /// A unique semantic version.
-    pub version: String,
-    /// A long form description.
-    pub description: String,
-}
 /// Specification for GPU requirements in computation.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GPURequirement {
@@ -258,6 +294,7 @@ pub struct GPURequirement {
     /// Number of GPU cards required.
     pub count: u16,
 }
+
 /// GPU model specification.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
@@ -266,58 +303,3 @@ pub enum GPUModel {
     /// AMD-manufactured card where `String` is the specific model e.g. ???
     AMD(String),
 }
-/// Streams are named and represent an abstraction for the file(s) that represent some particular
-/// data.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct PathInfo {
-    /// Path to stream file or directory.
-    pub path: PathBuf,
-    /// Naming pattern for the stream.
-    pub match_pattern: String,
-}
-/// A set of BLOBs, either a single BLOB or a collection of BLOBs.
-/// Mainly use for input
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum PathSet {
-    /// A single BLOB.
-    Unary(Blob),
-    /// A series of BLOBs.
-    Collection(Vec<Blob>),
-}
-/// Location of BLOB data.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct URI {
-    /// Namespace alias.
-    pub namespace: String,
-    /// Path within namespace.
-    pub path: PathBuf,
-}
-
-/// BLOB with metadata.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub struct Blob {
-    /// BLOB available options.
-    pub kind: BlobKind,
-    /// BLOB location.
-    pub location: URI,
-    /// BLOB contents checksum.
-    pub checksum: String,
-}
-/// File or directory options for BLOBs.
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
-pub enum BlobKind {
-    /// A single file.
-    #[default]
-    File,
-    /// A single directory.
-    Directory,
-}
-
-// --- utils ----
-
-uniffi::custom_type!(PathBuf, String, {
-    remote,
-    try_lift: |val| Ok(PathBuf::from(&val)),
-    lower: |obj| obj.display().to_string(),
-});

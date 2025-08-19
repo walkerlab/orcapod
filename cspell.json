@@ -15,7 +15,11 @@
         "numpy",
         "graphviz",
         "uniffi",
-        "cffi"
+        "cffi",
+        "zenoh",
+        "PodJob",
+        "stresser",
+        "petgraph"
     ],
     "ignoreWords": [
         "relpath",
@@ -73,7 +77,10 @@
         "getset",
         "strsim",
         "getrandom",
-        "wasi"
+        "wasi",
+        "patchelf",
+        "itertools",
+        "colinianking"
     ],
     "useGitignore": false,
     "ignorePaths": [

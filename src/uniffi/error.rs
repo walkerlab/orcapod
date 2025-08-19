@@ -4,29 +4,36 @@
 )]
 
 use bollard::errors::Error as BollardError;
+use dot_parser::ast::PestError;
 use glob;
 use serde_json;
 use serde_yaml;
 use snafu::prelude::Snafu;
 use std::{
     backtrace::Backtrace,
+    error::Error,
     io,
     path::{self, PathBuf},
     result,
 };
+use tokio::task;
 use uniffi;
-/// Shorthand for a Result that returns an `OrcaError`.
+/// Shorthand for a Result that returns an [`OrcaError`].
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
 #[derive(Snafu, Debug, uniffi::Error)]
 #[snafu(module(selector), visibility(pub(crate)), context(suffix(false)))]
 #[uniffi(flat_error)]
 pub(crate) enum Kind {
-    #[snafu(display(
-        "Received an empty response when attempting to load the alternate container image file: {path:?}."
-    ))]
-    EmptyResponseWhenLoadingContainerAltImage {
-        path: PathBuf,
+    #[snafu(display("Agent encountered a communication error. Reason: {source}."))]
+    AgentCommunicationFailure {
+        source: Box<dyn Error + Send + Sync>,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
+    IncompletePacket {
+        kind: String,
+        missing_keys: Vec<String>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display(
@@ -37,78 +44,60 @@ pub(crate) enum Kind {
         reason: String,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display("Out of generated random names."))]
-    GeneratedNamesOverflow { backtrace: Option<Backtrace> },
     #[snafu(display("{source} ({path:?})."))]
     InvalidFilepath {
         path: PathBuf,
         source: io::Error,
         backtrace: Option<Backtrace>,
     },
-    #[snafu(display(
-        "An invalid datetime was set for pod result for pod job (hash: {pod_job_hash})."
-    ))]
-    InvalidPodResultTerminatedDatetime {
-        pod_job_hash: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("Key '{key}' was not found in map."))]
-    KeyMissing {
-        key: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No annotation found for `{name}:{version}` {class}."))]
-    NoAnnotationFound {
-        class: String,
-        name: String,
-        version: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No known container names."))]
-    NoContainerNames { backtrace: Option<Backtrace> },
-    #[snafu(display("Missing file or directory name ({path:?})."))]
-    NoFileName {
-        path: PathBuf,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No corresponding pod run found for pod job (hash: {pod_job_hash})."))]
-    NoMatchingPodRun {
-        pod_job_hash: String,
-        backtrace: Option<Backtrace>,
-    },
-    #[snafu(display("No tags found in provided container alternate image: {path:?}."))]
-    NoTagFoundInContainerAltImage {
-        path: PathBuf,
+    #[snafu(display("Missing info. Details: {details}."))]
+    MissingInfo {
+        details: String,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     BollardError {
-        source: BollardError,
+        source: Box<BollardError>,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    ChronoParseError {
+        source: Box<chrono::ParseError>,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    DOTError {
+        source: Box<PestError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     GlobPatternError {
-        source: glob::PatternError,
+        source: Box<glob::PatternError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     IoError {
-        source: io::Error,
+        source: Box<io::Error>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     PathPrefixError {
-        source: path::StripPrefixError,
+        source: Box<path::StripPrefixError>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     SerdeJsonError {
-        source: serde_json::Error,
+        source: Box<serde_json::Error>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]
     SerdeYamlError {
-        source: serde_yaml::Error,
+        source: Box<serde_yaml::Error>,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    TokioTaskJoinError {
+        source: Box<task::JoinError>,
         backtrace: Option<Backtrace>,
     },
 }
@@ -123,8 +112,8 @@ pub struct OrcaError {
 #[uniffi::export]
 impl OrcaError {
     /// Returns `true` if the error was caused by an invalid model annotation.
-    pub const fn is_invalid_annotation(&self) -> bool {
-        matches!(self.kind, Kind::NoAnnotationFound { .. })
+    pub fn is_invalid_annotation(&self) -> bool {
+        matches!(&self.kind, Kind::MissingInfo { details, .. } if details.contains("annotation"))
     }
     /// Returns `true` if the error was caused by querying a purged pod run.
     pub const fn is_purged_pod_run(&self) -> bool {

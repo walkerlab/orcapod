@@ -2,9 +2,11 @@ use crate::{
     core::util::get,
     uniffi::{
         error::{Result, selector},
-        model::{Blob, BlobKind},
+        model::packet::{Blob, BlobKind},
     },
 };
+use hex;
+use rand::{self, RngCore as _};
 use serde_yaml;
 use sha2::{Digest as _, Sha256};
 use snafu::ResultExt as _;
@@ -24,7 +26,7 @@ use std::{
     clippy::indexing_slicing,
     reason = "Reading less than 0 is impossible."
 )]
-pub(crate) fn hash_stream(stream: &mut impl Read) -> Result<String> {
+pub fn hash_stream(stream: &mut impl Read) -> Result<String> {
     const BUFFER_SIZE: usize = 8 << 10; // 8KB chunks to match with page size typically found
     let mut hash = Sha256::new();
 
@@ -86,9 +88,9 @@ pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
 /// # Errors
 ///
 /// Will return error if hashing fails on file or directory.
-pub(crate) fn hash_blob(
+pub fn hash_blob(
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
-    blob: Blob,
+    blob: &Blob,
 ) -> Result<Blob> {
     let blob_path = get(namespace_lookup, &blob.location.namespace)?.join(&blob.location.path);
     Ok(Blob {
@@ -96,6 +98,12 @@ pub(crate) fn hash_blob(
             BlobKind::File => hash_file(blob_path)?,
             BlobKind::Directory => hash_dir(blob_path)?,
         },
-        ..blob
+        ..blob.clone()
     })
+}
+
+pub fn make_random_hash() -> String {
+    let mut bytes = [0; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
 }
