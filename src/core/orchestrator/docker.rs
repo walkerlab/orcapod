@@ -2,8 +2,8 @@ use crate::{
     core::util::get,
     uniffi::{
         error::{Result, selector},
-        model::{PathSet, PodJob},
-        orchestrator::{RunInfo, Status, docker::LocalDockerOrchestrator},
+        model::{packet::PathSet, pod::PodJob},
+        orchestrator::{PodRunInfo, PodStatus, docker::LocalDockerOrchestrator},
     },
 };
 use bollard::{
@@ -79,8 +79,11 @@ impl LocalDockerOrchestrator {
                                 stream_info
                                     .path
                                     .join(blob.location.path.file_name().context(
-                                        selector::NoFileName {
-                                            path: blob.location.path.clone()
+                                        selector::MissingInfo {
+                                            details: format!(
+                                                "file or directory name where path = {}",
+                                                blob.location.path.to_string_lossy()
+                                            ),
                                         }
                                     )?)
                                     .to_string_lossy(),
@@ -115,9 +118,12 @@ impl LocalDockerOrchestrator {
     )> {
         // Prepare configuration
         let (input_binds, output_bind) = Self::prepare_mount_binds(namespace_lookup, pod_job)?;
-        let container_name = Generator::with_naming(Name::Plain)
-            .next()
-            .context(selector::GeneratedNamesOverflow)?;
+        let container_name =
+            Generator::with_naming(Name::Plain)
+                .next()
+                .context(selector::MissingInfo {
+                    details: "unable to generate a random name",
+                })?;
         let labels = HashMap::from([
             ("org.orcapod".to_owned(), "true".to_owned()),
             (
@@ -130,12 +136,6 @@ impl LocalDockerOrchestrator {
             ),
             ("org.orcapod.pod_job.hash".to_owned(), pod_job.hash.clone()),
         ]);
-        let command = pod_job
-            .pod
-            .command
-            .split_whitespace()
-            .map(String::from)
-            .collect::<Vec<_>>();
 
         Ok((
             container_name.clone(),
@@ -145,8 +145,8 @@ impl LocalDockerOrchestrator {
             }),
             Config {
                 image: Some(image),
-                entrypoint: Some(command[..1].to_vec()),
-                cmd: Some(command[1..].to_vec()),
+                entrypoint: Some(pod_job.pod.command[..1].to_vec()),
+                cmd: Some(pod_job.pod.command[1..].to_vec()),
                 env: pod_job.env_vars.as_ref().map(|provided_env_vars| {
                     provided_env_vars
                         .iter()
@@ -170,6 +170,7 @@ impl LocalDockerOrchestrator {
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::indexing_slicing,
+        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
@@ -181,7 +182,7 @@ impl LocalDockerOrchestrator {
     pub(crate) async fn list_containers(
         &self,
         filters: HashMap<String, Vec<String>>, // https://docs.rs/bollard/latest/bollard/container/struct.ListContainersOptions.html#structfield.filters
-    ) -> Result<impl Iterator<Item = (String, RunInfo)>> {
+    ) -> Result<impl Iterator<Item = (String, PodRunInfo)>> {
         Ok(join_all(
             self.api
                 .list_containers(Some(ListContainersOptions {
@@ -192,10 +193,13 @@ impl LocalDockerOrchestrator {
                 .await?
                 .iter()
                 .map(|container_summary| async {
-                    let container_name = &container_summary
-                        .names
-                        .as_ref()
-                        .context(selector::NoContainerNames)?[0][1..];
+                    let container_name =
+                        &container_summary
+                            .names
+                            .as_ref()
+                            .context(selector::MissingInfo {
+                                details: "container name(s)".to_owned(),
+                            })?[0][1..];
                     Ok((
                         container_name.to_owned(),
                         container_summary.clone(),
@@ -210,13 +214,13 @@ impl LocalDockerOrchestrator {
             let terminated_timestamp =
                 DateTime::parse_from_rfc3339(container_spec.state.as_ref()?.finished_at.as_ref()?)
                     .ok()?
-                    .timestamp() as u64;
+                    .timestamp();
             Some((
                 container_name,
-                RunInfo {
+                PodRunInfo {
                     image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
                     created: container_summary.created? as u64,
-                    terminated: (terminated_timestamp > 0).then_some(terminated_timestamp),
+                    terminated: (terminated_timestamp > 0).then_some(terminated_timestamp as u64),
                     env_vars: container_spec
                         .config
                         .as_ref()?
@@ -228,24 +232,34 @@ impl LocalDockerOrchestrator {
                                 .map(|(key, value)| (key.to_owned(), value.to_owned()))
                         })
                         .collect(),
-                    command: format!(
-                        "{} {}",
-                        container_spec
-                            .config
-                            .as_ref()?
-                            .entrypoint
-                            .as_ref()?
-                            .join(" "),
-                        container_spec.config.as_ref()?.cmd.as_ref()?.join(" ")
-                    ),
+                    command: [
+                        container_spec.config.as_ref()?.entrypoint.as_ref()?.clone(),
+                        container_spec.config.as_ref()?.cmd.as_ref()?.clone(),
+                    ]
+                    .concat(),
                     status: match (
                         container_spec.state.as_ref()?.status.as_ref()?,
                         container_spec.state.as_ref()?.exit_code? as i16,
                     ) {
-                        (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
-                        (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
-                        (ContainerStateStatusEnum::EXITED, code) => Status::Failed(code),
-                        _ => todo!(),
+                        (ContainerStateStatusEnum::RUNNING, _) => PodStatus::Running,
+                        (
+                            ContainerStateStatusEnum::EXITED
+                            | ContainerStateStatusEnum::REMOVING
+                            | ContainerStateStatusEnum::DEAD,
+                            0,
+                        ) => PodStatus::Completed,
+                        (
+                            ContainerStateStatusEnum::EXITED
+                            | ContainerStateStatusEnum::REMOVING
+                            | ContainerStateStatusEnum::DEAD,
+                            code,
+                        ) => PodStatus::Failed(code),
+                        (_, code) => {
+                            todo!(
+                                "Unhandled container state: {}, exit code: {code}.",
+                                container_spec.state.as_ref()?.status.as_ref()?
+                            )
+                        }
                     },
                     mounts: container_spec
                         .mounts
@@ -262,7 +276,7 @@ impl LocalDockerOrchestrator {
                                     .map_or_else(String::new, |mode| format!(":{mode}"))
                             ))
                         })
-                        .collect::<Option<Vec<_>>>()?,
+                        .collect::<Option<_>>()?,
                     labels: container_spec.config.as_ref()?.labels.as_ref()?.clone(),
                     cpu_limit: container_spec.host_config.as_ref()?.nano_cpus? as f32
                         / 10_f32.powi(9), // ncpu, ucores=3, mcores=6, cores=9

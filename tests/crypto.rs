@@ -12,7 +12,11 @@ use orcapod::{
     core::crypto::{hash_buffer, hash_dir, hash_file},
     uniffi::{
         error::Result,
-        model::{Annotation, Blob, BlobKind, PathSet, PodJob, URI},
+        model::{
+            Annotation,
+            packet::{Blob, BlobKind, PathSet, URI},
+            pod::PodJob,
+        },
     },
 };
 use std::{collections::HashMap, fs::read, path::PathBuf};

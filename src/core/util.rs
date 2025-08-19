@@ -1,6 +1,6 @@
 use crate::uniffi::error::{Result, selector};
 use snafu::OptionExt as _;
-use std::{any::type_name, collections::HashMap, fmt};
+use std::{any::type_name, borrow::Borrow, collections::HashMap, fmt, hash};
 
 #[expect(
     clippy::unwrap_used,
@@ -26,8 +26,12 @@ pub fn parse_debug_name<T: fmt::Debug>(instance: &T) -> String {
         .unwrap()
 }
 
-pub fn get<'map, T>(map: &'map HashMap<String, T>, key: &str) -> Result<&'map T> {
-    Ok(map.get(key).context(selector::KeyMissing {
-        key: key.to_owned(),
+pub fn get<'map, K, V, Q>(map: &'map HashMap<K, V>, key: &Q) -> Result<&'map V>
+where
+    Q: ?Sized + hash::Hash + Eq + fmt::Debug,
+    K: Borrow<Q> + hash::Hash + Eq,
+{
+    Ok(map.get(key).context(selector::MissingInfo {
+        details: format!("key = {key:?}"),
     })?)
 }

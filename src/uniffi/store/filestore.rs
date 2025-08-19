@@ -1,6 +1,9 @@
 use crate::uniffi::{
     error::Result,
-    model::{ModelType, Pod, PodJob, PodResult},
+    model::{
+        ModelType,
+        pod::{Pod, PodJob, PodResult},
+    },
     store::{ModelID, ModelInfo, Store},
 };
 use derive_more::Display;
@@ -8,7 +11,7 @@ use getset::CloneGetters;
 use std::{fs, path::PathBuf};
 use uniffi;
 /// Support for a storage backend on a local filesystem directory.
-#[derive(uniffi::Object, Debug, Display, CloneGetters)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]

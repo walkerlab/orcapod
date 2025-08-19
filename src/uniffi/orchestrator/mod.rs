@@ -1,9 +1,13 @@
 use crate::uniffi::{
     error::Result,
-    model::{PodJob, PodResult, URI},
+    model::{
+        packet::URI,
+        pod::{PodJob, PodResult},
+    },
 };
+use async_trait;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
 use uniffi;
 /// Options for sourcing compute environment images.
 #[derive(uniffi::Enum)]
@@ -16,7 +20,7 @@ pub enum ImageKind {
 }
 /// Status of a particular compute run.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
-pub enum Status {
+pub enum PodStatus {
     /// Run is ongoing.
     Running,
     /// Run has completed successfully.
@@ -29,7 +33,7 @@ pub enum Status {
 }
 /// Run metadata
 #[derive(uniffi::Record, Debug)]
-pub struct RunInfo {
+pub struct PodRunInfo {
     /// Environment utilized.
     pub image: String,
     /// Time in epoch when created in seconds.
@@ -39,9 +43,9 @@ pub struct RunInfo {
     /// Environment variables set in environment.
     pub env_vars: HashMap<String, String>,
     /// Command used to start run.
-    pub command: String,
+    pub command: Vec<String>,
     /// Current run status.
-    pub status: Status,
+    pub status: PodStatus,
     /// Mounted volume binds to the environment.
     pub mounts: Vec<String>,
     /// Label metadata set by orchestrator.
@@ -65,7 +69,7 @@ pub struct PodRun {
 /// API for standard behavior of any container orchestration engine supported.
 #[uniffi::export]
 #[async_trait::async_trait]
-pub trait Orchestrator: Send + Sync {
+pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// How to synchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -104,13 +108,17 @@ pub trait Orchestrator: Send + Sync {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<PodRunInfo>;
     /// How to synchronously wait for pod result to be ready.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod result.
-    fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult>;
+    fn get_result_blocking(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult>;
     /// How to asynchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -149,14 +157,19 @@ pub trait Orchestrator: Send + Sync {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue accessing container info.
-    async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo>;
+    async fn get_info(&self, pod_run: &PodRun) -> Result<PodRunInfo>;
     /// How to asynchronously wait for pod result to be ready.
     ///
     /// # Errors
     ///
     /// Will return `Err` if there is an issue creating a pod result.
-    async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult>;
+    async fn get_result(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult>;
 }
-
+/// Orchestration execution agent daemon and client.
+pub mod agent;
 /// Orchestration implementation for Docker backend.
 pub mod docker;

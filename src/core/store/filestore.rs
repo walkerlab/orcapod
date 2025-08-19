@@ -16,7 +16,7 @@ use heck::ToSnakeCase as _;
 use regex::Regex;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_yaml;
-use snafu::OptionExt as _;
+use snafu::{OptionExt as _, ResultExt as _};
 use std::{
     fmt, fs,
     path::{Path, PathBuf},
@@ -28,12 +28,12 @@ static RE_MODEL_METADATA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?x)
             ^
-                (?<store_directory>.*)\/
-                    (?<namespace>[a-z_]+)\/
-                        (?<class>[a-z_]+)\/
-                            (?<hash>[0-9a-f]+)\/
+                (?<store_directory>.*?)/
+                    (?<namespace>[a-z_]+)/
+                        (?<class>[a-z_]+)/
+                            (?<hash>[0-9a-f]+)/
                                 (
-                                    annotation\/
+                                    annotation/
                                         (?<name>[0-9a-zA-Z\-]+)
                                         -
                                         (?<version>[0-9]+\.[0-9]+\.[0-9]+)
@@ -102,10 +102,11 @@ impl LocalFileStore {
             Self::make_annotation_relpath(name, version),
         ))?
         .next()
-        .context(selector::NoAnnotationFound {
-            class: parse_debug_name(model).to_snake_case(),
-            name: name.to_owned(),
-            version: version.to_owned(),
+        .context(selector::MissingInfo {
+            details: format!(
+                "annotation where class = {}, name = {name}, version = {version}",
+                parse_debug_name(model).to_snake_case()
+            ),
         })?;
         Ok(model_info.hash)
     }
@@ -188,15 +189,17 @@ impl LocalFileStore {
         model_id: &ModelID,
     ) -> Result<(T, Option<Annotation>, String)> {
         match model_id {
-            ModelID::Hash(hash) => Ok((
-                serde_yaml::from_str(&fs::read_to_string(self.make_path(
-                    &T::default(),
-                    hash,
-                    Self::SPEC_RELPATH,
-                ))?)?,
-                None,
-                hash.to_owned(),
-            )),
+            ModelID::Hash(hash) => {
+                let path = self.make_path(&T::default(), hash, Self::SPEC_RELPATH);
+                Ok((
+                    serde_yaml::from_str(
+                        &fs::read_to_string(path.clone())
+                            .context(selector::InvalidFileOrDirPath { path })?,
+                    )?,
+                    None,
+                    hash.to_owned(),
+                ))
+            }
             ModelID::Annotation(name, version) => {
                 let hash = self.lookup_hash(&T::default(), name, version)?;
                 Ok((

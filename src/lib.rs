@@ -2,6 +2,10 @@
 //! mind.
 extern crate uniffi as uniffi_external;
 uniffi_external::setup_scaffolding!();
+
+#[cfg(all(feature = "default", feature = "test"))]
+compile_error!(r#"Feature "default" and feature "test" cannot be enabled at the same time."#);
+
 /// Pure Rust source.
 pub mod core;
 /// Exposed CFFI client based on [uniffi](https://crates.io/crates/uniffi).
@@ -28,4 +32,6 @@ pub mod core;
 ///       values are owned by Rust
 /// 1. No default trait implementations
 /// 1. (Rust limitation) No associated functions in traits e.g. class methods in Python
+/// 1. Hint: Enum variants with named fields offer a better UX (e.g. in Python) as opposed to
+///    unnamed enum fields i.e. will show up in help.
 pub mod uniffi;

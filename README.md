@@ -11,13 +11,13 @@
 ```bash
 #!/bin/bash
 set -e  # fail early on non-zero exit
-cargo clippy --all-targets -- -D warnings  # Rust syntax and style tests
+cargo clippy --no-default-features --features=test --all-targets -- -D warnings  # Rust syntax and style tests
 cargo fmt --check  # Rust formatting test
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" -- --nocapture  # Rust integration tests w/ stdout coverage summary
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --html -- --nocapture  # Rust integration tests w/ HTML coverage report (target/llvm-cov/html/index.html)
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture  # Rust integration tests w/ codecov coverage report
-cargo llvm-cov --ignore-filename-regex "bin/.*|lib\.rs" --cobertura --output-path target/llvm-cov-target/cobertura.xml -- --nocapture  # Rust integration tests w/ cobertura coverage report
-. ~/.local/share/base/bin/activate && maturin develop --uv && RUST_BACKTRACE=1 python tests/extra/python/smoke_test.py -- tests/.tmp # Python integration tests
+cargo llvm-cov --no-clean --no-default-features --features=test --ignore-filename-regex "bin/.*|lib\.rs" -- --nocapture  # Rust integration tests w/ stdout coverage summary
+cargo llvm-cov --no-clean --no-default-features --features=test --ignore-filename-regex "bin/.*|lib\.rs" --html -- --nocapture  # Rust integration tests w/ HTML coverage report (target/llvm-cov/html/index.html)
+cargo llvm-cov --no-clean --no-default-features --features=test --ignore-filename-regex "bin/.*|lib\.rs" --codecov --output-path target/llvm-cov-target/codecov.json -- --nocapture  # Rust integration tests w/ codecov coverage report
+cargo llvm-cov --no-clean --no-default-features --features=test --ignore-filename-regex "bin/.*|lib\.rs" --cobertura --output-path target/llvm-cov-target/cobertura.xml -- --nocapture  # Rust integration tests w/ cobertura coverage report
+. ~/.local/share/base/bin/activate && maturin develop --uv && export RUST_BACKTRACE=1 && python tests/extra/python/smoke_test.py -- tests/.tmp && python tests/extra/python/agent_test.py -- tests/.tmp # Python integration tests
 ```
 
 ## Docs
@@ -27,6 +27,15 @@ cargo doc --no-deps                       # gen api docs (target/doc/orcapod/ind
 cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot > docs/images/orcapod_diagram.dot # orcapod diagram as DOT
 cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot | dot -T png > docs/images/orcapod_diagram.png # orcapod diagram as PNG
 cargo modules dependencies --lib --no-uses --no-fns --focus-on "orcapod::uniffi::{model::{Pod,PodJob,PodResult},store::filestore::LocalFileStore,orchestrator::{PodRun,docker::LocalDockerOrchestrator}}" --layout dot | dot -T svg > docs/images/orcapod_diagram.svg # orcapod diagram as SVG
+```
+
+## Git Worktrees
+
+Update your git to at least version 2.48 since that is when the `--relative-paths` option was added to git worktree. That option makes it compatible with launching using VSCode DevContainers.
+
+```bash
+git worktree add /path/to/new/dir-name branch-name --relative-paths # create
+git worktree remove dir-name # delete
 ```
 
 ## Project Management
@@ -84,7 +93,7 @@ You can easily enforce resource limits by adding the following to `devcontainer.
   // ..
   "runArgs": [
     // ..
-    "--cpus=2",,
+    "--cpus=2",
     "--memory=8gb",
     // ..
   ],

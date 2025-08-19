@@ -5,21 +5,22 @@ use crate::{
     },
     uniffi::{
         error::{OrcaError, Result, selector},
-        model::{PodJob, PodResult},
-        orchestrator::{ImageKind, Orchestrator, PodRun, RunInfo},
+        model::pod::{PodJob, PodResult},
+        orchestrator::{ImageKind, Orchestrator, PodRun, PodRunInfo, PodStatus},
     },
 };
 use async_trait;
 use bollard::{
     Docker,
     container::{RemoveContainerOptions, StartContainerOptions, WaitContainerOptions},
+    errors::Error::DockerContainerWaitError,
     image::{CreateImageOptions, ImportImageOptions},
 };
 use derive_more::Display;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, futures::TryFutureExt as _};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::fs::File;
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{fs::File, time::sleep as async_sleep};
 use tokio_util::{
     bytes::{Bytes, BytesMut},
     codec::{BytesCodec, FramedRead},
@@ -59,11 +60,15 @@ impl Orchestrator for LocalDockerOrchestrator {
     fn delete_blocking(&self, pod_run: &PodRun) -> Result<()> {
         ASYNC_RUNTIME.block_on(self.delete(pod_run))
     }
-    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<RunInfo> {
+    fn get_info_blocking(&self, pod_run: &PodRun) -> Result<PodRunInfo> {
         ASYNC_RUNTIME.block_on(self.get_info(pod_run))
     }
-    fn get_result_blocking(&self, pod_run: &PodRun) -> Result<PodResult> {
-        ASYNC_RUNTIME.block_on(self.get_result(pod_run))
+    fn get_result_blocking(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult> {
+        ASYNC_RUNTIME.block_on(self.get_result(namespace_lookup, pod_run))
     }
     #[expect(
         clippy::try_err,
@@ -104,14 +109,15 @@ impl Orchestrator for LocalDockerOrchestrator {
                 let mut local_image = String::new();
                 while let Some(response) = stream.next().await {
                     local_image = RE_IMAGE_TAG
-                        .captures_iter(&response?.stream.context(
-                            selector::EmptyResponseWhenLoadingContainerAltImage {
-                                path: location.clone(),
-                            },
-                        )?)
+                        .captures_iter(&response?.stream.context(selector::MissingInfo {
+                            details: location.to_string_lossy(),
+                        })?)
                         .find_map(|x| x.name("image").map(|name| name.as_str().to_owned()))
-                        .context(selector::NoTagFoundInContainerAltImage {
-                            path: location.clone(),
+                        .context(selector::MissingInfo {
+                            details: format!(
+                                "container tags in provided container alternate image where path = {}",
+                                location.to_string_lossy()
+                            ),
                         })?;
                 }
                 Self::prepare_container_start_inputs(
@@ -174,7 +180,7 @@ impl Orchestrator for LocalDockerOrchestrator {
             .await?;
         Ok(())
     }
-    async fn get_info(&self, pod_run: &PodRun) -> Result<RunInfo> {
+    async fn get_info(&self, pod_run: &PodRun) -> Result<PodRunInfo> {
         let labels = vec![
             "org.orcapod=true".to_owned(),
             format!(
@@ -187,28 +193,54 @@ impl Orchestrator for LocalDockerOrchestrator {
             .list_containers(HashMap::from([("label".to_owned(), labels)]))
             .await?
             .next()
-            .context(selector::NoMatchingPodRun {
-                pod_job_hash: pod_run.pod_job.hash.clone(),
+            .context(selector::MissingInfo {
+                details: format!("pod run where pod_job.hash = {}", pod_run.pod_job.hash),
             })?;
         Ok(run_info)
     }
-    async fn get_result(&self, pod_run: &PodRun) -> Result<PodResult> {
-        self.api
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "Favor readability due to complexity in external dependency."
+    )]
+    async fn get_result(
+        &self,
+        namespace_lookup: &HashMap<String, PathBuf>,
+        pod_run: &PodRun,
+    ) -> Result<PodResult> {
+        match self
+            .api
             .wait_container(&pod_run.assigned_name, None::<WaitContainerOptions<String>>)
             .try_collect::<Vec<_>>()
-            .await?;
-        let result_info = self.get_info(pod_run).await?;
+            .await
+        {
+            Ok(_) => (),
+            Err(err) => match err {
+                DockerContainerWaitError { .. } => (),
+                _ => return Err(OrcaError::from(err)),
+            },
+        }
+
+        let mut result_info: PodRunInfo;
+        while {
+            result_info = self.get_info(pod_run).await?;
+            matches!(&result_info.status, PodStatus::Running)
+        } {
+            async_sleep(Duration::from_millis(100)).await;
+        }
+
         PodResult::new(
             None,
             Arc::clone(&pod_run.pod_job),
             pod_run.assigned_name.clone(),
             result_info.status,
             result_info.created,
-            result_info
-                .terminated
-                .context(selector::InvalidPodResultTerminatedDatetime {
-                    pod_job_hash: pod_run.pod_job.hash.clone(),
-                })?,
+            result_info.terminated.context(selector::MissingInfo {
+                details: format!(
+                    "terminated where pod_run.assigned_name = {}, pod_run.pod_job.hash = {}",
+                    pod_run.assigned_name, pod_run.pod_job.hash
+                ),
+            })?,
+            namespace_lookup,
         )
     }
 }
