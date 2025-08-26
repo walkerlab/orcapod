@@ -4,23 +4,26 @@
     clippy::panic,
     clippy::expect_used,
     clippy::unwrap_used,
+    clippy::indexing_slicing,
     reason = "OK in tests."
 )]
 
 pub mod fixture;
 use fixture::{TestDirs, container_image_style, pod_job_style};
-use orcapod::{
-    core::{crypto::hash_buffer, model::to_yaml},
-    uniffi::{
-        error::Result,
-        model::URI,
-        orchestrator::{ImageKind, Orchestrator, PodRun, Status, docker::LocalDockerOrchestrator},
-    },
+use futures_util::future::join_all;
+use orcapod::uniffi::{
+    error::{OrcaError, Result},
+    model::packet::URI,
+    orchestrator::{ImageKind, Orchestrator, PodRun, PodStatus, docker::LocalDockerOrchestrator},
 };
-use std::{collections::HashMap, ops::Deref as _, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf};
+
+use crate::fixture::{
+    NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_jobs_stresser, str_to_vec,
+};
 fn execute_wrapper<T>(test_fn: T) -> Result<()>
 where
-    T: Fn(&HashMap<String, PathBuf>, &LocalDockerOrchestrator) -> Result<()>,
+    T: Fn(&LocalDockerOrchestrator, &HashMap<String, PathBuf>) -> Result<()>,
 {
     let test_dirs = TestDirs::new(&HashMap::from([(
         "default".to_owned(),
@@ -29,17 +32,18 @@ where
     let namespace_lookup = test_dirs.namespace_lookup();
     let orchestrator = LocalDockerOrchestrator::new()?;
 
-    test_fn(&namespace_lookup, &orchestrator)
+    test_fn(&orchestrator, &namespace_lookup)
 }
 
 fn basic_test(
     pod_run: &PodRun,
-    expected_command: &str,
+    expected_command: &[String],
     orchestrator: &impl Orchestrator,
+    namespace_lookup: &HashMap<String, PathBuf>,
 ) -> Result<()> {
     assert_eq!(
         orchestrator.get_info_blocking(pod_run)?.status,
-        Status::Running,
+        PodStatus::Running,
         "Unexpected state."
     );
     assert_eq!(
@@ -48,37 +52,34 @@ fn basic_test(
             .iter()
             .filter(|run| **run == *pod_run)
             .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
-            .collect::<Result<Vec<_>>>()?,
-        vec![expected_command],
-        "Unexpected list."
+            .collect::<Result<Vec<_>>>()?[0],
+        expected_command,
+        "List return a pod_run with a different command."
     );
     // await result
-    let pod_result_1 = orchestrator.get_result_blocking(pod_run)?;
+    let pod_result_1 = orchestrator.get_result_blocking(pod_run, namespace_lookup)?;
     assert_eq!(
         orchestrator.get_info_blocking(pod_run)?.status,
-        Status::Completed,
+        PodStatus::Completed,
         "Unexpected state."
     );
-    assert_eq!(
-        pod_result_1.output_packet, expected_output_packet,
-        "Unexpected output packet.",
-    );
+
     assert_eq!(
         orchestrator
             .list_blocking()?
-            .iter()
-            .filter(|run| **run == *pod_run)
-            .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
-            .collect::<Result<Vec<_>>>()?,
-        vec![expected_command],
-        "Unexpected list."
+            .into_iter()
+            .filter(|run| *run == *pod_run)
+            .map(|run| Ok(orchestrator.get_info_blocking(&run)?.command))
+            .collect::<Result<Vec<_>>>()?[0],
+        expected_command,
+        "List return a pod_run with a different command."
     );
     assert_eq!(
         pod_result_1.assigned_name, pod_run.assigned_name,
         "Unexpected name."
     );
     // try generating result again
-    let pod_result_2 = orchestrator.get_result_blocking(pod_run)?;
+    let pod_result_2 = orchestrator.get_result_blocking(pod_run, namespace_lookup)?;
     assert_eq!(pod_result_1, pod_result_2, "Pod results don't match.");
     // test delete
     orchestrator.delete_blocking(pod_run)?;
@@ -98,7 +99,7 @@ fn basic_test(
 
 #[test]
 fn offline_container_image_basic() -> Result<()> {
-    execute_wrapper(|namespace_lookup, orchestrator| {
+    execute_wrapper(|orchestrator, namespace_lookup| {
         let container_image_relative_location = "container_images/style-transfer/image.tar.gz";
         let container_image_kind = ImageKind::Tarball(URI {
             namespace: "default".to_owned(),
@@ -112,12 +113,13 @@ fn offline_container_image_basic() -> Result<()> {
 
         basic_test(
             &orchestrator.start_with_altimage_blocking(
-                namespace_lookup,
                 &pod_job,
                 &container_image_kind,
+                namespace_lookup,
             )?,
             &pod_job.pod.command,
             orchestrator,
+            namespace_lookup,
         )?;
         Ok(())
     })
@@ -125,19 +127,18 @@ fn offline_container_image_basic() -> Result<()> {
 
 #[test]
 fn remote_container_image_basic() -> Result<()> {
-    execute_wrapper(|namespace_lookup, orchestrator| {
-        let mut pod_job = pod_job_style(namespace_lookup)?;
-        let mut pod = pod_job.pod.deref().clone();
-        pod.image = "alpine:3.14".to_owned();
-        pod.command = "sleep 5".to_owned();
-        pod.input_spec = HashMap::new();
-        pod_job.pod = Arc::new(pod);
-        pod_job.input_packet = HashMap::new();
+    execute_wrapper(|orchestrator, namespace_lookup| {
+        let pod_job = pod_job_custom(
+            pod_custom("alpine:3.14", str_to_vec("sleep 5"), HashMap::new())?,
+            HashMap::new(),
+            namespace_lookup,
+        )?;
 
         basic_test(
-            &orchestrator.start_blocking(namespace_lookup, &pod_job)?,
+            &orchestrator.start_blocking(&pod_job, namespace_lookup)?,
             &pod_job.pod.command,
             orchestrator,
+            namespace_lookup,
         )?;
         Ok(())
     })
@@ -146,21 +147,18 @@ fn remote_container_image_basic() -> Result<()> {
 #[test]
 /// Expect pod to fail due to bad command, where the expected behavior should auto delete the container and return an error
 fn fail_at_start() -> Result<()> {
-    execute_wrapper(|namespace_lookup, orchestrator| {
-        let mut pod_job = pod_job_style(namespace_lookup)?;
-        let mut pod = pod_job.pod.deref().clone();
-        pod.image = "alpine:3.14".to_owned();
-        pod.command = "python file_does_not_exist.py".to_owned();
-        // Update the hash
-        pod.hash = String::new();
-        pod.hash = hash_buffer(to_yaml(&pod)?);
+    execute_wrapper(|orchestrator, namespace_lookup| {
+        let pod_job = pod_job_custom(
+            pod_custom(
+                "alpine:3.14",
+                vec!["invalid_command".into()],
+                HashMap::new(),
+            )?,
+            HashMap::new(),
+            namespace_lookup,
+        )?;
 
-        pod_job.pod = pod.into();
-        // Update the hash
-        pod_job.hash = String::new();
-        pod_job.hash = hash_buffer(to_yaml(&pod_job)?);
-
-        let container_name = match orchestrator.start_blocking(namespace_lookup, &pod_job) {
+        let container_name = match orchestrator.start_blocking(&pod_job, namespace_lookup) {
             Ok(_) => panic!("Pod was launched successfully when it should have failed."),
             Err(err) => {
                 assert!(err.is_failed_to_start_pod());
@@ -181,11 +179,11 @@ fn fail_at_start() -> Result<()> {
         let pod_run = pod_runs.first().unwrap();
 
         // Get the pod result and make sure it is in failed state
-        let pod_result = orchestrator.get_result_blocking(pod_run)?;
+        let pod_result = orchestrator.get_result_blocking(pod_run, namespace_lookup)?;
 
         assert_eq!(
             pod_result.status,
-            Status::Failed(127),
+            PodStatus::Failed(127),
             "Pod status is not failed"
         );
 
@@ -203,26 +201,28 @@ fn fail_at_start() -> Result<()> {
 
 #[test]
 fn fail_during_execution() -> Result<()> {
-    execute_wrapper(|namespace_lookup, orchestrator| {
-        let mut pod_job = pod_job_style(namespace_lookup)?;
-        let mut pod = pod_job.pod.deref().clone();
-
-        pod.image = "alpine:3.14".to_owned();
-        pod.command = "python file_does_not_exist.py".to_owned();
-
-        pod.image = "alpine:3.14".to_owned();
-        pod.command = r#"bin/sh -c 'echo "hi" && bad_command'"#.to_owned();
-        pod.input_spec = HashMap::new();
-        pod_job.pod = pod.into();
-        pod_job.input_packet = HashMap::new();
+    execute_wrapper(|orchestrator, namespace_lookup| {
+        let pod_job = pod_job_custom(
+            pod_custom(
+                "alpine:3.14",
+                vec![
+                    "bin/sh".into(),
+                    "-c".into(),
+                    r#"echo "hi" && bad_command"#.into(),
+                ],
+                HashMap::new(),
+            )?,
+            HashMap::new(),
+            namespace_lookup,
+        )?;
 
         // Start job and wait for completion
-        let pod_run = orchestrator.start_blocking(namespace_lookup, &pod_job)?;
-        let pod_result = orchestrator.get_result_blocking(&pod_run)?;
+        let pod_run = orchestrator.start_blocking(&pod_job, namespace_lookup)?;
+        let pod_result = orchestrator.get_result_blocking(&pod_run, namespace_lookup)?;
 
         assert_eq!(
             pod_result.status,
-            Status::Failed(2),
+            PodStatus::Failed(127),
             "Should be in failed state"
         );
 
@@ -240,15 +240,16 @@ fn fail_during_execution() -> Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn remote_container_image_failed() -> Result<()> {
-    let orch = LocalDockerOrchestrator::new()?;
     let pod_job = pod_job_custom(
-        &pod_custom("alpine:3.14", &str_to_vec("sleep crash"), HashMap::new())?,
+        pod_custom("alpine:3.14", str_to_vec("sleep crash"), HashMap::new())?,
         HashMap::new(),
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;
-    let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job).await?;
+
+    let orch = LocalDockerOrchestrator::new()?;
+    let pod_run = orch.start(&pod_job, &NAMESPACE_LOOKUP_READ_ONLY).await?;
     let pod_result = orch
-        .get_result(&NAMESPACE_LOOKUP_READ_ONLY, &pod_run)
+        .get_result(&pod_run, &NAMESPACE_LOOKUP_READ_ONLY)
         .await?;
     orch.delete(&pod_run).await?;
 
@@ -272,9 +273,9 @@ async fn verify_pod_result_not_running() -> Result<()> {
         .iter()
         .map(|pod_job| async move {
             let orch = LocalDockerOrchestrator::new()?;
-            let pod_run = orch.start(&NAMESPACE_LOOKUP_READ_ONLY, pod_job).await?;
+            let pod_run = orch.start(pod_job, &NAMESPACE_LOOKUP_READ_ONLY).await?;
             let pod_result = orch
-                .get_result(&NAMESPACE_LOOKUP_READ_ONLY, &pod_run)
+                .get_result(&pod_run, &NAMESPACE_LOOKUP_READ_ONLY)
                 .await?;
             orch.delete(&pod_run).await?;
             Ok::<_, OrcaError>(pod_result)

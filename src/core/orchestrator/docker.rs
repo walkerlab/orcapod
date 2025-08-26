@@ -168,7 +168,6 @@ impl LocalDockerOrchestrator {
     #[expect(
         clippy::string_slice,
         clippy::indexing_slicing,
-        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
@@ -231,7 +230,7 @@ impl LocalDockerOrchestrator {
     fn extract_run_info(
         container_summary: &ContainerSummary,
         container_inspect_response: &ContainerInspectResponse,
-    ) -> Option<RunInfo> {
+    ) -> Option<PodRunInfo> {
         let terminated_timestamp = DateTime::parse_from_rfc3339(
             container_inspect_response
                 .state
@@ -241,7 +240,7 @@ impl LocalDockerOrchestrator {
         )
         .ok()?
         .timestamp() as u64;
-        Some(RunInfo {
+        Some(PodRunInfo {
             image: container_inspect_response
                 .config
                 .as_ref()?
@@ -261,47 +260,40 @@ impl LocalDockerOrchestrator {
                         .map(|(key, value)| (key.to_owned(), value.to_owned()))
                 })
                 .collect(),
-            command: format!(
-                "{} {}",
+            command: [
                 container_inspect_response
                     .config
                     .as_ref()?
                     .entrypoint
                     .as_ref()?
-                    .join(" "),
+                    .clone(),
                 container_inspect_response
                     .config
                     .as_ref()?
                     .cmd
                     .as_ref()?
-                    .join(" ")
-            ),
+                    .clone(),
+            ]
+            .concat(),
             status: match (
                 container_inspect_response.state.as_ref()?.status?,
                 container_inspect_response.state.as_ref()?.exit_code? as i16,
             ) {
-                (ContainerStateStatusEnum::RUNNING, _) => Status::Running,
-                (ContainerStateStatusEnum::EXITED, 0) => Status::Completed,
-                (ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD, code) => {
-                    Status::Failed(code)
+                (ContainerStateStatusEnum::RUNNING | ContainerStateStatusEnum::RESTARTING, _) => {
+                    PodStatus::Running
                 }
-                (
-                    ContainerStateStatusEnum::CREATED | ContainerStateStatusEnum::RESTARTING,
-                    code,
-                ) => {
-                    if container_inspect_response
-                        .state
-                        .as_ref()?
-                        .error
-                        .as_ref()?
-                        .is_empty()
-                    {
-                        Status::Starting
+                (ContainerStateStatusEnum::EXITED, 0) => PodStatus::Completed,
+                (ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD, code) => {
+                    PodStatus::Failed(code)
+                }
+                (ContainerStateStatusEnum::CREATED, code) => {
+                    if container_inspect_response.state.as_ref()?.error.is_some() {
+                        PodStatus::Failed(code)
                     } else {
-                        Status::Failed(code)
+                        PodStatus::Running
                     }
                 }
-                _ => Status::Undefined,
+                _ => PodStatus::Undefined,
             },
             mounts: container_inspect_response
                 .mounts

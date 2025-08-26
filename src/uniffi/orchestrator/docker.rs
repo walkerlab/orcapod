@@ -6,7 +6,7 @@ use crate::{
     uniffi::{
         error::{Kind, OrcaError, Result, selector},
         model::pod::{PodJob, PodResult},
-        orchestrator::{ImageKind, Orchestrator, PodRun, PodRunInfo, PodStatus, Status},
+        orchestrator::{ImageKind, Orchestrator, PodRun, PodRunInfo, PodStatus},
     },
 };
 use async_trait;
@@ -19,14 +19,8 @@ use bollard::{
 use derive_more::Display;
 use futures_util::stream::{StreamExt as _, TryStreamExt as _};
 use snafu::{OptionExt as _, futures::TryFutureExt as _};
-use std::{
-    backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc, time::Duration,
-    time::Duration,
-};
-use tokio::{
-    time::sleep as async_sleep,
-    {fs::File, time::sleep},
-};
+use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{fs::File, time::sleep as async_sleep};
 use tokio_util::{
     bytes::{Bytes, BytesMut},
     codec::{BytesCodec, FramedRead},
@@ -47,18 +41,18 @@ pub struct LocalDockerOrchestrator {
 impl Orchestrator for LocalDockerOrchestrator {
     fn start_with_altimage_blocking(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: &ImageKind,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun> {
-        ASYNC_RUNTIME.block_on(self.start_with_altimage(namespace_lookup, pod_job, image))
+        ASYNC_RUNTIME.block_on(self.start_with_altimage(pod_job, image, namespace_lookup))
     }
     fn start_blocking(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun> {
-        ASYNC_RUNTIME.block_on(self.start(namespace_lookup, pod_job))
+        ASYNC_RUNTIME.block_on(self.start(pod_job, namespace_lookup))
     }
     fn list_blocking(&self) -> Result<Vec<PodRun>> {
         ASYNC_RUNTIME.block_on(self.list())
@@ -71,10 +65,10 @@ impl Orchestrator for LocalDockerOrchestrator {
     }
     fn get_result_blocking(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_run: &PodRun,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodResult> {
-        ASYNC_RUNTIME.block_on(self.get_result(namespace_lookup, pod_run))
+        ASYNC_RUNTIME.block_on(self.get_result(pod_run, namespace_lookup))
     }
     #[expect(
         clippy::try_err,
@@ -86,9 +80,9 @@ impl Orchestrator for LocalDockerOrchestrator {
     )]
     async fn start_with_altimage(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: &ImageKind,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun> {
         let (assigned_name, container_options, container_config) = match image {
             ImageKind::Published(remote_image) => Self::prepare_container_start_inputs(
@@ -155,8 +149,8 @@ impl Orchestrator for LocalDockerOrchestrator {
     }
     async fn start(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun> {
         let image_options = Some(CreateImageOptions {
             from_image: pod_job.pod.image.clone(),
@@ -167,9 +161,9 @@ impl Orchestrator for LocalDockerOrchestrator {
             .try_collect::<Vec<_>>()
             .await?;
         self.start_with_altimage(
-            namespace_lookup,
             pod_job,
             &ImageKind::Published(pod_job.pod.image.clone()),
+            namespace_lookup,
         )
         .await
     }
@@ -232,8 +226,8 @@ impl Orchestrator for LocalDockerOrchestrator {
     )]
     async fn get_result(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_run: &PodRun,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodResult> {
         match self
             .api

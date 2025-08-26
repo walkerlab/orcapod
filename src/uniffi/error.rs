@@ -116,8 +116,8 @@ impl OrcaError {
         matches!(&self.kind, Kind::MissingInfo { details, .. } if details.contains("annotation"))
     }
     /// Returns `true` if the error was caused by querying a purged pod run.
-    pub const fn is_purged_pod_run(&self) -> bool {
-        matches!(self.kind, Kind::NoMatchingPodRun { .. })
+    pub fn is_purged_pod_run(&self) -> bool {
+        matches!(&self.kind, Kind::MissingInfo { details, .. } if details.contains("pod run"))
     }
     /// Returns `true` if the error was caused by an invalid file or directory path.
     pub const fn is_failed_to_start_pod(&self) -> bool {
