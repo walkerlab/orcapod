@@ -72,6 +72,9 @@ impl Orchestrator for LocalDockerOrchestrator {
     ) -> Result<PodResult> {
         ASYNC_RUNTIME.block_on(self.get_result(pod_run, namespace_lookup))
     }
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String> {
+        ASYNC_RUNTIME.block_on(self.get_logs(pod_run))
+    }
     #[expect(
         clippy::try_err,
         reason = r#"
