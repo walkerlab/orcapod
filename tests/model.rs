@@ -104,7 +104,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "35abb8180349bed1f3ea8c0d84e98000ec3ace904624e94e678783891a7e710e",
+        "0bc0f17230cf78dbf3054c6887f42abad8b48382efee2ffe1adc79f0ae02fd1a",
         "Hash didn't match."
     );
     Ok(())
@@ -129,11 +129,12 @@ fn pod_result_to_yaml() -> Result<()> {
                 location:
                   namespace: default
                   path: output/result2.jpeg
-                checksum: da71a1b5f8ca6ebd1edfd11df4c83078fc50d0e6a4c9b3d642ba397d81d8e883
+                checksum: a1458fc7d7d9d23a66feae88b5a89f1756055bdbb6be02fdf672f7d31ed92735
             assigned_name: simple-endeavour
             status: Completed
             created: 1737922307
             terminated: 1737925907
+            logs: Example logs
         "},
         "YAML serialization didn't match."
     );

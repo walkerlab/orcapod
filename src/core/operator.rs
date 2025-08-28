@@ -40,7 +40,7 @@ impl Operator for JoinOperator {
                     .filter_map(|(parent_stream, parent_packets)| {
                         (parent_stream != &stream_name).then_some(parent_packets.clone())
                     })
-                    .chain(vec![vec![packet.clone()]].into_iter())
+                    .chain(vec![vec![packet.clone()]])
                     .collect::<Vec<_>>();
                 drop(received_packets);
 

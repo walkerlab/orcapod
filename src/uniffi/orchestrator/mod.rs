@@ -168,6 +168,9 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
         namespace_lookup: &HashMap<String, PathBuf>,
         pod_run: &PodRun,
     ) -> Result<PodResult>;
+
+    /// Get the logs for a specific pod run.
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String>;
 }
 /// Orchestration execution agent daemon and client.
 pub mod agent;

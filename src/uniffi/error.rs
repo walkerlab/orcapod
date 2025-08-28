@@ -30,6 +30,13 @@ pub(crate) enum Kind {
         source: Box<dyn Error + Send + Sync>,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display(
+        "Failed to extract run info from the container image file: {container_name}."
+    ))]
+    FailedToExtractRunInfo {
+        container_name: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
     IncompletePacket {
         kind: String,
