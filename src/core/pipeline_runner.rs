@@ -366,11 +366,6 @@ impl DockerPipelineRunner {
             .context(selector::AgentCommunicationFailure {})?;
 
         while let Ok(payload) = subscriber.recv_async().await {
-            println!(
-                "Received output from node {}: {}",
-                node_id,
-                String::from_utf8_lossy(&payload.payload().to_bytes())
-            );
             // Extract the message from the payload
             let packets: Vec<Packet> = serde_json::from_slice(&payload.payload().to_bytes())?;
 
