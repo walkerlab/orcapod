@@ -61,8 +61,9 @@ impl PipelineJob {
     pub fn get_input_packet_per_node(
         &self,
     ) -> Result<HashMap<String, Vec<HashMap<String, PathSet>>>> {
-        // For each node in the input specification, we will iterate over its mapping and
-        let mut node_input_spec = HashMap::new();
+        // For each node in the input specification, we will iterate over its mapping
+        // nodes_input_spec contains <node_id, HashMap<key, PathSet>>
+        let mut nodes_input_spec = HashMap::new();
         for (input_key, node_uris) in &self.pipeline.input_spec {
             for node_uri in node_uris {
                 let input_path_sets = self.input_packet.get(input_key).ok_or(OrcaError {
@@ -71,23 +72,16 @@ impl PipelineJob {
                         backtrace: Some(Backtrace::capture()),
                     },
                 })?;
-                // There shouldn't be a duplicate key in the input packet
-                let node_input_path_sets_ref = node_input_spec
+                // There shouldn't be a duplicate key in the input packet as this will be handle by pipeline verify
+                let input_spec = nodes_input_spec
                     .entry(&node_uri.node_id)
                     .or_insert_with(HashMap::new);
-
-                // Check if the node_uri.key already exists, if it does this is an error as there can't be two input_packet that map to the same key
-                if node_input_path_sets_ref.contains_key(&node_uri.key) {
-                    todo!()
-                } else {
-                    // Insert all the input_path_sets that map to this specific key for the node
-                    node_input_path_sets_ref.insert(&node_uri.key, input_path_sets);
-                }
+                input_spec.insert(&node_uri.key, input_path_sets);
             }
         }
 
         // For each node, compute the cartesian product of the path_sets for each unique combination of keys
-        let node_input_packets = node_input_spec
+        let node_input_packets = nodes_input_spec
             .into_iter()
             .map(|(node_id, input_node_keys)| {
                 // We need to pull them out at the same time to ensure the key order is preserve to match the cartesian product

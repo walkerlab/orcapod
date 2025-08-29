@@ -51,6 +51,7 @@ impl Pipeline {
         output_spec: HashMap<String, NodeURI>,
     ) -> Result<Self> {
         let graph = make_graph(graph_dot, metadata)?;
+
         Ok(Self {
             graph,
             input_spec,

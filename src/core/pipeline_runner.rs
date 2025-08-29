@@ -51,8 +51,7 @@ struct ProcessingFailure {
     error: String,
 }
 
-/// Internal representation of a pipeline run, this should not be made public due to the fact that it contains
-/// internal states and tasks
+/// Internal representation of a pipeline run, which should not be made public due to the fact that it contains
 #[derive(Debug)]
 struct PipelineRunInternal {
     /// `PipelineJob` that this run is associated with
@@ -914,6 +913,6 @@ impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T>
     }
 
     fn stop(&mut self) {
-        todo!()
+        self.processing_tasks.abort_all();
     }
 }
