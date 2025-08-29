@@ -215,15 +215,6 @@ impl Agent {
                 async |_, ()| Ok(()),
             ));
         }
-        // // Spawn PipelineRunner service
-        // services.spawn(start_service(
-        //     self_ref,
-        //     "pipeline_job",
-        //     BTreeMap::from([("action", "request".to_owned())]),
-        //     namespace_lookup.clone(),
-        //     async move |agent, inner_namespace_lookup, _, pipeline_job| Ok(()),
-        //     async |_, ()| Ok(()),
-        // ));
         services.join_next().await.context(selector::MissingInfo {
             details: "no available services".to_owned(),
         })??

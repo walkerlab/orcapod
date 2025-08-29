@@ -313,7 +313,7 @@ fn pod_annotation_unique() -> Result<()> {
         None,
     )?;
 
-    store.save_pod(&pod)?;
+    store.save_pod(&pod_with_new_annotation)?;
     pretty_assert_eq!(
         store.list_pod()?,
         vec![
