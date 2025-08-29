@@ -83,7 +83,6 @@
         "colinianking",
         "itertools",
         "pathset",
-        "colinianking"
     ],
     "useGitignore": false,
     "ignorePaths": [
