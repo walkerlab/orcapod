@@ -36,7 +36,7 @@ impl Store for LocalFileStore {
                 &pod.hash,
                 format!(
                     "recommended_specs/{}",
-                    Utc::now().format("%Y-%m-%d-%H-%M-%S")
+                    Utc::now().format("%Y-%m-%d-%H-%M-%S-%f")
                 ),
             ),
             &pod.recommend_specs.to_yaml()?,
