@@ -138,7 +138,7 @@ pub struct GPURequirement {
 /// GPU model specification.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum GPUModel {
-    /// NVIDIA-manufactured card where `String` is the specific CUDA version
+    /// NVIDIA-manufactured card where `String` is the specific minimum CUDA version in X.XX
     NVIDIA(String),
     /// Any GPU architecture, code is generic enough
     Any,
