@@ -8,29 +8,6 @@ use std::{
     hash::BuildHasher,
     result,
 };
-/// Converts a model instance into a consistent yaml.
-///
-/// # Errors
-///
-/// Will return `Err` if there is an issue converting an `instance` into YAML (w/o annotation).
-pub fn to_yaml<T: Serialize>(instance: &T) -> Result<String> {
-    let mapping: IndexMap<String, Value> = serde_yaml::from_str(&serde_yaml::to_string(instance)?)?; // cast to map
-    let mut yaml = serde_yaml::to_string(
-        &mapping
-            .iter()
-            .filter_map(|(k, v)| match &**k {
-                "annotation" | "hash" => None,
-                "pod" | "pod_job" => Some((k, v["hash"].clone())),
-                _ => Some((k, v.clone())),
-            })
-            .collect::<IndexMap<_, _>>(),
-    )?; // skip fields and convert refs to hash pointers
-    yaml.insert_str(
-        0,
-        &format!("class: {}\n", get_type_name::<T>().to_snake_case()),
-    ); // replace class at top
-    Ok(yaml)
-}
 
 /// Trait to handle serialization to yaml for `OrcaPod` models
 pub trait ToYaml: Serialize + Sized {

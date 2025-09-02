@@ -11,10 +11,10 @@ use names::{Generator, Name};
 use orcapod::uniffi::{
     error::Result,
     model::{
-        Annotation, ExecRequirements,
+        Annotation,
         packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
-        pod::{Pod, PodJob, PodResult},
+        pod::{Pod, PodJob, PodResult, RecommendSpecs},
     },
     operator::MapOperator,
     orchestrator::PodStatus,
@@ -77,11 +77,11 @@ pub fn pod_style() -> Result<Pod> {
                 },
             ),
         ]),
-        ExecRequirements {
-            recommended_cpus: 0.25,
-            recommended_memory: 1_u64 << 30,
-            gpu_requirements: None,
+        RecommendSpecs {
+            cpus: 0.25,
+            memory: 1_u64 << 30,
         },
+        None,
     )
 }
 
@@ -171,11 +171,11 @@ pub fn pod_custom(
         input_spec,
         PathBuf::from("/tmp/output"),
         HashMap::new(),
-        ExecRequirements {
-            recommended_cpus: 0.1,
-            recommended_memory: 50_u64 << 20,
-            gpu_requirements: None,
+        RecommendSpecs {
+            cpus: 0.1,
+            memory: 50_u64 << 20,
         },
+        None,
     )
 }
 
@@ -325,11 +325,11 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
                 match_pattern: r".*\.txt".to_owned(),
             },
         )]),
-        ExecRequirements {
-            recommended_cpus: 0.25,
-            recommended_memory: 128_u64 << 20,
-            gpu_requirements: None,
+        RecommendSpecs {
+            cpus: 0.25,
+            memory: 128_u64 << 20,
         },
+        None,
     )
 }
 

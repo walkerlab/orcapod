@@ -12,7 +12,7 @@ use crate::{
     uniffi::{
         error::{OrcaError, Result},
         model::{
-            Annotation, ExecRequirements,
+            Annotation,
             packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         },
         orchestrator::PodStatus,
@@ -51,7 +51,10 @@ pub struct Pod {
     #[serde(serialize_with = "serialize_hashmap")]
     pub output_spec: HashMap<String, PathInfo>,
     /// Execution requirements for the pod.
-    pub exec_requirements: ExecRequirements,
+    #[serde(default)]
+    pub recommend_specs: RecommendSpecs,
+    /// Optional GPU requirements for the pod. If set, then the running system needs a GPU that meets the requirements.
+    pub gpu_requirements: Option<GPURequirement>,
 }
 
 #[uniffi::export]
@@ -69,7 +72,8 @@ impl Pod {
         input_spec: HashMap<String, PathInfo>,
         output_dir: PathBuf,
         output_spec: HashMap<String, PathInfo>,
-        exec_requirements: ExecRequirements,
+        recommend_specs: RecommendSpecs,
+        gpu_requirements: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
             annotation,
@@ -79,7 +83,8 @@ impl Pod {
             input_spec,
             output_dir,
             output_spec,
-            exec_requirements,
+            recommend_specs,
+            gpu_requirements,
         };
         Ok(Self {
             hash: hash_buffer(pod_no_hash.to_yaml()?),
@@ -94,10 +99,49 @@ impl ToYaml for Pod {
         field_value: &serde_yaml::Value,
     ) -> Option<(String, serde_yaml::Value)> {
         match field_name {
-            "annotation" | "hash" | "exec_requirements" => None,
+            "annotation" | "hash" | "recommend_specs" => None,
             _ => Some((field_name.to_owned(), field_value.clone())),
         }
     }
+}
+
+/// Execution recommendations for a pod, since it doesn't impact the actual reproducibility
+/// it shouldn't be hashed along with the pod
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
+pub struct RecommendSpecs {
+    /// Optimal number of CPU cores needed to run the pod provided by the user
+    pub cpus: f32,
+    /// Optimal amount of memory needed to run the pod provided by the user, code can probably run with less but may hit OOM
+    pub memory: u64,
+}
+
+impl ToYaml for RecommendSpecs {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        Some((field_name.to_owned(), field_value.clone()))
+    }
+}
+
+/// Specification for GPU requirements in computation.
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct GPURequirement {
+    /// GPU model specification.
+    pub model: GPUModel,
+    /// Manufacturer recommended memory.
+    pub recommended_memory: u64,
+    /// Number of GPU cards required.
+    pub count: u16,
+}
+
+/// GPU model specification.
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum GPUModel {
+    /// NVIDIA-manufactured card where `String` is the specific CUDA version
+    NVIDIA(String),
+    /// Any GPU architecture, code is generic enough
+    Any,
 }
 
 /// A compute job that specifies resource requests and input/output targets.

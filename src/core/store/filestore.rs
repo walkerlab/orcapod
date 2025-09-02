@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        model::to_yaml,
+        model::ToYaml,
         store::MODEL_NAMESPACE,
         util::{get_type_name, parse_debug_name},
     },
@@ -111,7 +111,7 @@ impl LocalFileStore {
         Ok(model_info.hash)
     }
 
-    fn save_file(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<()> {
+    pub(crate) fn save_file(file: impl AsRef<Path>, content: impl AsRef<[u8]>) -> Result<()> {
         if let Some(parent) = file.as_ref().parent() {
             fs::create_dir_all(parent)?;
         }
@@ -123,7 +123,7 @@ impl LocalFileStore {
     /// # Errors
     ///
     /// Will return `Err` if there is an issue storing the model.
-    pub(crate) fn save_model<T: Serialize + fmt::Debug>(
+    pub(crate) fn save_model<T: Serialize + fmt::Debug + ToYaml>(
         &self,
         model: &T,
         hash: &str,
@@ -174,7 +174,7 @@ impl LocalFileStore {
                 .yellow(),
             );
         } else {
-            Self::save_file(spec_file, to_yaml(model)?)?;
+            Self::save_file(spec_file, model.to_yaml()?)?;
         }
         Ok(())
     }

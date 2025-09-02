@@ -1,14 +1,18 @@
-use crate::uniffi::{
-    error::Result,
-    model::{
-        ModelType,
-        pod::{Pod, PodJob, PodResult},
+use crate::{
+    core::model::ToYaml as _,
+    uniffi::{
+        error::{Kind, OrcaError, Result},
+        model::{
+            ModelType,
+            pod::{Pod, PodJob, PodResult},
+        },
+        store::{ModelID, ModelInfo, Store},
     },
-    store::{ModelID, ModelInfo, Store},
 };
+use chrono::Utc;
 use derive_more::Display;
 use getset::CloneGetters;
-use std::{fs, path::PathBuf};
+use std::{backtrace::Backtrace, fs, path::PathBuf};
 use uniffi;
 /// Support for a storage backend on a local filesystem directory.
 #[derive(uniffi::Object, Debug, Display, CloneGetters, Clone)]
@@ -23,12 +27,52 @@ pub struct LocalFileStore {
 #[uniffi::export]
 impl Store for LocalFileStore {
     fn save_pod(&self, pod: &Pod) -> Result<()> {
-        self.save_model(pod, &pod.hash, pod.annotation.as_ref())
+        self.save_model(pod, &pod.hash, pod.annotation.as_ref())?;
+        // Deal with saving the recommended_specs
+        // Since we are going with a no modify scheme for saving, we will save the latest version as year-month-day-hour-min-second UTC
+        Self::save_file(
+            self.make_path(
+                pod,
+                &pod.hash,
+                format!(
+                    "recommended_specs/{}",
+                    Utc::now().format("%Y-%m-%d-%H-%M-%S")
+                ),
+            ),
+            &pod.recommend_specs.to_yaml()?,
+        )
     }
     fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
         let (mut pod, annotation, hash) = self.load_model::<Pod>(model_id)?;
         pod.annotation = annotation;
         pod.hash = hash;
+        // Deal with the recommended_specs by selecting the last saved spec
+        // List all files in the dir
+        let folder_path = self.make_path(&pod, &pod.hash, "recommended_specs");
+        let mut recommended_specs = fs::read_dir(&folder_path)?;
+
+        let mut latest_spec_file_name = recommended_specs
+            .next()
+            .ok_or(OrcaError {
+                kind: Kind::EmptyDir {
+                    dir: folder_path.clone(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            })??
+            .file_name();
+
+        for entry in recommended_specs {
+            let file_name = entry?.file_name();
+            if file_name > latest_spec_file_name {
+                latest_spec_file_name = file_name;
+            }
+        }
+
+        // Read the latest_spec and loaded back in
+        pod.recommend_specs = serde_yaml::from_str(&fs::read_to_string(
+            folder_path.join(latest_spec_file_name),
+        )?)?;
+
         Ok(pod)
     }
     fn list_pod(&self) -> Result<Vec<ModelInfo>> {

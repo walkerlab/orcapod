@@ -31,6 +31,11 @@ pub(crate) enum Kind {
         source: Box<dyn Error + Send + Sync>,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("Empty directory: {dir:?}, where they should be files"))]
+    EmptyDir {
+        dir: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display(
         "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
     ))]
