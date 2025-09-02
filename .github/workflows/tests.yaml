@@ -57,7 +57,7 @@ jobs:
           uv pip install eclipse-zenoh -p ~/.local/share/base
           . ~/.local/share/base/bin/activate
           maturin develop --uv
-      - name: Run Python test
+      - name: Run Python tests
         env:
           RUST_BACKTRACE: full
         run: |
