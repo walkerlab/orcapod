@@ -22,7 +22,7 @@ jobs:
       - name: Install code coverage
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run syntax and style tests
-        run: cargo clippy --no-default-features --features=test --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
       - name: Run format test
         run: cargo fmt --check
       - name: Run integration tests w/ coverage report
@@ -62,7 +62,7 @@ jobs:
           RUST_BACKTRACE: full
         run: |
           . ~/.local/share/base/bin/activate
-          python tests/extra/python/smoke_test.py -- tests/.tmp
+          python tests/extra/python/model.py -- tests/.tmp
       - name: Run agent test
         env:
           RUST_BACKTRACE: full

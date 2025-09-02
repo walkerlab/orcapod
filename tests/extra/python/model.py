@@ -16,7 +16,7 @@ from orcapod import (
     LocalFileStore,
     ModelId,
     ModelType,
-    ExecRequirements,
+    RecommendSpecs,
     OrcaError,
 )
 
@@ -33,9 +33,11 @@ def create_pod(data, _):
         input_spec={},
         output_dir="/tmp/output",
         output_spec={},
-        exec_requirements=ExecRequirements(
-            recommended_cpus=0.1, recommended_memory=10 << 20, gpu_requirements=None
+        recommend_specs=RecommendSpecs(
+            cpus=0.1,
+            memory=10 << 20,
         ),
+        gpu_requirements=None,
     )
     return data["pod"], data
 
