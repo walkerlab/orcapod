@@ -57,15 +57,11 @@ jobs:
           uv pip install eclipse-zenoh -p ~/.local/share/base
           . ~/.local/share/base/bin/activate
           maturin develop --uv
-      - name: Run smoke test
+      - name: Run Python test
         env:
           RUST_BACKTRACE: full
         run: |
           . ~/.local/share/base/bin/activate
-          python tests/extra/python/model.py -- tests/.tmp
-      - name: Run agent test
-        env:
-          RUST_BACKTRACE: full
-        run: |
-          . ~/.local/share/base/bin/activate
-          python tests/extra/python/agent_test.py -- tests/.tmp
+          for py_file in tests/extra/python/*.py; do
+          python "$py_file" -- tests/.tmp
+          done
