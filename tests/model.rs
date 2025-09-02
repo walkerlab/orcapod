@@ -1,16 +1,16 @@
-#![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
+#![expect(missing_docs, reason = "OK in tests.")]
 
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_job_style, pod_result_style, pod_style};
 use indoc::indoc;
-use orcapod::{core::model::to_yaml, uniffi::error::Result};
+use orcapod::{core::model::ToYaml as _, uniffi::error::Result};
 use pretty_assertions::assert_eq as pretty_assert_eq;
 
 #[test]
 fn hash_pod() -> Result<()> {
-    assert_eq!(
+    pretty_assert_eq!(
         pod_style()?.hash,
-        "0e993f645fbb36f0635e2c9140975997cf4ca723d0b49cf4ee4963b76e6424d7",
+        "3ee06e06cc1c821712a2a8fd98a6aa3e72ab0e78d5a2668d39b3400d5ece5d52",
         "Hash didn't match."
     );
     Ok(())
@@ -19,7 +19,7 @@ fn hash_pod() -> Result<()> {
 #[test]
 fn pod_to_yaml() -> Result<()> {
     pretty_assert_eq!(
-        to_yaml(&pod_style()?)?,
+        pod_style()?.to_yaml()?,
         indoc! {r"
             class: pod
             image: example.server.com/user/style-transfer:1.0.0
@@ -41,10 +41,6 @@ fn pod_to_yaml() -> Result<()> {
               result2:
                 path: result2.jpeg
                 match_pattern: .*\.jpeg
-            source_commit_url: https://github.com/user/style-transfer/tree/1.0.0
-            recommended_cpus: 0.25
-            recommended_memory: 1073741824
-            required_gpu: null
         "},
         "YAML serialization didn't match."
     );
@@ -53,9 +49,9 @@ fn pod_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_job() -> Result<()> {
-    assert_eq!(
+    pretty_assert_eq!(
         pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "ba1c4693f9186ccb1b6e63625085d8fd95552b28b7a60fe9b1b47f68a9ba8880",
+        "0bc729c0d718f01d35d42856f5303353b95b280e441410d623372e0d29e9f1c9",
         "Hash didn't match."
     );
     Ok(())
@@ -64,10 +60,10 @@ fn hash_pod_job() -> Result<()> {
 #[test]
 fn pod_job_to_yaml() -> Result<()> {
     pretty_assert_eq!(
-        to_yaml(&pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
+        pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?.to_yaml()?,
         indoc! {"
             class: pod_job
-            pod: 0e993f645fbb36f0635e2c9140975997cf4ca723d0b49cf4ee4963b76e6424d7
+            pod: 3ee06e06cc1c821712a2a8fd98a6aa3e72ab0e78d5a2668d39b3400d5ece5d52
             input_packet:
               base-input:
               - kind: File
@@ -104,7 +100,7 @@ fn pod_job_to_yaml() -> Result<()> {
 fn hash_pod_result() -> Result<()> {
     pretty_assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
-        "e752d86d4fc5435bfa4564ba951851530f5cf2228586c2f488c2ca9e7bcc7ed1",
+        "72a6586ccb1af6892c14c608757dbd43b7f8092ffeaee57ceb21d6bbffe6a92f",
         "Hash didn't match."
     );
     Ok(())
@@ -113,10 +109,10 @@ fn hash_pod_result() -> Result<()> {
 #[test]
 fn pod_result_to_yaml() -> Result<()> {
     pretty_assert_eq!(
-        to_yaml(&pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?)?,
+        pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.to_yaml()?,
         indoc! {"
             class: pod_result
-            pod_job: ba1c4693f9186ccb1b6e63625085d8fd95552b28b7a60fe9b1b47f68a9ba8880
+            pod_job: 0bc729c0d718f01d35d42856f5303353b95b280e441410d623372e0d29e9f1c9
             output_packet:
               result1:
                 kind: File

@@ -13,7 +13,7 @@ use fixture::{
 };
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, ModelType, packet::PathInfo, pod::Pod},
+    model::{Annotation, ExecRequirements, ModelType, packet::PathInfo, pod::Pod},
     store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
 };
 use pretty_assertions::assert_eq as pretty_assert_eq;
@@ -277,9 +277,11 @@ fn pod_annotation_unique() -> Result<()> {
         },
     )]);
     let output_dir: PathBuf = "/output".into();
-    let source_commit_url = "https://github.com/user/style-transfer/tree/1.0.0".to_owned();
-    let recommended_cpus = 0.25; // 250 millicores as frac cores
-    let recommended_memory = 1_u64 << 30; // 1GiB in
+    let exec_requirements = ExecRequirements {
+        recommended_cpus: 0.25,
+        recommended_memory: 1_u64 << 30,
+        gpu_requirements: None,
+    };
 
     let pod = Pod::new(
         Some(annotation.clone()),
@@ -288,10 +290,7 @@ fn pod_annotation_unique() -> Result<()> {
         input_spec.clone(),
         output_dir.clone(),
         output_spec.clone(),
-        source_commit_url.clone(),
-        recommended_cpus,
-        recommended_memory,
-        None,
+        exec_requirements.clone(),
     )?;
 
     // Save pod above
@@ -307,10 +306,7 @@ fn pod_annotation_unique() -> Result<()> {
         input_spec.clone(),
         "/output".into(),
         output_spec.clone(),
-        source_commit_url.clone(),
-        recommended_cpus,
-        recommended_memory,
-        None,
+        exec_requirements.clone(),
     )?;
 
     store.save_pod(&pod_with_new_annotation)?;
@@ -348,10 +344,7 @@ fn pod_annotation_unique() -> Result<()> {
         input_spec,
         output_dir,
         output_spec,
-        source_commit_url,
-        recommended_cpus,
-        recommended_memory,
-        None,
+        exec_requirements,
     )?;
     store.save_pod(&pod_with_updated_command)?;
     pretty_assert_eq!(

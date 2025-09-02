@@ -666,8 +666,8 @@ impl PodProcessor {
                 )
                 .into(),
             },
-            pod.recommended_cpus,
-            pod.recommended_memory,
+            pod.exec_requirements.recommended_cpus,
+            pod.exec_requirements.recommended_memory,
             None,
             &pipeline_run.namespace_lookup,
         )?;

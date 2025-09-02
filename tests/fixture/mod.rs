@@ -8,19 +8,17 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::{
-    uniffi::operator::MapOperator,
-    uniffi::{
-        error::Result,
-        model::{
-            Annotation,
-            packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
-            pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
-            pod::{Pod, PodJob, PodResult},
-        },
-        orchestrator::PodStatus,
-        store::{ModelID, ModelInfo, Store},
+use orcapod::uniffi::{
+    error::Result,
+    model::{
+        Annotation, ExecRequirements,
+        packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
+        pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
+        pod::{Pod, PodJob, PodResult},
     },
+    operator::MapOperator,
+    orchestrator::PodStatus,
+    store::{ModelID, ModelInfo, Store},
 };
 use std::{
     collections::HashMap,
@@ -79,10 +77,11 @@ pub fn pod_style() -> Result<Pod> {
                 },
             ),
         ]),
-        "https://github.com/user/style-transfer/tree/1.0.0".to_owned(),
-        0.25,        // 250 millicores as frac cores
-        1_u64 << 30, // 1GiB in bytes
-        None,
+        ExecRequirements {
+            recommended_cpus: 0.25,
+            recommended_memory: 1_u64 << 30,
+            gpu_requirements: None,
+        },
     )
 }
 
@@ -172,10 +171,11 @@ pub fn pod_custom(
         input_spec,
         PathBuf::from("/tmp/output"),
         HashMap::new(),
-        "https://github.com/place/holder".to_owned(),
-        0.1,          // 100 millicores as frac cores
-        50_u64 << 20, // 10 MiB in bytes
-        None,
+        ExecRequirements {
+            recommended_cpus: 0.1,
+            recommended_memory: 50_u64 << 20,
+            gpu_requirements: None,
+        },
     )
 }
 
@@ -325,10 +325,11 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
                 match_pattern: r".*\.txt".to_owned(),
             },
         )]),
-        "N/A".to_owned(),
-        0.25,          // 250 millicores as frac cores
-        128_u64 << 20, // 128MB in bytes
-        None,
+        ExecRequirements {
+            recommended_cpus: 0.25,
+            recommended_memory: 128_u64 << 20,
+            gpu_requirements: None,
+        },
     )
 }
 
