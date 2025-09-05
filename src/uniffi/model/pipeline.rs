@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        crypto::{hash_blob, make_random_hash},
+        crypto::{hash_blob, hash_buffer, make_random_hash},
         graph::make_graph,
         model::pipeline::PipelineNode,
         validation::validate_packet,
@@ -18,8 +18,11 @@ use derive_more::Display;
 use getset::CloneGetters;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
+
+static JOIN_OPERATOR_HASH: LazyLock<String> = LazyLock::new(|| hash_buffer(b"join_operator"));
 
 /// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
 #[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize, Serialize)]
@@ -186,6 +189,18 @@ impl From<MapOperator> for Kernel {
 impl From<Pod> for Kernel {
     fn from(pod: Pod) -> Self {
         Self::Pod { pod: Arc::new(pod) }
+    }
+}
+
+impl Kernel {
+    /// Get a unique hash that represents the kernel.
+    /// The exception here is the `JoinOperator` doesn't have any pre execution configuration, since it's logic is completely dependent on what is fed to it during execution.
+    pub fn get_hash(&self) -> &str {
+        match self {
+            Self::Pod { pod } => &pod.hash,
+            Self::JoinOperator => &JOIN_OPERATOR_HASH,
+            Self::MapOperator { mapper } => &mapper.hash,
+        }
     }
 }
 

@@ -16,8 +16,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct PipelineNode {
-    pub id: String,
+    // Hash that represent the node
+    pub hash: String,
     pub kernel: Kernel,
+    /// User provided label for the node
+    pub label: String,
 }
 
 impl Pipeline {

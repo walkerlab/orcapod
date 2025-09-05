@@ -231,7 +231,7 @@ impl DockerPipelineRunner {
                 .spawn(Self::spawn_node_processing_task(
                     graph[node_idx].clone(),
                     Arc::clone(&pipeline_run),
-                    input_nodes.contains(&node.id),
+                    input_nodes.contains(&node.hash),
                 ));
         }
 
@@ -433,18 +433,18 @@ impl DockerPipelineRunner {
             Arc::new(Mutex::new(match &node.kernel {
                 Kernel::Pod { pod } => Box::new(PodProcessor::new(
                     Arc::clone(&pipeline_run),
-                    node.id.clone(),
+                    node.hash.clone(),
                     Arc::clone(pod),
                 )),
                 Kernel::MapOperator { mapper } => Box::new(OperatorProcessor::new(
                     Arc::clone(&pipeline_run),
-                    node.id.clone(),
+                    node.hash.clone(),
                     Arc::clone(mapper),
                     parent_nodes.len(),
                 )),
                 Kernel::JoinOperator => Box::new(OperatorProcessor::new(
                     Arc::clone(&pipeline_run),
-                    node.id.clone(),
+                    node.hash.clone(),
                     JoinOperator::new(parent_nodes.len()).into(),
                     parent_nodes.len(),
                 )),
@@ -456,19 +456,19 @@ impl DockerPipelineRunner {
         // Create a list of node_ids that this node should listen to
         let mut nodes_to_sub_to = parent_nodes
             .iter()
-            .map(|parent_node| parent_node.id.clone())
+            .map(|parent_node| parent_node.hash.clone())
             .collect::<Vec<_>>();
 
         if is_input_node {
             // If the node is an input node, we need to add the input node key expression
-            nodes_to_sub_to.push(format!("input_node_{}", node.id));
+            nodes_to_sub_to.push(format!("input_node_{}", node.hash));
         }
 
         // For each node in nodes_to_subscribe_to, call the event handler func
         for node_to_sub in &nodes_to_sub_to {
             listener_tasks.spawn(Self::event_handler(
                 Arc::clone(&pipeline_run),
-                node.id.clone(),
+                node.hash.clone(),
                 node_to_sub.to_owned(),
                 Arc::clone(&node_processor),
             ));
@@ -486,7 +486,7 @@ impl DockerPipelineRunner {
         // Build the subscriber
         let status_subscriber = pipeline_run
             .session
-            .declare_subscriber(pipeline_run.make_key_expr(&node.id, "event_handler_ready"))
+            .declare_subscriber(pipeline_run.make_key_expr(&node.hash, "event_handler_ready"))
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -501,7 +501,7 @@ impl DockerPipelineRunner {
         // Send a ready message so the pipeline knows when to start sending inputs
         pipeline_run
             .session
-            .put(pipeline_run.make_key_expr(&node.id, "node_ready"), vec![])
+            .put(pipeline_run.make_key_expr(&node.hash, "node_ready"), vec![])
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
@@ -510,11 +510,11 @@ impl DockerPipelineRunner {
             match result {
                 Ok(Ok(())) => {} // Task completed successfully
                 Ok(Err(err)) => {
-                    pipeline_run.send_err_msg(&node.id, err).await;
+                    pipeline_run.send_err_msg(&node.hash, err).await;
                 }
                 Err(err) => {
                     pipeline_run
-                        .send_err_msg(&node.id, OrcaError::from(err))
+                        .send_err_msg(&node.hash, OrcaError::from(err))
                         .await;
                 }
             }

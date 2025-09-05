@@ -25,7 +25,7 @@ pub fn make_graph(
     let graph =
         DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?).map(
             |_, node| PipelineNode {
-                id: node.id.clone(),
+                hash: node.id.clone(),
                 kernel: get(&metadata, &node.id)
                     .unwrap_or_else(|error| panic!("{error}"))
                     .clone(),
