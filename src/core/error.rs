@@ -123,11 +123,12 @@ impl fmt::Debug for OrcaError {
             Kind::AgentCommunicationFailure { backtrace, .. }
             | Kind::EmptyDir { backtrace, .. }
             | Kind::IncompletePacket { backtrace, .. }
-            | Kind::InvalidFilepath { backtrace, .. }
+            | Kind::InvalidPath { backtrace, .. }
             | Kind::InvalidIndex { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::MissingInfo { backtrace, .. }
             | Kind::FailedToGetPodJobOutput { backtrace, .. }
+            | Kind::PipelineValidationErrorMissingKeys { backtrace, .. }
             | Kind::PodJobProcessingError { backtrace, .. }
             | Kind::PodJobSubmissionFailed { backtrace, .. }
             | Kind::UnexpectedPathType { backtrace, .. }

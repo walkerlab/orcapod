@@ -425,7 +425,7 @@ impl DockerPipelineRunner {
         let parent_nodes = pipeline_run
             .pipeline_job
             .pipeline
-            .get_node_parents(&node)
+            .get_node_parents(&node)?
             .collect::<Vec<_>>();
 
         // Create the correct processor for the node based on the kernel type

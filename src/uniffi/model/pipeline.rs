@@ -55,11 +55,16 @@ impl Pipeline {
     ) -> Result<Self> {
         let graph = make_graph(graph_dot, metadata)?;
 
-        Ok(Self {
+        // Run verifications and preprocessing steps
+        let pipeline = Self {
             graph,
             input_spec,
             output_spec,
-        })
+        };
+
+        pipeline.validate()?;
+
+        Ok(pipeline)
     }
 }
 

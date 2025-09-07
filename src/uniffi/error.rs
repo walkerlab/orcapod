@@ -11,6 +11,7 @@ use serde_yaml;
 use snafu::prelude::Snafu;
 use std::{
     backtrace::Backtrace,
+    collections::HashSet,
     error::Error,
     io,
     path::{self, PathBuf},
@@ -53,7 +54,7 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("{source} ({path:?})."))]
-    InvalidFilepath {
+    InvalidPath {
         path: PathBuf,
         source: io::Error,
         backtrace: Option<Backtrace>,
@@ -71,6 +72,12 @@ pub(crate) enum Kind {
     #[snafu(display("Missing info. Details: {details}."))]
     MissingInfo {
         details: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Node '{node_name}' is missing required keys: {missing_keys:?}."))]
+    PipelineValidationErrorMissingKeys {
+        node_name: String,
+        missing_keys: HashSet<String>,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("Pod job submission failed with reason: {reason}."))]

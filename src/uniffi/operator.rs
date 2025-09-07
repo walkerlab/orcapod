@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::{crypto::hash_buffer, model::ToYaml as _, model::serialize_hashmap};
+use crate::core::model::ToYaml as _;
+use crate::core::{crypto::hash_buffer, model::serialize_hashmap};
 use crate::uniffi::error::Result;
 
 /// Operator class that map `input_keys` to `output_key`, effectively renaming it

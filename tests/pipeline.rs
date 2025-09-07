@@ -83,5 +83,8 @@ fn input_packet_checksum() -> Result<()> {
         "8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd".to_owned(),
         "Incorrect checksum"
     );
+
+    // Print out pipeline job for visual inspection
+    println!("Pipeline Job: {:#?}", pipeline_job.pipeline.graph);
     Ok(())
 }

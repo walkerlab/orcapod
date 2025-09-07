@@ -24,11 +24,13 @@ pub fn make_graph(
 ) -> Result<DiGraph<PipelineNode, ()>> {
     let graph =
         DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?).map(
-            |_, node| PipelineNode {
-                hash: node.id.clone(),
+            |node_idx, node| PipelineNode {
+                hash: String::new(),
                 kernel: get(&metadata, &node.id)
                     .unwrap_or_else(|error| panic!("{error}"))
                     .clone(),
+                label: node.id.clone(),
+                node_idx,
             },
             |_, _| (),
         );

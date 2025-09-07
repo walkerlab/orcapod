@@ -50,11 +50,9 @@ pub fn hash_buffer(buffer: impl AsRef<[u8]>) -> String {
 ///
 /// Will return error if unable to access file.
 pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
-    hash_stream(
-        &mut File::open(&filepath).context(selector::InvalidFilepath {
-            path: filepath.as_ref(),
-        })?,
-    )
+    hash_stream(&mut File::open(&filepath).context(selector::InvalidPath {
+        path: filepath.as_ref(),
+    })?)
 }
 /// Evaluate checksum hash of a directory.
 ///

@@ -48,6 +48,19 @@ pub struct Blob {
     pub checksum: String,
 }
 
+#[uniffi::export]
+impl Blob {
+    #[uniffi::constructor]
+    /// Create a new `Blob`
+    pub const fn new(kind: BlobKind, location: URI) -> Self {
+        Self {
+            kind,
+            location,
+            checksum: String::new(),
+        }
+    }
+}
+
 /// A single BLOB or a collection of BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(untagged)]
