@@ -34,36 +34,43 @@ pub struct PipelineNode {
 
 impl Pipeline {
     pub(crate) fn validate(&self) -> Result<()> {
-        // For verification we check that each node has it's input_spec covered by either it's parent or input_spec
-        // Build a map from input_spec where HashMap<Node_id (Should be label when coming in from new), Vec<InputKeys>,
-        let mut input_nodes_key_lut = HashMap::<&String, HashSet<&String>>::new();
-        for (input_key, node_uris) in &self.input_spec {
+        // For verification we check that each node has it's input_spec covered by either it's parent or input_spec of the pipeline
+        // Build a map from input_spec where HashMap<Node_id (Should be label when coming in from new), HashSet<Key covered by input_spec>,
+        let mut keys_covered_by_input_spec_lut: HashMap<&String, HashSet<&String>> =
+            HashMap::<&String, HashSet<&String>>::new();
+        for node_uris in self.input_spec.values() {
             for node_uri in node_uris {
-                input_nodes_key_lut
+                keys_covered_by_input_spec_lut
                     .entry(&node_uri.node_id)
                     .or_default()
-                    .insert(input_key);
+                    .insert(&node_uri.key);
             }
         }
+
+        println!(
+            "keys_covered_by_input_spec_lut: {:#?}",
+            keys_covered_by_input_spec_lut
+        );
 
         // Iterate over each node in the graph and verify that its input spec is met
         for node_idx in self.graph.node_indices() {
             self.validate_valid_input_spec(
                 node_idx,
-                get(&input_nodes_key_lut, &self.graph[node_idx].label)?,
+                keys_covered_by_input_spec_lut.get(&self.graph[node_idx].label),
             )?;
         }
 
         Ok(())
     }
 
+    /// Validates that the input spec for a given node is valid based on its parents and the input spec of the pipeline
     fn validate_valid_input_spec(
         &self,
         node_idx: NodeIndex,
-        input_keys_for_node: &HashSet<&String>,
+        keys_covered_by_input_spec: Option<&HashSet<&String>>,
     ) -> Result<()> {
         // We need to get the input spec of the current node and build the packet based on the
-        // parent nodes to verify that the input_spec if met
+        // parent nodes output spec + input
 
         // Get the parent nodes input specs and combine them into
         let incoming_packet_keys = self
@@ -71,13 +78,23 @@ impl Pipeline {
             .flat_map(|parent_idx| self.get_output_spec_for_node(parent_idx))
             .collect::<HashSet<&String>>();
 
+        println!(
+            "Validating node: {}, incoming_packet_keys: {:#?}, keys_covered_by_input_spec: {:#?}",
+            self.graph[node_idx].label, incoming_packet_keys, keys_covered_by_input_spec
+        );
+
+        println!(
+            "Node input_spec: {:#?}",
+            self.get_input_spec_for_node(node_idx)
+        );
+
         // Get this node input_spec
         let missing_keys: HashSet<&String> = self
             .get_input_spec_for_node(node_idx)
             .into_iter()
             .filter(|expected_key| {
                 !(incoming_packet_keys.contains(expected_key)
-                    || input_keys_for_node.contains(expected_key))
+                    || keys_covered_by_input_spec.map_or(false, |keys| keys.contains(expected_key)))
             })
             .collect();
 
@@ -100,7 +117,7 @@ impl Pipeline {
             Kernel::JoinOperator => {
                 // JoinOperator input_spec is derived from its parents
                 self.get_parent_node_indices(node_idx)
-                    .flat_map(|parent_idx| self.get_input_spec_for_node(parent_idx))
+                    .flat_map(|parent_idx| self.get_output_spec_for_node(parent_idx))
                     .collect()
             }
             Kernel::MapOperator { mapper } => mapper.map.keys().collect(),
@@ -113,7 +130,7 @@ impl Pipeline {
             Kernel::JoinOperator => {
                 // JoinOperator output_spec is derived from its parents
                 self.get_parent_node_indices(node_idx)
-                    .flat_map(|parent_idx| self.get_input_spec_for_node(parent_idx))
+                    .flat_map(|parent_idx| self.get_output_spec_for_node(parent_idx))
                     .collect()
             }
             Kernel::MapOperator { mapper } => mapper.map.values().collect(),
