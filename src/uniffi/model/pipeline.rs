@@ -49,20 +49,26 @@ impl Pipeline {
     #[uniffi::constructor]
     pub fn new(
         graph_dot: &str,
-        metadata: HashMap<String, Kernel>,
+        metadata: &HashMap<String, Kernel>,
         input_spec: HashMap<String, Vec<NodeURI>>,
         output_spec: HashMap<String, NodeURI>,
     ) -> Result<Self> {
+        // Note this gives us the graph, but the nodes do not have their hashes computed yet.
         let graph = make_graph(graph_dot, metadata)?;
 
-        // Run verifications and preprocessing steps
-        let pipeline = Self {
+        let mut pipeline = Self {
             graph,
             input_spec,
             output_spec,
         };
 
+        // Run verification on the pipeline first before computing hash
         pipeline.validate()?;
+
+        // Verification passed, thus we can now compute the hash for each node
+        for node_idx in pipeline.graph.node_indices() {
+            pipeline.compute_hash_for_node_and_parents(node_idx);
+        }
 
         Ok(pipeline)
     }
@@ -194,6 +200,12 @@ impl From<MapOperator> for Kernel {
 impl From<Pod> for Kernel {
     fn from(pod: Pod) -> Self {
         Self::Pod { pod: Arc::new(pod) }
+    }
+}
+
+impl From<Arc<Pod>> for Kernel {
+    fn from(pod: Arc<Pod>) -> Self {
+        Self::Pod { pod }
     }
 }
 

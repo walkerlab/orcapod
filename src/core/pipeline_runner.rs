@@ -259,7 +259,6 @@ impl DockerPipelineRunner {
         }
 
         // Wait for all nodes to be ready before sending inputs
-
         let num_of_nodes = graph.node_count();
         let mut ready_nodes = 0;
 

@@ -16,7 +16,80 @@ use orcapod::uniffi::{
         pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
     },
 };
+use pretty_assertions::assert_eq;
 use std::collections::HashMap;
+
+use crate::fixture::pipeline;
+
+#[test]
+fn node_hashing() -> Result<()> {
+    let pipeline = pipeline()?;
+
+    // Assert that every node has a non-empty hash
+    let node_hashes = pipeline
+        .graph
+        .node_indices()
+        .map(|idx| {
+            (
+                pipeline.graph[idx].label.as_str(),
+                pipeline.graph[idx].hash.as_str(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+
+    assert_eq!(
+        node_hashes,
+        HashMap::from([
+            (
+                "pod_c_joiner",
+                "d2141ce0c203a8b556d7dbbbc6268ac4bbfa444748f92baff42235787f2b7550"
+            ),
+            (
+                "B",
+                "964ebb9ddd6bb7db56e53c19e9ac34dfd08779a656295b01e70b5973adc61103"
+            ),
+            (
+                "C",
+                "96b30227e0243f282f7a898bd85a246127e664635a3969577932d7653cfb79cb"
+            ),
+            (
+                "pod_a_mapper",
+                "83bd3d17026c882db6b6cca7ccca0173f478c11449cfa8bfb13a0518a7e5e32a"
+            ),
+            (
+                "pod_b_mapper",
+                "dd73cd3ab345917b25fc028131d83da7ce1c53702fcbabdd19b86a8bdde158b3"
+            ),
+            (
+                "pod_d_mapper",
+                "d37f595093e8f7235f97213b3f7ff88b12786e48ec4f22275018cc7d22c113f8"
+            ),
+            (
+                "A",
+                "8e43dbc9fd55fa7d1a36fc4a6c036f4113b7aa7fcf38646a2f2472bac6774962"
+            ),
+            (
+                "E",
+                "6ec68cc43ea15472731a318584cc8792fb2ff93c96fed6f3f998849b75976694"
+            ),
+            (
+                "D",
+                "04cb341a09eeb771846377405a5f33d011f99a7dfa4739fd7876a7e70c994e4e"
+            ),
+            (
+                "pod_c_mapper",
+                "240c8e7fa5e0bd88239aba625387ea495fc5323a5d4b6b519946b8f8b907ddf6"
+            ),
+            (
+                "pod_e_joiner",
+                "36f3e88889ecf89183205f340043de61f3c6a254026aae5aa1ce587a666e8c30"
+            ),
+        ]),
+        "Node hashes did not match"
+    );
+
+    Ok(())
+}
 
 #[test]
 fn input_packet_checksum() -> Result<()> {
@@ -26,7 +99,7 @@ fn input_packet_checksum() -> Result<()> {
                 A
             }
         "},
-        HashMap::from([(
+        &HashMap::from([(
             "A".into(),
             Kernel::Pod {
                 pod: pod_custom(
@@ -84,7 +157,5 @@ fn input_packet_checksum() -> Result<()> {
         "Incorrect checksum"
     );
 
-    // Print out pipeline job for visual inspection
-    println!("Pipeline Job: {:#?}", pipeline_job.pipeline.graph);
     Ok(())
 }

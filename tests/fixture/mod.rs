@@ -399,7 +399,7 @@ pub fn pipeline() -> Result<Pipeline> {
 
     Pipeline::new(
         dot,
-        kernel_map,
+        &kernel_map,
         HashMap::from([
             (
                 "where".into(),
