@@ -125,6 +125,9 @@ impl fmt::Debug for OrcaError {
             | Kind::IncompletePacket { backtrace, .. }
             | Kind::InvalidPath { backtrace, .. }
             | Kind::InvalidIndex { backtrace, .. }
+            | Kind::InvalidInputSpecNodeNotInGraph { backtrace, .. }
+            | Kind::InvalidOutputSpecKeyNotInNode { backtrace, .. }
+            | Kind::InvalidOutputSpecNodeNotInGraph { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::MissingInfo { backtrace, .. }
             | Kind::FailedToGetPodJobOutput { backtrace, .. }

@@ -3,6 +3,7 @@
     clippy::panic_in_result_fn,
     clippy::indexing_slicing,
     clippy::panic,
+    clippy::type_complexity,
     reason = "OK in tests."
 )]
 
@@ -19,10 +20,11 @@ use orcapod::uniffi::{
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 
-use crate::fixture::pipeline;
+use crate::fixture::{combine_txt_pod, pipeline};
 
+#[expect(clippy::too_many_lines, reason = "Test code")]
 #[test]
-fn node_hashing() -> Result<()> {
+fn preprocessing() -> Result<()> {
     let pipeline = pipeline()?;
 
     // Assert that every node has a non-empty hash
@@ -86,6 +88,75 @@ fn node_hashing() -> Result<()> {
             ),
         ]),
         "Node hashes did not match"
+    );
+
+    // Check if the input spec contains the correct node hashes
+    assert_eq!(
+        pipeline.input_spec,
+        HashMap::from([
+            (
+                "the".into(),
+                vec![NodeURI {
+                    node_id: "964ebb9ddd6bb7db56e53c19e9ac34dfd08779a656295b01e70b5973adc61103"
+                        .into(),
+                    key: "input_1".into(),
+                },]
+            ),
+            (
+                "where".into(),
+                vec![NodeURI {
+                    node_id: "8e43dbc9fd55fa7d1a36fc4a6c036f4113b7aa7fcf38646a2f2472bac6774962"
+                        .into(),
+                    key: "input_1".into(),
+                },]
+            ),
+            (
+                "cat_color".into(),
+                vec![NodeURI {
+                    node_id: "964ebb9ddd6bb7db56e53c19e9ac34dfd08779a656295b01e70b5973adc61103"
+                        .into(),
+                    key: "input_2".into(),
+                },]
+            ),
+            (
+                "is".into(),
+                vec![NodeURI {
+                    node_id: "8e43dbc9fd55fa7d1a36fc4a6c036f4113b7aa7fcf38646a2f2472bac6774962"
+                        .into(),
+                    key: "input_2".into(),
+                },]
+            ),
+            (
+                "cat".into(),
+                vec![NodeURI {
+                    node_id: "04cb341a09eeb771846377405a5f33d011f99a7dfa4739fd7876a7e70c994e4e"
+                        .into(),
+                    key: "input_1".into(),
+                },]
+            ),
+            (
+                "action".into(),
+                vec![NodeURI {
+                    node_id: "04cb341a09eeb771846377405a5f33d011f99a7dfa4739fd7876a7e70c994e4e"
+                        .into(),
+                    key: "input_2".into(),
+                },]
+            ),
+        ]),
+        "Input spec did not match"
+    );
+
+    // Check if the output spec contain the correct node hashes
+    assert_eq!(
+        pipeline.output_spec,
+        HashMap::from([(
+            "output".into(),
+            NodeURI {
+                node_id: "6ec68cc43ea15472731a318584cc8792fb2ff93c96fed6f3f998849b75976694".into(),
+                key: "output".into(),
+            }
+        ),]),
+        "Output spec did not match"
     );
 
     Ok(())
@@ -155,6 +226,135 @@ fn input_packet_checksum() -> Result<()> {
         checksum,
         "8b44b8ea83b1f5eec3ac16cf941767e629896c465803fb69c21adbbf984516bd".to_owned(),
         "Incorrect checksum"
+    );
+
+    Ok(())
+}
+
+/// Testing invalid conditions to make sure validation works
+fn basic_pipeline_components() -> Result<(
+    String,
+    HashMap<String, Kernel>,
+    HashMap<String, Vec<NodeURI>>,
+    HashMap<String, NodeURI>,
+)> {
+    let dot = indoc! {"
+        digraph {
+            A
+        }
+    "};
+
+    let metadata = HashMap::from([("A".into(), combine_txt_pod("A")?.into())]);
+
+    let input_spec = HashMap::from([
+        (
+            "input_1".into(),
+            vec![NodeURI {
+                node_id: "A".into(),
+                key: "input_1".into(),
+            }],
+        ),
+        (
+            "input_2".into(),
+            vec![NodeURI {
+                node_id: "A".into(),
+                key: "input_2".into(),
+            }],
+        ),
+    ]);
+
+    let output_spec = HashMap::from([(
+        "output".into(),
+        NodeURI {
+            node_id: "A".into(),
+            key: "output".into(),
+        },
+    )]);
+
+    Ok((dot.to_owned(), metadata, input_spec, output_spec))
+}
+
+#[test]
+fn invalid_input_spec() -> Result<()> {
+    let (dot, metadata, _, output_spec) = basic_pipeline_components()?;
+
+    // Test invalid node reference in input_spec
+    assert!(
+        Pipeline::new(
+            &dot,
+            &metadata,
+            HashMap::from([(
+                "input_1".into(),
+                vec![NodeURI {
+                    node_id: "B".into(),
+                    key: "input_1".into(),
+                }],
+            )]),
+            output_spec.clone(),
+        )
+        .is_err(),
+        "Pipeline creation should have failed due to invalid input_spec"
+    );
+
+    // Test invalid key reference in input_spec
+    assert!(
+        Pipeline::new(
+            &dot,
+            &metadata,
+            HashMap::from([(
+                "input_1".into(),
+                vec![NodeURI {
+                    node_id: "A".into(),
+                    key: "input_3".into(),
+                }],
+            )]),
+            output_spec,
+        )
+        .is_err(),
+        "Pipeline creation should have failed due to invalid input_spec"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn invalid_output_spec() -> Result<()> {
+    let (dot, metadata, input_spec, _) = basic_pipeline_components()?;
+
+    // Test invalid output_spec node reference
+    assert!(
+        Pipeline::new(
+            &dot,
+            &metadata,
+            input_spec.clone(),
+            HashMap::from([(
+                "A".into(),
+                NodeURI {
+                    node_id: "B".into(),
+                    key: "output".into(),
+                }
+            )]),
+        )
+        .is_err(),
+        "Pipeline creation should have failed due to invalid output_spec"
+    );
+
+    // Test invalid output_spec key reference
+    assert!(
+        Pipeline::new(
+            &dot,
+            &metadata,
+            input_spec,
+            HashMap::from([(
+                "A".into(),
+                NodeURI {
+                    node_id: "A".into(),
+                    key: "output_dne".into(),
+                }
+            )]),
+        )
+        .is_err(),
+        "Pipeline creation should have failed due to invalid output_spec"
     );
 
     Ok(())

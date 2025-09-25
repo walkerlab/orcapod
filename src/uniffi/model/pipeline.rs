@@ -6,7 +6,7 @@ use crate::{
         validation::validate_packet,
     },
     uniffi::{
-        error::Result,
+        error::{OrcaError, Result, selector},
         model::{
             packet::{PathSet, URI},
             pod::Pod,
@@ -18,6 +18,7 @@ use derive_more::Display;
 use getset::CloneGetters;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
+use snafu::OptionExt as _;
 use std::sync::LazyLock;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
@@ -50,13 +51,53 @@ impl Pipeline {
     pub fn new(
         graph_dot: &str,
         metadata: &HashMap<String, Kernel>,
-        input_spec: HashMap<String, Vec<NodeURI>>,
-        output_spec: HashMap<String, NodeURI>,
+        mut input_spec: HashMap<String, Vec<NodeURI>>,
+        mut output_spec: HashMap<String, NodeURI>,
     ) -> Result<Self> {
         // Note this gives us the graph, but the nodes do not have their hashes computed yet.
-        let graph = make_graph(graph_dot, metadata)?;
+        let mut graph = make_graph(graph_dot, metadata)?;
 
-        let mut pipeline = Self {
+        // Run preprocessing to compute the hash for each node
+        for node_idx in graph.node_indices() {
+            Self::compute_hash_for_node_and_parents(node_idx, &input_spec, &mut graph);
+        }
+
+        // Build LUT for node_label -> node_hash
+        let label_to_hash_lut =
+            graph
+                .node_indices()
+                .fold(HashMap::<&String, &String>::new(), |mut acc, node_idx| {
+                    let node = &graph[node_idx];
+                    acc.insert(&node.label, &node.hash);
+                    acc
+                });
+
+        // Build the new input_spec to refer to the hash instead of label
+        input_spec.iter_mut().try_for_each(|(_, node_uris)| {
+            node_uris.iter_mut().try_for_each(|node_uri| {
+                node_uri.node_id = (*label_to_hash_lut.get(&node_uri.node_id).context(
+                    selector::InvalidInputSpecNodeNotInGraph {
+                        node_name: node_uri.node_id.clone(),
+                    },
+                )?)
+                .clone();
+                Ok::<(), OrcaError>(())
+            })
+        })?;
+
+        // Update the output_spec to refer to the hash instead of label
+        output_spec.iter_mut().try_for_each(|(_, node_uri)| {
+            node_uri.node_id = (*label_to_hash_lut.get(&node_uri.node_id).context(
+                selector::InvalidOutputSpecNodeNotInGraph {
+                    node_name: node_uri.node_id.clone(),
+                },
+            )?)
+            .clone();
+
+            Ok::<(), OrcaError>(())
+        })?;
+
+        let pipeline = Self {
             graph,
             input_spec,
             output_spec,
@@ -64,11 +105,6 @@ impl Pipeline {
 
         // Run verification on the pipeline first before computing hash
         pipeline.validate()?;
-
-        // Verification passed, thus we can now compute the hash for each node
-        for node_idx in pipeline.graph.node_indices() {
-            pipeline.compute_hash_for_node_and_parents(node_idx);
-        }
 
         Ok(pipeline)
     }

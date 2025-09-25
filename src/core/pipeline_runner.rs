@@ -265,7 +265,6 @@ impl DockerPipelineRunner {
         while (subscriber.recv_async().await).is_ok() {
             // Message is empty, just increment the counter
             ready_nodes += 1;
-
             if ready_nodes == num_of_nodes {
                 break; // All nodes are ready, we can start sending inputs
             }
@@ -355,8 +354,6 @@ impl DockerPipelineRunner {
         pipeline_run: Arc<PipelineRunInternal>,
         node_id: String,
     ) -> Result<()> {
-        // Determine which keys we are interested in for the given node_id
-
         // Create a zenoh session
         let subscriber = pipeline_run
             .session
@@ -489,6 +486,10 @@ impl DockerPipelineRunner {
             .await
             .context(selector::AgentCommunicationFailure {})?;
 
+        println!(
+            "Waiting for all event handlers for node {} to be ready... with hash {}",
+            node.label, node.hash
+        );
         while status_subscriber.recv_async().await.is_ok() {
             num_of_ready_event_handler += 1;
             if num_of_ready_event_handler == nodes_to_sub_to.len() {
@@ -497,6 +498,7 @@ impl DockerPipelineRunner {
             }
         }
 
+        println!("Node {} is ready with hash {}", node.label, node.hash);
         // Send a ready message so the pipeline knows when to start sending inputs
         pipeline_run
             .session
@@ -606,12 +608,12 @@ impl DockerPipelineRunner {
 /// As a result, each processor only needs to worry about writing their own function to process the msg
 #[async_trait]
 trait NodeProcessor: Send + Sync {
-    async fn process_incoming_packet(&mut self, sender_node_id: &str, incoming_packet: &Packet);
+    async fn process_incoming_packet(&mut self, sender_node_hash: &str, incoming_packet: &Packet);
 
     /// Notifies the processor that the parent node has completed processing
     /// If it is the last parent to complete, it will wait for all processing task to finish
     /// Then send a completion signal
-    async fn mark_parent_as_complete(&mut self, parent_node_id: &str);
+    async fn mark_parent_as_complete(&mut self, parent_node_hash: &str);
 
     fn stop(&mut self);
 }
@@ -620,16 +622,16 @@ trait NodeProcessor: Send + Sync {
 /// Currently missing implementation to call agents for actual pod processing
 struct PodProcessor {
     pipeline_run: Arc<PipelineRunInternal>,
-    node_id: String,
+    node_hash: String,
     pod: Arc<Pod>,
     processing_tasks: JoinSet<()>,
 }
 
 impl PodProcessor {
-    fn new(pipeline_run: Arc<PipelineRunInternal>, node_id: String, pod: Arc<Pod>) -> Self {
+    fn new(pipeline_run: Arc<PipelineRunInternal>, node_hash: String, pod: Arc<Pod>) -> Self {
         Self {
             pipeline_run,
-            node_id,
+            node_hash,
             pod,
             processing_tasks: JoinSet::new(),
         }
@@ -640,7 +642,7 @@ impl PodProcessor {
     /// Will handle the creation of the pod job, submission to the agent, listening for completion, and extracting the `output_packet` if successful
     async fn process_packet(
         pipeline_run: Arc<PipelineRunInternal>,
-        node_id: String,
+        node_hash: String,
         pod: Arc<Pod>,
         incoming_packet: HashMap<String, PathSet>,
     ) -> Result<Packet> {
@@ -660,7 +662,7 @@ impl PodProcessor {
             URI {
                 namespace: pipeline_run.namespace.clone(),
                 path: format!(
-                    "pipeline_outputs/{}/{node_id}/{input_packet_hash}",
+                    "pipeline_outputs/{}/{node_hash}/{input_packet_hash}",
                     pipeline_run.assigned_name
                 )
                 .into(),
@@ -754,12 +756,12 @@ impl PodProcessor {
 impl NodeProcessor for PodProcessor {
     async fn process_incoming_packet(
         &mut self,
-        _sender_node_id: &str,
+        _sender_node_hash: &str,
         incoming_packet: &HashMap<String, PathSet>,
     ) {
         // Clone all necessary fields from self to move into the async block
         let pipeline_run = Arc::clone(&self.pipeline_run);
-        let node_id = self.node_id.clone();
+        let node_hash = self.node_hash.clone();
         let pod = Arc::clone(&self.pod);
 
         let incoming_packet_inner = incoming_packet.clone();
@@ -767,7 +769,7 @@ impl NodeProcessor for PodProcessor {
         self.processing_tasks.spawn(async move {
             let result = match Self::process_packet(
                 Arc::clone(&pipeline_run),
-                node_id.clone(),
+                node_hash.clone(),
                 Arc::clone(&pod),
                 incoming_packet_inner.clone(),
             )
@@ -775,7 +777,7 @@ impl NodeProcessor for PodProcessor {
             {
                 Ok(output_packet) => {
                     match pipeline_run
-                        .send_packets(&node_id, &vec![output_packet])
+                        .send_packets(&node_hash, &vec![output_packet])
                         .await
                     {
                         Ok(()) => Ok(()),
@@ -790,7 +792,7 @@ impl NodeProcessor for PodProcessor {
                     // Successfully processed the packet, nothing to do
                 }
                 Err(err) => {
-                    pipeline_run.send_err_msg(&node_id, err).await;
+                    pipeline_run.send_err_msg(&node_hash, err).await;
                 }
             }
         });
@@ -802,12 +804,12 @@ impl NodeProcessor for PodProcessor {
         // Send out completion signal
         match self
             .pipeline_run
-            .send_packets(&self.node_id, &Vec::new())
+            .send_packets(&self.node_hash, &Vec::new())
             .await
         {
             Ok(()) => {}
             Err(err) => {
-                self.pipeline_run.send_err_msg(&self.node_id, err).await;
+                self.pipeline_run.send_err_msg(&self.node_hash, err).await;
             }
         }
     }
@@ -850,7 +852,7 @@ impl<T: Operator + Send + Sync + 'static> OperatorProcessor<T> {
 impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T> {
     async fn process_incoming_packet(
         &mut self,
-        sender_node_id: &str,
+        sender_node_hash: &str,
         incoming_packet: &HashMap<String, PathSet>,
     ) {
         // Clone all necessary fields from self to move into the async block
@@ -858,7 +860,7 @@ impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T>
         let pipeline_run = Arc::clone(&self.pipeline_run);
         let node_id = self.node_id.clone();
 
-        let sender_node_id_inner = sender_node_id.to_owned();
+        let sender_node_id_inner = sender_node_hash.to_owned();
         let incoming_packet_inner = incoming_packet.clone();
 
         self.processing_tasks.spawn(async move {
@@ -885,7 +887,7 @@ impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T>
         });
     }
 
-    async fn mark_parent_as_complete(&mut self, _parent_node_id: &str) {
+    async fn mark_parent_as_complete(&mut self, _parent_node_hash: &str) {
         // Figure out if this is the last parent or not
         self.num_of_completed_parents += 1;
 
