@@ -23,7 +23,6 @@ use crate::{
 };
 use async_trait::async_trait;
 use names::{Generator, Name};
-use serde::{Deserialize, Serialize};
 use serde_yaml::Serializer;
 use snafu::{OptionExt as _, ResultExt as _};
 use std::{
@@ -38,18 +37,6 @@ use tokio::{
 
 static NODE_OUTPUT_KEY_EXPR: &str = "output";
 static FAILURE_KEY_EXP: &str = "failure";
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-enum NodeOutput {
-    Packet(String, HashMap<String, PathSet>),
-    ProcessingCompleted(String),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct ProcessingFailure {
-    node_id: String,
-    error: String,
-}
 
 /// Internal representation of a pipeline run, which should not be made public due to the fact that it contains
 #[derive(Debug)]
