@@ -45,12 +45,11 @@ pub struct Blob {
     /// BLOB location.
     pub location: URI,
     /// BLOB contents checksum.
+    #[uniffi(default = "")]
     pub checksum: String,
 }
 
-#[uniffi::export]
 impl Blob {
-    #[uniffi::constructor]
     /// Create a new `Blob`
     pub const fn new(kind: BlobKind, location: URI) -> Self {
         Self {
