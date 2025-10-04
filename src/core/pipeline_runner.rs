@@ -738,7 +738,6 @@ impl PodProcessor {
     }
 }
 
-#[expect(clippy::excessive_nesting, reason = "Nesting manageable")]
 #[async_trait]
 impl NodeProcessor for PodProcessor {
     async fn process_incoming_packet(
