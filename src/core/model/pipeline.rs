@@ -1,10 +1,11 @@
 use std::{
     backtrace::Backtrace,
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    result,
 };
 
 use crate::{
-    core::crypto::hash_buffer,
+    core::{crypto::hash_buffer, model::ToYaml},
     uniffi::{
         error::{Kind, OrcaError, Result, selector},
         model::{
@@ -18,7 +19,7 @@ use petgraph::{
     Direction::Incoming,
     graph::{self, NodeIndex},
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeStruct as _};
 use snafu::OptionExt as _;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -254,6 +255,73 @@ impl Pipeline {
             graph[node_idx].hash = hash_buffer(hash_for_node.as_bytes());
         }
     }
+
+    fn to_dot_lex(&self) -> String {
+        // Get all the nodes and their children in lexicographical order
+        let nodes_and_edges = self.graph.node_indices().fold(
+            BTreeMap::<&String, BTreeSet<&String>>::new(),
+            |mut acc, node_idx| {
+                let children = self
+                    .graph
+                    .neighbors_directed(node_idx, petgraph::Direction::Outgoing)
+                    .map(|child_idx| &self.graph[child_idx].hash)
+                    .collect::<BTreeSet<&String>>();
+                acc.insert(&self.graph[node_idx].hash, children);
+                acc
+            },
+        );
+
+        // Build the dot representation string by
+        let mut lines = Vec::new();
+        for (node, node_children) in nodes_and_edges {
+            if node_children.is_empty() {
+                lines.push(format!("  \"{node}\""));
+            } else {
+                for child in node_children {
+                    lines.push(format!("  \"{node}\" -> \"{child}\""));
+                }
+            }
+        }
+
+        // Convert lines into a single string with a proper new line between each entry
+        format!("digraph {{\n{}\n}}", lines.join("\n"))
+    }
+
+    /// Get a `BTreeMap` of <`kernel_hash`, `HashSet`<`node_hashes`>> for all nodes in the graph. Mainly use for serialization
+    pub(crate) fn get_kernel_to_node_lut(&self) -> BTreeMap<String, HashSet<String>> {
+        self.graph.node_indices().fold(
+            BTreeMap::<String, HashSet<String>>::new(),
+            |mut acc, node_idx| {
+                acc.entry(self.graph[node_idx].kernel.get_hash().to_owned())
+                    .or_default()
+                    .insert(self.graph[node_idx].hash.clone());
+                acc
+            },
+        )
+    }
+}
+
+impl Serialize for Pipeline {
+    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("Pipeline", 4)?;
+        state.serialize_field("kernel_to_node_lut", &self.get_kernel_to_node_lut())?;
+        state.serialize_field("dot", &self.to_dot_lex())?;
+        state.serialize_field("input_spec", &self.input_spec)?;
+        state.serialize_field("output_spec", &self.output_spec)?;
+        state.end()
+    }
+}
+
+impl ToYaml for Pipeline {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        Some((field_name.to_owned(), field_value.clone()))
+    }
 }
 
 impl PipelineJob {
@@ -309,5 +377,59 @@ impl PipelineJob {
             .collect::<HashMap<_, _>>();
 
         Ok(node_input_packets)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        core::model::ToYaml as _,
+        uniffi::{
+            error::Result,
+            model::pipeline::{NodeURI, Pipeline},
+            operator::MapOperator,
+        },
+    };
+    use indoc::indoc;
+    use std::collections::HashMap;
+
+    #[test]
+    fn to_yaml() -> Result<()> {
+        let pipeline = Pipeline::new(
+            indoc! {"
+            digraph {
+                A -> B -> C
+            }
+        "},
+            &HashMap::from([
+                (
+                    "A".into(),
+                    MapOperator::new(HashMap::from([("node_key_1".into(), "node_key_2".into())]))?
+                        .into(),
+                ),
+                (
+                    "B".into(),
+                    MapOperator::new(HashMap::from([("node_key_2".into(), "node_key_1".into())]))?
+                        .into(),
+                ),
+                (
+                    "C".into(),
+                    MapOperator::new(HashMap::from([("node_key_1".into(), "node_key_2".into())]))?
+                        .into(),
+                ),
+            ]),
+            HashMap::from([(
+                "pipeline_key_1".into(),
+                vec![NodeURI {
+                    node_id: "A".into(),
+                    key: "node_key_1".into(),
+                }],
+            )]),
+            HashMap::new(),
+        )?;
+
+        println!("{}", pipeline.to_yaml()?);
+
+        Ok(())
     }
 }

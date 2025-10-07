@@ -26,13 +26,14 @@ use uniffi;
 static JOIN_OPERATOR_HASH: LazyLock<String> = LazyLock::new(|| hash_buffer(b"join_operator"));
 
 /// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
-#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize, Serialize)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct Pipeline {
     /// Computational DAG in-memory.
     #[getset(skip)]
+    #[serde(skip_deserializing)]
     pub graph: DiGraph<PipelineNode, ()>,
     /// Exposed, internal input specification. Each input may be fed into more than one node/key if desired.
     pub input_spec: HashMap<String, Vec<NodeURI>>,
