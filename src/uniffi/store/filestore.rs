@@ -4,6 +4,7 @@ use crate::{
         error::{Kind, OrcaError, Result},
         model::{
             ModelType,
+            pipeline::{Kernel, Pipeline},
             pod::{Pod, PodJob, PodResult},
         },
         operator::MapOperator,
@@ -165,6 +166,24 @@ impl Store for LocalFileStore {
 
     fn delete_map_operator(&self, hash: &str) -> Result<()> {
         self.delete_model::<MapOperator>(&ModelID::Hash(hash.to_owned()))
+    }
+
+    fn save_pipeline(&self, pipeline: &Pipeline) -> Result<()> {
+        // Save all the kernels first
+        for kernel in pipeline.get_kernel_lut() {
+            match kernel {
+                Kernel::Pod { pod } => self.save_pod(pod)?,
+                Kernel::JoinOperator => (), // Skip since it's a constant
+                Kernel::MapOperator { mapper } => self.save_map_operator(mapper)?,
+            }
+        }
+
+        // Save the pipeline
+        self.save_model(pipeline, &pipeline.hash, pipeline.annotation.as_ref())?;
+
+        // Save the labels
+
+        Ok(())
     }
 }
 

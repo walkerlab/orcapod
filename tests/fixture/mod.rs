@@ -451,6 +451,11 @@ pub fn pipeline() -> Result<Pipeline> {
                 key: "output".into(),
             },
         )]),
+        Some(Annotation {
+            name: "test".into(),
+            version: "0.1".into(),
+            description: "Test pipeline".into(),
+        }),
     )
 }
 

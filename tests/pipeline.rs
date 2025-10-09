@@ -195,6 +195,7 @@ fn input_packet_checksum() -> Result<()> {
             }],
         )]),
         HashMap::new(),
+        None,
     )?;
 
     let pipeline_job = PipelineJob::new(
@@ -291,6 +292,7 @@ fn invalid_input_spec() -> Result<()> {
                 }],
             )]),
             output_spec.clone(),
+            None
         )
         .is_err(),
         "Pipeline creation should have failed due to invalid input_spec"
@@ -309,6 +311,7 @@ fn invalid_input_spec() -> Result<()> {
                 }],
             )]),
             output_spec,
+            None
         )
         .is_err(),
         "Pipeline creation should have failed due to invalid input_spec"
@@ -334,6 +337,7 @@ fn invalid_output_spec() -> Result<()> {
                     key: "output".into(),
                 }
             )]),
+            None
         )
         .is_err(),
         "Pipeline creation should have failed due to invalid output_spec"
@@ -352,6 +356,7 @@ fn invalid_output_spec() -> Result<()> {
                     key: "output_dne".into(),
                 }
             )]),
+            None
         )
         .is_err(),
         "Pipeline creation should have failed due to invalid output_spec"

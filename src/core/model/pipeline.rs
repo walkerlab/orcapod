@@ -22,7 +22,7 @@ use petgraph::{
 use serde::{Deserialize, Serialize, ser::SerializeStruct as _};
 use snafu::OptionExt as _;
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct PipelineNode {
     // Hash that represent the node
     pub hash: String,
@@ -299,6 +299,15 @@ impl Pipeline {
             },
         )
     }
+
+    pub(crate) fn get_kernel_lut(&self) -> HashSet<&Kernel> {
+        self.graph
+            .node_indices()
+            .fold(HashSet::<&Kernel>::new(), |mut acc, node_idx| {
+                acc.insert(&self.graph[node_idx].kernel);
+                acc
+            })
+    }
 }
 
 impl Serialize for Pipeline {
@@ -320,7 +329,10 @@ impl ToYaml for Pipeline {
         field_name: &str,
         field_value: &serde_yaml::Value,
     ) -> Option<(String, serde_yaml::Value)> {
-        Some((field_name.to_owned(), field_value.clone()))
+        match field_name {
+            "hash" | "annotation" => None, // Skip annotation field
+            _ => Some((field_name.to_owned(), field_value.clone())),
+        }
     }
 }
 
@@ -386,7 +398,10 @@ mod tests {
         core::model::ToYaml as _,
         uniffi::{
             error::Result,
-            model::pipeline::{NodeURI, Pipeline},
+            model::{
+                Annotation,
+                pipeline::{NodeURI, Pipeline},
+            },
             operator::MapOperator,
         },
     };
@@ -426,6 +441,11 @@ mod tests {
                 }],
             )]),
             HashMap::new(),
+            Some(Annotation {
+                name: "test".into(),
+                version: "0.1".into(),
+                description: "Test pipeline".into(),
+            }),
         )?;
 
         println!("{}", pipeline.to_yaml()?);
