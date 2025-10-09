@@ -13,6 +13,7 @@ use orcapod::uniffi::{
         ImageKind, Orchestrator as _, PodRun, PodStatus, docker::LocalDockerOrchestrator,
     },
 };
+use pretty_assertions::assert_eq;
 use std::{collections::HashMap, path::PathBuf};
 
 fn basic_test<T>(start: T) -> Result<()>
@@ -35,6 +36,8 @@ where
         PodStatus::Running,
         "Unexpected state."
     );
+    println!("{:?}", pod_run);
+    println!("{:?}", orchestrator.list_blocking()?);
     assert_eq!(
         orchestrator
             .list_blocking()?
