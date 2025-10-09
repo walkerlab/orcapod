@@ -21,7 +21,7 @@ use orcapod::uniffi::{
     operator::MapOperator,
     store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
 };
-use pretty_assertions::assert_eq as pretty_assert_eq;
+use pretty_assertions::assert_eq;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -49,7 +49,7 @@ fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -
     let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
     model.save(&store)?;
     let annotation = model.get_annotation().expect("Annotation missing.");
-    pretty_assert_eq!(
+    assert_eq!(
         model.list(&store)?,
         vec![
             ModelInfo {
@@ -65,7 +65,7 @@ fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -
         ],
         "List didn't match."
     );
-    pretty_assert_eq!(
+    assert_eq!(
         &model.load(&store)?,
         expected_model,
         "Loaded model doesn't match."
@@ -165,7 +165,7 @@ fn pod_load_from_hash() -> Result<()> {
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     pod.annotation = None;
-    pretty_assert_eq!(
+    assert_eq!(
         store.load_pod(&ModelID::Hash(pod.hash.clone()))?,
         pod,
         "Loaded model from hash doesn't match."
@@ -188,7 +188,7 @@ fn pod_annotation_delete() -> Result<()> {
         description: String::new(),
     });
     store.save_pod(&pod)?;
-    pretty_assert_eq!(
+    assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
@@ -211,7 +211,7 @@ fn pod_annotation_delete() -> Result<()> {
     );
     // case 2: delete new annotation, assert list gives 2 entries: hash, annotation (original).
     store.delete_annotation(&ModelType::Pod, "new-name", "0.5.0")?;
-    pretty_assert_eq!(
+    assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
@@ -235,7 +235,7 @@ fn pod_annotation_delete() -> Result<()> {
             .to_owned()
             .expect("Version missing from `pod_style`"),
     )?;
-    pretty_assert_eq!(
+    assert_eq!(
         store.list_pod()?,
         vec![ModelInfo {
             name: None,
@@ -319,7 +319,7 @@ fn pod_annotation_unique() -> Result<()> {
     )?;
 
     store.save_pod(&pod_with_new_annotation)?;
-    pretty_assert_eq!(
+    assert_eq!(
         HashSet::from_iter(store.list_pod()?),
         HashSet::from([
             ModelInfo {
@@ -335,7 +335,7 @@ fn pod_annotation_unique() -> Result<()> {
         ]),
         "Pod list didn't return 2 expected entries."
     );
-    pretty_assert_eq!(
+    assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
                 annotation.name.clone(),
@@ -357,7 +357,7 @@ fn pod_annotation_unique() -> Result<()> {
         gpu_requirements,
     )?;
     store.save_pod(&pod_with_updated_command)?;
-    pretty_assert_eq!(
+    assert_eq!(
         HashSet::from_iter(store.list_pod()?),
         HashSet::from([
             ModelInfo {
@@ -378,7 +378,7 @@ fn pod_annotation_unique() -> Result<()> {
         ]),
         "Pod list didn't return 3 expected entries."
     );
-    pretty_assert_eq!(
+    assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
                 annotation.name.clone(),
@@ -405,7 +405,7 @@ fn map_operator_basic() -> Result<()> {
     assert!(store.list_map_operator()?.contains(&map_operator.hash));
 
     // Load and compare
-    pretty_assert_eq!(
+    assert_eq!(
         &store.load_map_operator(&map_operator.hash)?,
         &map_operator,
         "Loaded map operator doesn't match."
