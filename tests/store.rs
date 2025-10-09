@@ -18,6 +18,7 @@ use orcapod::uniffi::{
         packet::PathInfo,
         pod::{Pod, RecommendSpecs},
     },
+    operator::MapOperator,
     store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
 };
 use pretty_assertions::assert_eq as pretty_assert_eq;
@@ -387,5 +388,32 @@ fn pod_annotation_unique() -> Result<()> {
         Some(annotation),
         "Pod annotation unexpected."
     );
+    Ok(())
+}
+
+#[test]
+fn map_operator_basic() -> Result<()> {
+    let map_operator =
+        MapOperator::new(HashMap::from([("input_key".into(), "output_key".into())]))?;
+
+    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+
+    println!("Saved map operator with hash: {}", &map_operator.hash);
+    store.save_map_operator(&map_operator)?;
+
+    assert!(store.list_map_operator()?.contains(&map_operator.hash));
+
+    // Load and compare
+    pretty_assert_eq!(
+        &store.load_map_operator(&map_operator.hash)?,
+        &map_operator,
+        "Loaded map operator doesn't match."
+    );
+
+    // Delete and assert not found
+    store.delete_map_operator(&map_operator.hash)?;
+    assert!(!store.list_map_operator()?.contains(&map_operator.hash));
+
     Ok(())
 }

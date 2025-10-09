@@ -51,7 +51,7 @@ pub struct Pod {
     #[serde(serialize_with = "serialize_hashmap")]
     pub output_spec: HashMap<String, PathInfo>,
     /// Execution requirements for the pod.
-    #[serde(default)]
+    #[serde(skip)]
     pub recommend_specs: RecommendSpecs,
     /// Optional GPU requirements for the pod. If set, then the running system needs a GPU that meets the requirements.
     pub gpu_requirements: Option<GPURequirement>,
@@ -99,7 +99,7 @@ impl ToYaml for Pod {
         field_value: &serde_yaml::Value,
     ) -> Option<(String, serde_yaml::Value)> {
         match field_name {
-            "annotation" | "hash" | "recommend_specs" => None,
+            "annotation" | "hash" => None,
             _ => Some((field_name.to_owned(), field_value.clone())),
         }
     }

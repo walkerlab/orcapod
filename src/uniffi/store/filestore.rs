@@ -6,6 +6,7 @@ use crate::{
             ModelType,
             pod::{Pod, PodJob, PodResult},
         },
+        operator::MapOperator,
         store::{ModelID, ModelInfo, Store},
     },
 };
@@ -42,6 +43,7 @@ impl Store for LocalFileStore {
             &pod.recommend_specs.to_yaml()?,
         )
     }
+
     fn load_pod(&self, model_id: &ModelID) -> Result<Pod> {
         let (mut pod, annotation, hash) = self.load_model::<Pod>(model_id)?;
         pod.annotation = annotation;
@@ -75,16 +77,20 @@ impl Store for LocalFileStore {
 
         Ok(pod)
     }
+
     fn list_pod(&self) -> Result<Vec<ModelInfo>> {
         self.list_model::<Pod>()
     }
+
     fn delete_pod(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<Pod>(model_id)
     }
+
     fn save_pod_job(&self, pod_job: &PodJob) -> Result<()> {
         self.save_pod(&pod_job.pod)?;
         self.save_model(pod_job, &pod_job.hash, pod_job.annotation.as_ref())
     }
+
     fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob> {
         let (mut pod_job, annotation, hash) = self.load_model::<PodJob>(model_id)?;
         pod_job.annotation = annotation;
@@ -94,16 +100,20 @@ impl Store for LocalFileStore {
             .into();
         Ok(pod_job)
     }
+
     fn list_pod_job(&self) -> Result<Vec<ModelInfo>> {
         self.list_model::<PodJob>()
     }
+
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodJob>(model_id)
     }
+
     fn save_pod_result(&self, pod_result: &PodResult) -> Result<()> {
         self.save_pod_job(&pod_result.pod_job)?;
         self.save_model(pod_result, &pod_result.hash, pod_result.annotation.as_ref())
     }
+
     fn load_pod_result(&self, model_id: &ModelID) -> Result<PodResult> {
         let (mut pod_result, annotation, hash) = self.load_model::<PodResult>(model_id)?;
         pod_result.annotation = annotation;
@@ -113,12 +123,15 @@ impl Store for LocalFileStore {
             .into();
         Ok(pod_result)
     }
+
     fn list_pod_result(&self) -> Result<Vec<ModelInfo>> {
         self.list_model::<PodResult>()
     }
+
     fn delete_pod_result(&self, model_id: &ModelID) -> Result<()> {
         self.delete_model::<PodResult>(model_id)
     }
+
     fn delete_annotation(&self, model_type: &ModelType, name: &str, version: &str) -> Result<()> {
         let annotation_file = self.make_path(
             model_type,
@@ -128,6 +141,30 @@ impl Store for LocalFileStore {
         fs::remove_file(&annotation_file)?;
 
         Ok(())
+    }
+
+    fn save_map_operator(&self, map_operator: &MapOperator) -> Result<()> {
+        self.save_model(map_operator, &map_operator.hash, None)
+    }
+
+    fn load_map_operator(&self, hash: &str) -> Result<MapOperator> {
+        let (mut map_operator, _, _) =
+            self.load_model::<MapOperator>(&ModelID::Hash(hash.to_owned()))?;
+        hash.clone_into(&mut map_operator.hash);
+        Ok(map_operator)
+    }
+
+    fn list_map_operator(&self) -> Result<Vec<String>> {
+        self.list_model::<MapOperator>().map(|infos| {
+            infos
+                .into_iter()
+                .map(|info| info.hash)
+                .collect::<Vec<String>>()
+        })
+    }
+
+    fn delete_map_operator(&self, hash: &str) -> Result<()> {
+        self.delete_model::<MapOperator>(&ModelID::Hash(hash.to_owned()))
     }
 }
 
