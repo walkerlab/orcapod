@@ -36,8 +36,6 @@ where
         PodStatus::Running,
         "Unexpected state."
     );
-    println!("{:?}", pod_run);
-    println!("{:?}", orchestrator.list_blocking()?);
     assert_eq!(
         orchestrator
             .list_blocking()?
