@@ -308,6 +308,13 @@ impl Pipeline {
                 acc
             })
     }
+
+    /// Get a `HashMap` of <`node_hash`, `node_label`> for all nodes in the graph. Mainly use for serialization
+    pub(crate) fn get_label_lut(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.graph
+            .node_indices()
+            .map(|node_idx| (&self.graph[node_idx].hash, &self.graph[node_idx].label))
+    }
 }
 
 impl Serialize for Pipeline {

@@ -5,8 +5,8 @@ use crate::{
         util::{get_type_name, parse_debug_name},
     },
     uniffi::{
-        error::{Result, selector},
-        model::Annotation,
+        error::{OrcaError, Result, selector},
+        model::{Annotation, pipeline::Pipeline},
         store::{ModelID, ModelInfo, filestore::LocalFileStore},
     },
 };
@@ -244,5 +244,26 @@ impl LocalFileStore {
         fs::remove_dir_all(spec_dir)?;
 
         Ok(())
+    }
+
+    pub(crate) fn get_latest_pipeline_labels_file_name(
+        &self,
+        pipeline: &Pipeline,
+    ) -> Result<Option<String>> {
+        let existing_labels_path = self.make_path(pipeline, &pipeline.hash, "labels/");
+        Ok(if existing_labels_path.exists() {
+            let mut label_file_names = fs::read_dir(&existing_labels_path)?
+                .map(|entry| Ok::<_, OrcaError>(entry?.file_name()))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Sort and get the latest one
+            label_file_names.sort();
+
+            label_file_names
+                .last()
+                .map(|os_str| os_str.to_string_lossy().to_string())
+        } else {
+            None
+        })
     }
 }

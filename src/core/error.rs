@@ -130,6 +130,7 @@ impl fmt::Debug for OrcaError {
             | Kind::InvalidOutputSpecNodeNotInGraph { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::MissingInfo { backtrace, .. }
+            | Kind::FailedToGetLabelHashFromFileName { backtrace, .. }
             | Kind::FailedToGetPodJobOutput { backtrace, .. }
             | Kind::PipelineValidationErrorMissingKeys { backtrace, .. }
             | Kind::PodJobProcessingError { backtrace, .. }

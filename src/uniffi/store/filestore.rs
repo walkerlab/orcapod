@@ -1,7 +1,7 @@
 use crate::{
-    core::model::ToYaml as _,
+    core::{crypto::hash_buffer, model::ToYaml as _},
     uniffi::{
-        error::{Kind, OrcaError, Result},
+        error::{Kind, OrcaError, Result, selector},
         model::{
             ModelType,
             pipeline::{Kernel, Pipeline},
@@ -14,7 +14,8 @@ use crate::{
 use chrono::Utc;
 use derive_more::Display;
 use getset::CloneGetters;
-use std::{backtrace::Backtrace, fs, path::PathBuf};
+use snafu::OptionExt as _;
+use std::{backtrace::Backtrace, collections::HashMap, fs, path::PathBuf};
 use uniffi;
 /// Support for a storage backend on a local filesystem directory.
 #[derive(uniffi::Object, Debug, Display, CloneGetters, Clone)]
@@ -181,7 +182,47 @@ impl Store for LocalFileStore {
         // Save the pipeline
         self.save_model(pipeline, &pipeline.hash, pipeline.annotation.as_ref())?;
 
-        // Save the labels
+        // Get label mapping and hash it
+        let labels_lut_yaml =
+            serde_yaml::to_string(&pipeline.get_label_lut().collect::<HashMap<_, _>>())?;
+        let labels_lut_hash = hash_buffer(labels_lut_yaml.as_bytes());
+
+        // Get the latest label file name if exists
+        let should_save_label = if let Some(latest_label_file_name) =
+            self.get_latest_pipeline_labels_file_name(pipeline)?
+        {
+            // Check if the hash is the same
+            if latest_label_file_name.split('-').next_back().context(
+                selector::FailedToGetLabelHashFromFileName {
+                    file_name: latest_label_file_name.clone(),
+                },
+            )? == labels_lut_hash
+            {
+                false
+            } else {
+                // Hash is different, thus we need to save the new file
+                true
+            }
+        } else {
+            // No existing label file, we need to save the new one
+            true
+        };
+
+        // Save if needed
+        if should_save_label {
+            Self::save_file(
+                self.make_path(
+                    pipeline,
+                    &pipeline.hash,
+                    format!(
+                        "labels/{}-{}",
+                        Utc::now().timestamp_millis(),
+                        labels_lut_hash
+                    ),
+                ),
+                &labels_lut_yaml,
+            )?;
+        }
 
         Ok(())
     }

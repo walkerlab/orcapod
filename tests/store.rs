@@ -31,7 +31,14 @@ use std::{
     vec,
 };
 
-use crate::fixture::str_to_vec;
+use crate::fixture::{pipeline, str_to_vec};
+
+fn get_store_fixtures() -> (TestDirs, LocalFileStore) {
+    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))
+        .expect("Failed to create test directories.");
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    (test_dirs, store)
+}
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     Some(
@@ -45,8 +52,7 @@ fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
 }
 
 fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     model.save(&store)?;
     let annotation = model.get_annotation().expect("Annotation missing.");
     assert_eq!(
@@ -114,8 +120,7 @@ fn pod_result_basic() -> Result<()> {
 
 #[test]
 fn pod_files() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     let pod_style = pod_style()?;
     let annotation = pod_style
         .annotation
@@ -152,16 +157,14 @@ fn pod_files() -> Result<()> {
 
 #[test]
 fn pod_list_empty() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
 
 #[test]
 fn pod_load_from_hash() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     pod.annotation = None;
@@ -175,8 +178,7 @@ fn pod_load_from_hash() -> Result<()> {
 
 #[test]
 fn pod_annotation_delete() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     let model_version = &pod.annotation.as_ref().map(|x| x.version.clone());
@@ -257,8 +259,7 @@ fn pod_annotation_delete() -> Result<()> {
 #[expect(clippy::too_many_lines, reason = "Okay because of creating pods")]
 #[test]
 fn pod_annotation_unique() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
 
     // Pod values
     let annotation = Annotation {
@@ -396,8 +397,7 @@ fn map_operator_basic() -> Result<()> {
     let map_operator =
         MapOperator::new(HashMap::from([("input_key".into(), "output_key".into())]))?;
 
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
 
     println!("Saved map operator with hash: {}", &map_operator.hash);
     store.save_map_operator(&map_operator)?;
@@ -415,5 +415,15 @@ fn map_operator_basic() -> Result<()> {
     store.delete_map_operator(&map_operator.hash)?;
     assert!(!store.list_map_operator()?.contains(&map_operator.hash));
 
+    Ok(())
+}
+
+#[test]
+fn pipeline_basic() -> Result<()> {
+    let pipeline = pipeline()?;
+
+    let (_, store) = get_store_fixtures();
+
+    store.save_pipeline(&pipeline)?;
     Ok(())
 }
