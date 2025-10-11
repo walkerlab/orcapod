@@ -571,6 +571,8 @@ pub struct TestDirs(pub HashMap<String, TempDir>);
 
 impl TestDirs {
     pub fn new(config: &HashMap<String, Option<impl AsRef<Path>>>) -> Result<Self> {
+        // Check if .tmp exists if not create it
+        fs::create_dir_all("tests/.tmp")?;
         Ok(Self(
             config
                 .iter()

@@ -23,13 +23,16 @@ pub fn make_graph(
 ) -> Result<DiGraph<PipelineNode, ()>> {
     let graph =
         DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?).map(
-            |node_idx, node| PipelineNode {
-                hash: String::new(),
-                kernel: get(metadata, &node.id)
-                    .unwrap_or_else(|error| panic!("{error}"))
-                    .clone(),
-                label: node.id.clone(),
-                node_idx,
+            |node_idx, node| {
+                let node_id_without_quotes = node.id.replace('"', "");
+                PipelineNode {
+                    hash: String::new(),
+                    kernel: get(metadata, &node_id_without_quotes)
+                        .unwrap_or_else(|error| panic!("{error}"))
+                        .clone(),
+                    label: node_id_without_quotes.clone(),
+                    node_idx,
+                }
             },
             |_, _| (),
         );

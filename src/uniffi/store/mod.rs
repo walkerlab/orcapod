@@ -152,6 +152,12 @@ pub trait Store: Send + Sync {
     /// # Errors
     /// Will return `Err` if there is an issue saving `pipeline`.
     fn save_pipeline(&self, pipeline: &Pipeline) -> Result<()>;
+
+    /// How to load a stored `Pipeline`
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue loading a `Pipeline` from the store
+    fn load_pipeline(&self, model_id: &ModelID) -> Result<Pipeline>;
 }
 
 /// Store implementation on a local filesystem.

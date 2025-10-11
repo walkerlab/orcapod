@@ -20,7 +20,12 @@ use getset::CloneGetters;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt as _;
-use std::{collections::HashMap, hash::Hash, path::PathBuf, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    path::PathBuf,
+    sync::Arc,
+};
 use std::{hash::Hasher, sync::LazyLock};
 use uniffi;
 
@@ -122,6 +127,18 @@ impl Pipeline {
             hash: hash_buffer(pipeline_no_hash.to_yaml()?.as_bytes()),
             ..pipeline_no_hash
         })
+    }
+}
+
+impl PartialEq for Pipeline {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+            && self.annotation == other.annotation
+            && self.input_spec.keys().collect::<HashSet<_>>()
+                == other.input_spec.keys().collect::<HashSet<_>>()
+            && self.input_spec.values().collect::<HashSet<_>>()
+                == other.input_spec.values().collect::<HashSet<_>>()
+            && self.output_spec == other.output_spec
     }
 }
 
@@ -287,7 +304,9 @@ impl Hash for Kernel {
 }
 
 /// Index from pipeline node into pod specification.
-#[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(
+    uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 pub struct NodeURI {
     /// Node reference name in pipeline.
     pub node_id: String,

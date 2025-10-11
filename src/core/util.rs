@@ -9,26 +9,14 @@ use std::{
 
 #[expect(
     clippy::unwrap_used,
-    reason = "Cannot return `None` since `type_name` always returns `&str`."
-)]
-pub fn get_type_name<T>() -> String {
-    type_name::<T>()
-        .split("::")
-        .map(str::to_owned)
-        .last()
-        .unwrap()
-}
-
-#[expect(
-    clippy::unwrap_used,
     reason = "Cannot return `None` since debug format always returns `String`."
 )]
-pub fn parse_debug_name<T: fmt::Debug>(instance: &T) -> String {
-    format!("{instance:?}")
-        .split(' ')
-        .map(str::to_owned)
-        .next()
+pub fn get_type_name<T: fmt::Debug>() -> String {
+    type_name::<T>()
+        .split("::")
+        .last()
         .unwrap()
+        .to_ascii_lowercase()
 }
 
 pub fn get<'map, K, V, Q>(map: &'map HashMap<K, V>, key: &Q) -> Result<&'map V>

@@ -126,12 +126,11 @@ fn pod_files() -> Result<()> {
         .annotation
         .as_ref()
         .expect("Annotation missing from `pod_style`");
-    let annotation_file = store.make_path(
-        &pod_style,
+    let annotation_file = store.make_path::<Pod>(
         &pod_style.hash,
         LocalFileStore::make_annotation_relpath(&annotation.name, &annotation.version),
     );
-    let spec_file = store.make_path(&pod_style, &pod_style.hash, LocalFileStore::SPEC_RELPATH);
+    let spec_file = store.make_path::<Pod>(&pod_style.hash, LocalFileStore::SPEC_RELPATH);
 
     store.save_pod(&pod_style)?;
     assert!(spec_file.exists(), "Spec file missing.");
@@ -420,10 +419,19 @@ fn map_operator_basic() -> Result<()> {
 
 #[test]
 fn pipeline_basic() -> Result<()> {
-    let pipeline = pipeline()?;
+    let mut pipeline = pipeline()?;
 
     let (_, store) = get_store_fixtures();
+    pipeline.annotation = None;
 
     store.save_pipeline(&pipeline)?;
+
+    let loaded_pipeline = store.load_pipeline(&ModelID::Hash(pipeline.hash.to_owned()))?;
+
+    assert_eq!(loaded_pipeline.annotation, pipeline.annotation);
+    assert_eq!(loaded_pipeline.output_spec, pipeline.output_spec);
+    assert_eq!(loaded_pipeline.hash, pipeline.hash);
+    assert_eq!(loaded_pipeline, pipeline);
+
     Ok(())
 }

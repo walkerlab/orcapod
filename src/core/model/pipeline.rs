@@ -287,10 +287,10 @@ impl Pipeline {
         format!("digraph {{\n{}\n}}", lines.join("\n"))
     }
 
-    /// Get a `BTreeMap` of <`kernel_hash`, `HashSet`<`node_hashes`>> for all nodes in the graph. Mainly use for serialization
-    pub(crate) fn get_kernel_to_node_lut(&self) -> BTreeMap<String, HashSet<String>> {
+    /// Get a `BTreeMap` of <`kernel_hash`, `BTreeSet`<`node_hashes`>> for all nodes in the graph. Mainly use for serialization
+    pub(crate) fn get_kernel_to_node_lut(&self) -> BTreeMap<String, BTreeSet<String>> {
         self.graph.node_indices().fold(
-            BTreeMap::<String, HashSet<String>>::new(),
+            BTreeMap::<String, BTreeSet<String>>::new(),
             |mut acc, node_idx| {
                 acc.entry(self.graph[node_idx].kernel.get_hash().to_owned())
                     .or_default()
@@ -309,11 +309,16 @@ impl Pipeline {
             })
     }
 
-    /// Get a `HashMap` of <`node_hash`, `node_label`> for all nodes in the graph. Mainly use for serialization
+    /// Get a `HashMap` of <`node_hash`, `node_label`> for all nodes in the graph if label is not empty. Mainly use for serialization
     pub(crate) fn get_label_lut(&self) -> impl Iterator<Item = (&String, &String)> {
-        self.graph
-            .node_indices()
-            .map(|node_idx| (&self.graph[node_idx].hash, &self.graph[node_idx].label))
+        self.graph.node_indices().filter_map(|node_idx| {
+            let label = &self.graph[node_idx].label;
+            if label.is_empty() {
+                None
+            } else {
+                Some((&self.graph[node_idx].hash, label))
+            }
+        })
     }
 }
 
@@ -323,9 +328,20 @@ impl Serialize for Pipeline {
         S: serde::Serializer,
     {
         let mut state = serializer.serialize_struct("Pipeline", 4)?;
-        state.serialize_field("kernel_to_node_lut", &self.get_kernel_to_node_lut())?;
+        state.serialize_field("kernel_lut", &self.get_kernel_to_node_lut())?;
         state.serialize_field("dot", &self.to_dot_lex())?;
-        state.serialize_field("input_spec", &self.input_spec)?;
+
+        // Input spec needs to be sorted for consistent serialization
+        let input_spec_sorted: BTreeMap<_, Vec<NodeURI>> = self
+            .input_spec
+            .iter()
+            .map(|(k, v)| {
+                let mut sorted_v = v.clone();
+                sorted_v.sort();
+                (k, sorted_v)
+            })
+            .collect();
+        state.serialize_field("input_spec", &input_spec_sorted)?;
         state.serialize_field("output_spec", &self.output_spec)?;
         state.end()
     }
@@ -413,6 +429,7 @@ mod tests {
         },
     };
     use indoc::indoc;
+    use pretty_assertions::assert_eq;
     use std::collections::HashMap;
 
     #[test]
@@ -455,7 +472,29 @@ mod tests {
             }),
         )?;
 
-        println!("{}", pipeline.to_yaml()?);
+        assert_eq!(
+            pipeline.to_yaml()?,
+            indoc! {r#"
+            class: pipeline
+            kernel_to_node_lut:
+              2980eb39e3702442cc31656d6ec3995f91680ab042a27160a00ffe33b91419af:
+              - 4b498582ed57ca6a10809d7480bd3f159542ad139e402698e3f525fc6b0d4dea
+              c8f036079b69beee914434c1e01be638972ce05cd2e640fc1e9be7bf3d9e76be:
+              - 368c7a517f3fbdd7cab10c90ebc44e44765fc33f66b4f4f5151a6bee322d8217
+              - 6c84111298d0cfe811dff3f10ab444795c0a9d60609ba1b9391c45e642a69afa
+            dot: |-
+              digraph {
+                "368c7a517f3fbdd7cab10c90ebc44e44765fc33f66b4f4f5151a6bee322d8217"
+                "4b498582ed57ca6a10809d7480bd3f159542ad139e402698e3f525fc6b0d4dea" -> "368c7a517f3fbdd7cab10c90ebc44e44765fc33f66b4f4f5151a6bee322d8217"
+                "6c84111298d0cfe811dff3f10ab444795c0a9d60609ba1b9391c45e642a69afa" -> "4b498582ed57ca6a10809d7480bd3f159542ad139e402698e3f525fc6b0d4dea"
+              }
+            input_spec:
+              pipeline_key_1:
+              - node_id: 6c84111298d0cfe811dff3f10ab444795c0a9d60609ba1b9391c45e642a69afa
+                key: node_key_1
+            output_spec: {}
+            "#},
+        );
 
         Ok(())
     }

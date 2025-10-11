@@ -5,12 +5,13 @@ use serde::{Serialize, Serializer};
 use serde_yaml::{self, Value};
 use std::{
     collections::{BTreeMap, HashMap},
+    fmt::Debug,
     hash::BuildHasher,
     result,
 };
 
 /// Trait to handle serialization to yaml for `OrcaPod` models
-pub trait ToYaml: Serialize + Sized {
+pub trait ToYaml: Serialize + Sized + Debug {
     /// Serializes the instance to a YAML string.
     /// # Errors
     /// Will return `Err` if it fail to serialize instance to string
