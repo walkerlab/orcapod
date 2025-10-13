@@ -158,6 +158,21 @@ pub trait Store: Send + Sync {
     /// # Errors
     /// Will return `Err` if there is an issue loading a `Pipeline` from the store
     fn load_pipeline(&self, model_id: &ModelID) -> Result<Pipeline>;
+
+    /// How to query stored pipelines.
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue querying metadata from existing pipelines in the
+    /// store.
+    fn list_pipeline(&self) -> Result<Vec<ModelInfo>>;
+
+    /// How to explicitly delete a stored pipeline and all associated annotations (does not
+    /// propagate).
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue deleting a pipeline from the store using `name` and
+    /// `version`.
+    fn delete_pipeline(&self, model_id: &ModelID) -> Result<()>;
 }
 
 /// Store implementation on a local filesystem.

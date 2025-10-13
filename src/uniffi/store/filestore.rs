@@ -318,6 +318,14 @@ impl Store for LocalFileStore {
         // Load the labels LUT
         Ok(pipeline)
     }
+
+    fn list_pipeline(&self) -> Result<Vec<ModelInfo>> {
+        self.list_model::<Pipeline>()
+    }
+
+    fn delete_pipeline(&self, model_id: &ModelID) -> Result<()> {
+        self.delete_model::<Pipeline>(model_id)
+    }
 }
 
 #[uniffi::export]

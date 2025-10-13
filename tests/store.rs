@@ -55,6 +55,7 @@ fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -
     let (_, store) = get_store_fixtures();
     model.save(&store)?;
     let annotation = model.get_annotation().expect("Annotation missing.");
+
     assert_eq!(
         model.list(&store)?,
         vec![
@@ -419,19 +420,6 @@ fn map_operator_basic() -> Result<()> {
 
 #[test]
 fn pipeline_basic() -> Result<()> {
-    let mut pipeline = pipeline()?;
-
-    let (_, store) = get_store_fixtures();
-    pipeline.annotation = None;
-
-    store.save_pipeline(&pipeline)?;
-
-    let loaded_pipeline = store.load_pipeline(&ModelID::Hash(pipeline.hash.to_owned()))?;
-
-    assert_eq!(loaded_pipeline.annotation, pipeline.annotation);
-    assert_eq!(loaded_pipeline.output_spec, pipeline.output_spec);
-    assert_eq!(loaded_pipeline.hash, pipeline.hash);
-    assert_eq!(loaded_pipeline, pipeline);
-
-    Ok(())
+    let pipeline = pipeline()?;
+    basic_test(&pipeline, &pipeline)
 }
