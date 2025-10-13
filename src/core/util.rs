@@ -1,5 +1,5 @@
 use crate::uniffi::error::{Result, selector};
-use heck::ToSnakeCase;
+use heck::ToSnakeCase as _;
 use snafu::OptionExt as _;
 use std::{
     any::type_name,
