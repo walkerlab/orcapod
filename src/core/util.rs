@@ -1,4 +1,5 @@
 use crate::uniffi::error::{Result, selector};
+use heck::ToSnakeCase;
 use snafu::OptionExt as _;
 use std::{
     any::type_name,
@@ -12,11 +13,7 @@ use std::{
     reason = "Cannot return `None` since debug format always returns `String`."
 )]
 pub fn get_type_name<T: fmt::Debug>() -> String {
-    type_name::<T>()
-        .split("::")
-        .last()
-        .unwrap()
-        .to_ascii_lowercase()
+    type_name::<T>().split("::").last().unwrap().to_snake_case()
 }
 
 pub fn get<'map, K, V, Q>(map: &'map HashMap<K, V>, key: &Q) -> Result<&'map V>

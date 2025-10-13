@@ -476,7 +476,7 @@ mod tests {
             pipeline.to_yaml()?,
             indoc! {r#"
             class: pipeline
-            kernel_to_node_lut:
+            kernel_lut:
               2980eb39e3702442cc31656d6ec3995f91680ab042a27160a00ffe33b91419af:
               - 4b498582ed57ca6a10809d7480bd3f159542ad139e402698e3f525fc6b0d4dea
               c8f036079b69beee914434c1e01be638972ce05cd2e640fc1e9be7bf3d9e76be:
