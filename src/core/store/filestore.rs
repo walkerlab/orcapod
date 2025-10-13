@@ -194,7 +194,7 @@ impl LocalFileStore {
                 Ok((
                     serde_yaml::from_str(
                         &fs::read_to_string(path.clone())
-                            .context(selector::InvalidFileOrDirPath { path })?,
+                            .context(selector::InvalidPath { path })?,
                     )?,
                     None,
                     hash.to_owned(),
