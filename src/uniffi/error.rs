@@ -37,7 +37,7 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("{source} ({path:?})."))]
-    InvalidFilepath {
+    InvalidPath {
         path: PathBuf,
         source: io::Error,
         backtrace: Option<Backtrace>,

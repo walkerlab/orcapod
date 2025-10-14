@@ -122,7 +122,7 @@ impl fmt::Debug for OrcaError {
         match &self.kind {
             Kind::AgentCommunicationFailure { backtrace, .. }
             | Kind::IncompletePacket { backtrace, .. }
-            | Kind::InvalidFilepath { backtrace, .. }
+            | Kind::InvalidPath { backtrace, .. }
             | Kind::MissingInfo { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChronoParseError { backtrace, .. }
