@@ -170,11 +170,11 @@ impl Agent {
             async |agent, inner_namespace_lookup, _, pod_job| {
                 let pod_run = agent
                     .orchestrator
-                    .start(&inner_namespace_lookup, &pod_job)
+                    .start(&pod_job, &inner_namespace_lookup)
                     .await?;
                 let pod_result = agent
                     .orchestrator
-                    .get_result(&inner_namespace_lookup, &pod_run)
+                    .get_result(&pod_run, &inner_namespace_lookup)
                     .await?;
                 agent.orchestrator.delete(&pod_run).await?;
                 Ok(pod_result)
@@ -190,6 +190,7 @@ impl Agent {
                                     PodStatus::Completed => "success",
                                     PodStatus::Running
                                     | PodStatus::Failed(_)
+                                    | PodStatus::Undefined
                                     | PodStatus::Unset => "failure",
                                 }
                                 .to_owned(),
