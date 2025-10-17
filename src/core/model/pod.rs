@@ -156,6 +156,7 @@ mod tests {
             1_737_922_307,
             1_737_925_907,
             &TEST_FILE_NAMESPACE_LOOKUP,
+            "example_logs".to_owned(),
         )
     }
 
@@ -233,7 +234,7 @@ mod tests {
     fn pod_result_hash() {
         assert_eq!(
             basic_pod_result().unwrap().hash,
-            "42aef3e7671bd8762e36978d0e7ac79e2f416dbacb153b22b8c509fa5d8aa2ed",
+            "92809a4ce13b4fe8c8dcdcf2b48dd14a9dd885593fe3ab5d9809d27bc9a16354",
             "Hash didn't match."
         );
     }
@@ -256,6 +257,7 @@ mod tests {
                 status: Completed
                 created: 1737922307
                 terminated: 1737925907
+                logs: example_logs
             "},
             "YAML serialization didn't match."
         );
