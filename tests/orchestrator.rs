@@ -50,10 +50,10 @@ fn basic_test(
         orchestrator
             .list_blocking()?
             .into_iter()
-            .filter(|pod_run_from_list| *pod_run_from_list == pod_run)
+            .filter(|pod_run_from_list| pod_run_from_list == pod_run)
             .map(|run| Ok(orchestrator.get_info_blocking(&run)?.command))
             .collect::<Result<Vec<_>>>()?,
-        vec![expected_command.clone()],
+        vec![expected_command],
         "Unexpected list."
     );
     // await result
@@ -68,7 +68,7 @@ fn basic_test(
         orchestrator
             .list_blocking()?
             .into_iter()
-            .filter(|pod_run_from_list| *pod_run_from_list == pod_run)
+            .filter(|pod_run_from_list| pod_run_from_list == pod_run)
             .map(|run| Ok(orchestrator.get_info_blocking(&run)?.command))
             .collect::<Result<Vec<_>>>()?,
         vec![expected_command],
