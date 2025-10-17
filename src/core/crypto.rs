@@ -62,7 +62,10 @@ pub fn hash_file(filepath: impl AsRef<Path>) -> Result<String> {
 pub fn hash_dir(dirpath: impl AsRef<Path>) -> Result<String> {
     let summary: BTreeMap<String, String> = dirpath
         .as_ref()
-        .read_dir()?
+        .read_dir()
+        .context(selector::InvalidPath {
+            path: dirpath.as_ref(),
+        })?
         .map(|path| {
             let access_path = path?.path();
             Ok((

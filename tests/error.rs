@@ -36,7 +36,7 @@ fn external_bollard() -> Result<()> {
     pod.image = "nonexistent_image".to_owned();
     pod_job.pod = Arc::new(pod);
     assert!(
-        orch.start_blocking(&NAMESPACE_LOOKUP_READ_ONLY, &pod_job)
+        orch.start_blocking(&pod_job, &NAMESPACE_LOOKUP_READ_ONLY)
             .is_err_and(contains_debug),
         "Did not raise a bollard error."
     );
@@ -131,9 +131,9 @@ async fn internal_agent_communication_failure() -> Result<()> {
 fn internal_incomplete_packet() -> Result<()> {
     assert!(
         pod_job_custom(
-            &pod_custom(
+            pod_custom(
                 "alpine:3.14",
-                &["echo".into()],
+                vec!["echo".into()],
                 HashMap::from([(
                     "key_1".into(),
                     PathInfo {
@@ -163,7 +163,7 @@ fn internal_key_missing() {
 async fn internal_start_pod_jobs() -> Result<()> {
     let client = AgentClient::new("error_internal-start-pod-jobs".into(), "host".into())?;
     let mut pod_job = pod_job_custom(
-        &pod_custom("alpine:3.14", &str_to_vec("sleep 5"), HashMap::new())?,
+        pod_custom("alpine:3.14", str_to_vec("sleep 5"), HashMap::new())?,
         HashMap::new(),
         &NAMESPACE_LOOKUP_READ_ONLY,
     )?;

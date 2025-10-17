@@ -27,6 +27,8 @@ pub enum PodStatus {
     Completed,
     /// Run failed with the provided error code.
     Failed(i16),
+    /// For other container states that are not listed.
+    Undefined,
     /// No status set.
     #[default]
     Unset,
@@ -77,9 +79,9 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// Will return `Err` if there is an issue starting the container.
     fn start_with_altimage_blocking(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: &ImageKind,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun>;
     /// How to synchronously start containers. Assumes `PodJob` image is published.
     ///
@@ -88,8 +90,8 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// Will return `Err` if there is an issue starting the container.
     fn start_blocking(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun>;
     /// How to synchronously query containers.
     ///
@@ -116,9 +118,13 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// Will return `Err` if there is an issue creating a pod result.
     fn get_result_blocking(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_run: &PodRun,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodResult>;
+    /// Get the logs for a specific pod run.
+    /// # Errors
+    /// Will return `Err` if there is an issue getting logs.
+    fn get_logs_blocking(&self, pod_run: &PodRun) -> Result<String>;
     /// How to asynchronously start containers with an alternate image.
     ///
     /// # Errors
@@ -126,9 +132,9 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// Will return `Err` if there is an issue starting the container.
     async fn start_with_altimage(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
         image: &ImageKind,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun>;
     /// How to asynchronously start containers. Assumes `PodJob` image is published.
     ///
@@ -137,8 +143,8 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// Will return `Err` if there is an issue starting the container.
     async fn start(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_job: &PodJob,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodRun>;
     /// How to asynchronously query containers.
     ///
@@ -165,9 +171,12 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// Will return `Err` if there is an issue creating a pod result.
     async fn get_result(
         &self,
-        namespace_lookup: &HashMap<String, PathBuf>,
         pod_run: &PodRun,
+        namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<PodResult>;
+
+    /// Get the logs for a specific pod run.
+    async fn get_logs(&self, pod_run: &PodRun) -> Result<String>;
 }
 /// Orchestration execution agent daemon and client.
 pub mod agent;

@@ -267,6 +267,8 @@ pub struct PodResult {
     pub created: u64,
     /// Time in epoch when terminated in seconds.
     pub terminated: u64,
+    /// Logs about stdout and stderr, where stderr is append at the end
+    pub logs: String,
 }
 
 impl PodResult {
@@ -283,6 +285,7 @@ impl PodResult {
         created: u64,
         terminated: u64,
         namespace_lookup: &HashMap<String, PathBuf>,
+        logs: String,
     ) -> Result<Self> {
         let output_packet = pod_job
             .pod
@@ -345,6 +348,7 @@ impl PodResult {
             status,
             created,
             terminated,
+            logs,
         };
         Ok(Self {
             hash: hash_buffer(pod_result_no_hash.to_yaml()?),
