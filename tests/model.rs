@@ -131,6 +131,7 @@ fn pod_result_to_yaml() -> Result<()> {
             status: Completed
             created: 1737922307
             terminated: 1737925907
+            logs: Example logs
         "},
         "YAML serialization didn't match."
     );

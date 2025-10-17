@@ -156,18 +156,19 @@ pub fn pod_result_style(
         1_737_922_307,
         1_737_925_907,
         namespace_lookup,
+        "Example logs".to_owned(),
     )
 }
 
 pub fn pod_custom(
     image_reference: &str,
-    command: &[String],
+    command: Vec<String>,
     input_spec: HashMap<String, PathInfo, RandomState>,
 ) -> Result<Pod> {
     Pod::new(
         None,
         image_reference.into(),
-        command.into(),
+        command,
         input_spec,
         PathBuf::from("/tmp/output"),
         HashMap::new(),
@@ -180,13 +181,13 @@ pub fn pod_custom(
 }
 
 pub fn pod_job_custom(
-    pod: &Pod,
+    pod: Pod,
     input_packet: Packet,
     namespace_lookup: &HashMap<String, PathBuf, RandomState>,
 ) -> Result<PodJob> {
     PodJob::new(
         None,
-        Arc::new(pod.clone()),
+        pod.into(),
         input_packet,
         URI {
             namespace: "default".to_owned(),
@@ -209,9 +210,9 @@ pub fn pod_jobs_stresser(
         .map(|i| {
             if i <= success_count {
                 return Ok(pod_job_custom(
-                    &pod_custom(
+                    pod_custom(
                         image_reference,
-                        &str_to_vec(&format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief")),
+                        str_to_vec(&format!("stress-ng --cpu 1 --cpu-load 100 --timeout {run_duration_secs} --metrics-brief")),
                         HashMap::new()
                     )?,
                     HashMap::new(),
@@ -220,7 +221,7 @@ pub fn pod_jobs_stresser(
                 .into());
             }
             Ok(pod_job_custom(
-                &pod_custom(image_reference, &str_to_vec("sleep crash"), HashMap::new())?,
+                pod_custom(image_reference, str_to_vec("sleep crash"), HashMap::new())?,
                 HashMap::new(),
                 &NAMESPACE_LOOKUP_READ_ONLY,
             )?

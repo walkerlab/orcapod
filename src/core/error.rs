@@ -122,8 +122,10 @@ impl fmt::Debug for OrcaError {
         match &self.kind {
             Kind::AgentCommunicationFailure { backtrace, .. }
             | Kind::EmptyDir { backtrace, .. }
+            | Kind::FailedToStartPod { backtrace, .. }
+            | Kind::FailedToExtractRunInfo { backtrace, .. }
             | Kind::IncompletePacket { backtrace, .. }
-            | Kind::InvalidFilepath { backtrace, .. }
+            | Kind::InvalidPath { backtrace, .. }
             | Kind::InvalidIndex { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::MissingInfo { backtrace, .. }
