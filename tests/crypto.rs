@@ -1,4 +1,5 @@
 #![expect(missing_docs, clippy::panic_in_result_fn, reason = "OK in tests.")]
+pub mod fixture;
 
 use orcapod::{
     core::crypto::{hash_buffer, hash_dir, hash_file},

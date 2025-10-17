@@ -9,7 +9,6 @@
     ],
     "files.autoSave": "off",
     "files.insertFinalNewline": true,
-    "gitlens.showWelcomeOnInstall": false,
     "gitlens.showWhatsNewAfterUpgrades": false,
     "lldb.consoleMode": "evaluate",
     "rust-analyzer.cargo.features": [

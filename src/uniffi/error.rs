@@ -18,6 +18,7 @@ use std::{
 };
 use tokio::task;
 use uniffi;
+
 /// Shorthand for a Result that returns an [`OrcaError`].
 pub type Result<T, E = OrcaError> = result::Result<T, E>;
 /// Possible errors you may encounter.
@@ -37,6 +38,16 @@ pub(crate) enum Kind {
         container_name: String,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display(
+        "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
+    ))]
+    FailedToGetPodJobOutput {
+        pod_job_hash: String,
+        packet_key: String,
+        path: Box<PathBuf>,
+        io_error: Box<io::Error>,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
     IncompletePacket {
         kind: String,
@@ -52,14 +63,40 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("{source} ({path:?})."))]
-    InvalidFilepath {
+    InvalidPath {
         path: PathBuf,
         source: io::Error,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Failed to get items at idx {idx}."))]
+    InvalidIndex {
+        idx: usize,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Key '{key}' was not found in map."))]
+    KeyMissing {
+        key: String,
         backtrace: Option<Backtrace>,
     },
     #[snafu(display("Missing info. Details: {details}."))]
     MissingInfo {
         details: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Pod job submission failed with reason: {reason}."))]
+    PodJobSubmissionFailed {
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Pod job {hash} failed to process with reason: {reason}."))]
+    PodJobProcessingError {
+        hash: String,
+        reason: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Unexpected path type: {path:?}. Only support files and directories."))]
+    UnexpectedPathType {
+        path: PathBuf,
         backtrace: Option<Backtrace>,
     },
     #[snafu(transparent)]

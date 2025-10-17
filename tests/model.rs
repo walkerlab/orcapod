@@ -102,7 +102,7 @@ fn pod_job_to_yaml() -> Result<()> {
 
 #[test]
 fn hash_pod_result() -> Result<()> {
-    assert_eq!(
+    pretty_assert_eq!(
         pod_result_style(&NAMESPACE_LOOKUP_READ_ONLY)?.hash,
         "0bc0f17230cf78dbf3054c6887f42abad8b48382efee2ffe1adc79f0ae02fd1a",
         "Hash didn't match."

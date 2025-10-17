@@ -57,4 +57,5 @@ where
     sorted.serialize(serializer)
 }
 
+pub mod pipeline;
 pub mod pod;

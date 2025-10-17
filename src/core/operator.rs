@@ -1,12 +1,13 @@
 use crate::uniffi::{error::Result, model::packet::Packet};
 use async_trait;
 use itertools::Itertools as _;
+use serde::{Deserialize, Serialize};
 use std::{clone::Clone, collections::HashMap, iter::IntoIterator, sync::Arc};
 use tokio::sync::Mutex;
 
 #[async_trait::async_trait]
 pub trait Operator {
-    async fn next(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>>;
+    async fn process_packet(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>>;
 }
 
 pub struct JoinOperator {
@@ -25,7 +26,7 @@ impl JoinOperator {
 
 #[async_trait::async_trait]
 impl Operator for JoinOperator {
-    async fn next(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>> {
+    async fn process_packet(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>> {
         let mut received_packets = self.received_packets.lock().await;
         received_packets
             .entry(stream_name.clone())
@@ -61,8 +62,9 @@ impl Operator for JoinOperator {
     }
 }
 
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct MapOperator {
-    map: HashMap<String, String>,
+    pub map: HashMap<String, String>,
 }
 
 impl MapOperator {
@@ -73,7 +75,7 @@ impl MapOperator {
 
 #[async_trait::async_trait]
 impl Operator for MapOperator {
-    async fn next(&self, _: String, packet: Packet) -> Result<Vec<Packet>> {
+    async fn process_packet(&self, _: String, packet: Packet) -> Result<Vec<Packet>> {
         Ok(vec![
             packet
                 .iter()

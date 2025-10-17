@@ -2,7 +2,8 @@ use crate::{
     core::{
         crypto::{hash_blob, make_random_hash},
         graph::make_graph,
-        pipeline::PipelineNode,
+        model::pipeline::PipelineNode,
+        operator::MapOperator,
         validation::validate_packet,
     },
     uniffi::{
@@ -30,9 +31,9 @@ pub struct Pipeline {
     #[getset(skip)]
     pub graph: DiGraph<PipelineNode, ()>,
     /// Exposed, internal input specification. Each input may be fed into more than one node/key if desired.
-    pub input_spec: HashMap<String, Vec<SpecURI>>,
+    pub input_spec: HashMap<String, Vec<NodeURI>>,
     /// Exposed, internal output specification. Each output is associated with only one node/key.
-    pub output_spec: HashMap<String, SpecURI>,
+    pub output_spec: HashMap<String, NodeURI>,
 }
 
 #[uniffi::export]
@@ -46,14 +47,15 @@ impl Pipeline {
     pub fn new(
         graph_dot: &str,
         metadata: HashMap<String, Kernel>,
-        input_spec: &HashMap<String, Vec<SpecURI>>,
-        output_spec: &HashMap<String, SpecURI>,
+        input_spec: HashMap<String, Vec<NodeURI>>,
+        output_spec: HashMap<String, NodeURI>,
     ) -> Result<Self> {
         let graph = make_graph(graph_dot, metadata)?;
+
         Ok(Self {
             graph,
-            input_spec: input_spec.clone(),
-            output_spec: output_spec.clone(),
+            input_spec,
+            output_spec,
         })
     }
 }
@@ -79,7 +81,6 @@ pub struct PipelineJob {
     pub output_dir: URI,
 }
 
-#[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
 #[uniffi::export]
 impl PipelineJob {
     /// Construct a new pipeline job instance.
@@ -91,7 +92,7 @@ impl PipelineJob {
     pub fn new(
         pipeline: Arc<Pipeline>,
         input_packet: &HashMap<String, Vec<PathSet>>,
-        output_dir: &URI,
+        output_dir: URI,
         namespace_lookup: &HashMap<String, PathBuf>,
     ) -> Result<Self> {
         validate_packet("input".into(), &pipeline.input_spec, input_packet)?;
@@ -124,33 +125,75 @@ impl PipelineJob {
             hash: make_random_hash(),
             pipeline,
             input_packet: input_packet_with_checksum,
-            output_dir: output_dir.clone(),
+            output_dir,
         })
     }
 }
 
+/// Struct to hold the result of a pipeline execution.
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, Display, CloneGetters)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct PipelineResult {
+    /// The pipeline job that was executed.
+    pub pipeline_job: Arc<PipelineJob>,
+    /// The result of the pipeline execution.
+    pub output_packets: HashMap<String, Vec<PathSet>>,
+    /// Logs of any failures that occurred during the pipeline execution.
+    pub failure_logs: Vec<String>,
+    /// The status of the pipeline execution.
+    pub status: PipelineStatus,
+}
+
+/// The status of a pipeline execution.
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum PipelineStatus {
+    /// The pipeline is currently running.
+    Running,
+    /// The pipeline has completed successfully.
+    Succeeded,
+    /// The pipeline has failed.
+    Failed,
+    /// The pipeline has partially succeeded. There should be some failure logs
+    PartiallySucceeded,
+}
 /// A node in a computational pipeline.
-#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize)]
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub enum Kernel {
     /// Pod reference.
     Pod {
         /// See [`Pod`](crate::uniffi::model::pod::Pod).
-        r#ref: Arc<Pod>,
+        pod: Arc<Pod>,
     },
     /// Cartesian product operation. See [`JoinOperator`](crate::core::operator::JoinOperator).
     JoinOperator,
     /// Rename a path set key operation.
     MapOperator {
         /// See [`MapOperator`](crate::core::operator::MapOperator).
-        map: HashMap<String, String>,
+        mapper: Arc<MapOperator>,
     },
+}
+
+impl From<MapOperator> for Kernel {
+    fn from(mapper: MapOperator) -> Self {
+        Self::MapOperator {
+            mapper: Arc::new(mapper),
+        }
+    }
+}
+
+impl From<Pod> for Kernel {
+    fn from(pod: Pod) -> Self {
+        Self::Pod { pod: Arc::new(pod) }
+    }
 }
 
 /// Index from pipeline node into pod specification.
 #[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct SpecURI {
+pub struct NodeURI {
     /// Node reference name in pipeline.
-    pub node: String,
+    pub node_id: String,
     /// Specification key.
     pub key: String,
 }

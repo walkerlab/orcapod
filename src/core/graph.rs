@@ -1,5 +1,5 @@
 use crate::{
-    core::{pipeline::PipelineNode, util::get},
+    core::{model::pipeline::PipelineNode, util::get},
     uniffi::{error::Result, model::pipeline::Kernel},
 };
 use dot_parser::ast::Graph as DOTGraph;
@@ -25,7 +25,7 @@ pub fn make_graph(
     let graph =
         DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?).map(
             |_, node| PipelineNode {
-                name: node.id.clone(),
+                id: node.id.clone(),
                 kernel: get(&metadata, &node.id)
                     .unwrap_or_else(|error| panic!("{error}"))
                     .clone(),

@@ -4,7 +4,6 @@
     clippy::panic,
     clippy::expect_used,
     clippy::unwrap_used,
-    clippy::indexing_slicing,
     reason = "OK in tests."
 )]
 
@@ -49,12 +48,12 @@ fn basic_test(
     assert_eq!(
         orchestrator
             .list_blocking()?
-            .iter()
-            .filter(|run| **run == *pod_run)
-            .map(|run| Ok(orchestrator.get_info_blocking(run)?.command))
-            .collect::<Result<Vec<_>>>()?[0],
-        expected_command,
-        "List return a pod_run with a different command."
+            .into_iter()
+            .filter(|pod_run_from_list| pod_run_from_list == pod_run)
+            .map(|run| Ok(orchestrator.get_info_blocking(&run)?.command))
+            .collect::<Result<Vec<_>>>()?,
+        vec![expected_command],
+        "Unexpected list."
     );
     // await result
     let pod_result_1 = orchestrator.get_result_blocking(pod_run, namespace_lookup)?;
@@ -68,11 +67,11 @@ fn basic_test(
         orchestrator
             .list_blocking()?
             .into_iter()
-            .filter(|run| *run == *pod_run)
+            .filter(|pod_run_from_list| pod_run_from_list == pod_run)
             .map(|run| Ok(orchestrator.get_info_blocking(&run)?.command))
-            .collect::<Result<Vec<_>>>()?[0],
-        expected_command,
-        "List return a pod_run with a different command."
+            .collect::<Result<Vec<_>>>()?,
+        vec![expected_command],
+        "Unexpected list."
     );
     assert_eq!(
         pod_result_1.assigned_name, pod_run.assigned_name,

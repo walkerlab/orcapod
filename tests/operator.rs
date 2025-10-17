@@ -29,7 +29,7 @@ async fn next_batch(
 ) -> Result<Vec<Packet>> {
     let mut next_packets = vec![];
     for (stream_name, packet) in packets {
-        next_packets.extend(operator.next(stream_name, packet).await?);
+        next_packets.extend(operator.process_packet(stream_name, packet).await?);
     }
     Ok(next_packets)
 }
@@ -105,7 +105,7 @@ async fn join_spotty() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(
+            .process_packet(
                 "right".into(),
                 Packet::from([make_packet_key("style".into(), "right/style0.t7".into())])
             )
@@ -116,7 +116,7 @@ async fn join_spotty() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(
+            .process_packet(
                 "right".into(),
                 Packet::from([make_packet_key("style".into(), "right/style1.t7".into())])
             )
@@ -127,7 +127,7 @@ async fn join_spotty() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(
+            .process_packet(
                 "left".into(),
                 Packet::from([make_packet_key(
                     "subject".into(),
@@ -194,7 +194,7 @@ async fn map_once() -> Result<()> {
 
     assert_eq!(
         operator
-            .next(
+            .process_packet(
                 "parent".into(),
                 Packet::from([
                     make_packet_key("key_old".into(), "some/key.txt".into()),
