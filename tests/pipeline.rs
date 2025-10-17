@@ -175,7 +175,7 @@ fn input_packet_checksum() -> Result<()> {
             Kernel::Pod {
                 pod: pod_custom(
                     "alpine:3.14",
-                    &["echo".into()],
+                    vec!["echo".into()],
                     HashMap::from([(
                         "node_key_1".into(),
                         PathInfo {

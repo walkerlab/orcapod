@@ -724,7 +724,7 @@ impl PodProcessor {
                     },
                 });
             }
-            PodStatus::Running | PodStatus::Unset => {
+            PodStatus::Running | PodStatus::Unset | PodStatus::Undefined => {
                 // This should not happen, but if it does, we will return an error
                 return Err(OrcaError {
                     kind: Kind::PodJobProcessingError {

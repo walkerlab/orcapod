@@ -9,6 +9,7 @@ use crate::{
 use bollard::{
     container::{Config, CreateContainerOptions, ListContainersOptions},
     models::{ContainerStateStatusEnum, HostConfig},
+    secret::{ContainerInspectResponse, ContainerSummary},
 };
 use chrono::DateTime;
 use futures_util::future::join_all;
@@ -165,12 +166,8 @@ impl LocalDockerOrchestrator {
         ))
     }
     #[expect(
-        clippy::cast_sign_loss,
         clippy::string_slice,
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
         clippy::indexing_slicing,
-        clippy::too_many_lines,
         reason = r#"
         - Timestamp and memory should always have a value > 0
         - Container will always have a name with more than 1 character
@@ -210,79 +207,119 @@ impl LocalDockerOrchestrator {
         .await
         .into_iter()
         .filter_map(|result: Result<_>| {
-            let (container_name, container_summary, container_spec) = result.ok()?;
-            let terminated_timestamp =
-                DateTime::parse_from_rfc3339(container_spec.state.as_ref()?.finished_at.as_ref()?)
-                    .ok()?
-                    .timestamp();
-            Some((
-                container_name,
-                PodRunInfo {
-                    image: container_spec.config.as_ref()?.image.as_ref()?.clone(),
-                    created: container_summary.created? as u64,
-                    terminated: (terminated_timestamp > 0).then_some(terminated_timestamp as u64),
-                    env_vars: container_spec
-                        .config
-                        .as_ref()?
-                        .env
-                        .as_ref()?
-                        .iter()
-                        .filter_map(|x| {
-                            x.split_once('=')
-                                .map(|(key, value)| (key.to_owned(), value.to_owned()))
-                        })
-                        .collect(),
-                    command: [
-                        container_spec.config.as_ref()?.entrypoint.as_ref()?.clone(),
-                        container_spec.config.as_ref()?.cmd.as_ref()?.clone(),
-                    ]
-                    .concat(),
-                    status: match (
-                        container_spec.state.as_ref()?.status.as_ref()?,
-                        container_spec.state.as_ref()?.exit_code? as i16,
-                    ) {
-                        (ContainerStateStatusEnum::RUNNING, _) => PodStatus::Running,
-                        (
-                            ContainerStateStatusEnum::EXITED
-                            | ContainerStateStatusEnum::REMOVING
-                            | ContainerStateStatusEnum::DEAD,
-                            0,
-                        ) => PodStatus::Completed,
-                        (
-                            ContainerStateStatusEnum::EXITED
-                            | ContainerStateStatusEnum::REMOVING
-                            | ContainerStateStatusEnum::DEAD,
-                            code,
-                        ) => PodStatus::Failed(code),
-                        (_, code) => {
-                            todo!(
-                                "Unhandled container state: {}, exit code: {code}.",
-                                container_spec.state.as_ref()?.status.as_ref()?
-                            )
-                        }
-                    },
-                    mounts: container_spec
-                        .mounts
-                        .as_ref()?
-                        .iter()
-                        .map(|mount_point| {
-                            Some(format!(
-                                "{}:{}{}",
-                                mount_point.source.as_ref()?,
-                                mount_point.destination.as_ref()?,
-                                mount_point
-                                    .mode
-                                    .as_ref()
-                                    .map_or_else(String::new, |mode| format!(":{mode}"))
-                            ))
-                        })
-                        .collect::<Option<_>>()?,
-                    labels: container_spec.config.as_ref()?.labels.as_ref()?.clone(),
-                    cpu_limit: container_spec.host_config.as_ref()?.nano_cpus? as f32
-                        / 10_f32.powi(9), // ncpu, ucores=3, mcores=6, cores=9
-                    memory_limit: container_spec.host_config.as_ref()?.memory? as u64,
-                },
-            ))
+            let (container_name, container_summary, container_inspect_response) = result.ok()?;
+
+            Self::extract_run_info(&container_summary, &container_inspect_response)
+                .map(|run_info| (container_name.clone(), run_info))
         }))
+    }
+
+    #[expect(
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        reason = r#"
+        - Timestamp and memory should always have a value > 0
+        - Container will always have a name with more than 1 character
+        - No issue in core casting if between 0 - 3.40e38(f32:MAX)
+        - No issue in exit code casting if between -3.27e4(i16:MIN) - 3.27e4(i16:MAX)
+        - Containers will always have at least 1 name with at least 2 characters
+        - This functions requires a lot of boilerplate code to extract the run info
+        "#
+    )]
+    fn extract_run_info(
+        container_summary: &ContainerSummary,
+        container_inspect_response: &ContainerInspectResponse,
+    ) -> Option<PodRunInfo> {
+        let terminated_timestamp = DateTime::parse_from_rfc3339(
+            container_inspect_response
+                .state
+                .as_ref()?
+                .finished_at
+                .as_ref()?,
+        )
+        .ok()?
+        .timestamp() as u64;
+        Some(PodRunInfo {
+            image: container_inspect_response
+                .config
+                .as_ref()?
+                .image
+                .as_ref()?
+                .clone(),
+            created: container_summary.created? as u64,
+            terminated: (terminated_timestamp > 0).then_some(terminated_timestamp),
+            env_vars: container_inspect_response
+                .config
+                .as_ref()?
+                .env
+                .as_ref()?
+                .iter()
+                .filter_map(|x| {
+                    x.split_once('=')
+                        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+                })
+                .collect(),
+            command: [
+                container_inspect_response
+                    .config
+                    .as_ref()?
+                    .entrypoint
+                    .as_ref()?
+                    .clone(),
+                container_inspect_response
+                    .config
+                    .as_ref()?
+                    .cmd
+                    .as_ref()?
+                    .clone(),
+            ]
+            .concat(),
+            status: match (
+                container_inspect_response.state.as_ref()?.status?,
+                container_inspect_response.state.as_ref()?.exit_code? as i16,
+            ) {
+                (ContainerStateStatusEnum::RUNNING | ContainerStateStatusEnum::RESTARTING, _) => {
+                    PodStatus::Running
+                }
+                (ContainerStateStatusEnum::EXITED, 0) => PodStatus::Completed,
+                (ContainerStateStatusEnum::EXITED | ContainerStateStatusEnum::DEAD, code) => {
+                    PodStatus::Failed(code)
+                }
+                (ContainerStateStatusEnum::CREATED, code) => {
+                    if container_inspect_response.state.as_ref()?.error.is_some() {
+                        PodStatus::Failed(code)
+                    } else {
+                        PodStatus::Running
+                    }
+                }
+                _ => PodStatus::Undefined,
+            },
+            mounts: container_inspect_response
+                .mounts
+                .as_ref()?
+                .iter()
+                .map(|mount_point| {
+                    Some(format!(
+                        "{}:{}{}",
+                        mount_point.source.as_ref()?,
+                        mount_point.destination.as_ref()?,
+                        mount_point
+                            .mode
+                            .as_ref()
+                            .map_or_else(String::new, |mode| format!(":{mode}"))
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?,
+            labels: container_inspect_response
+                .config
+                .as_ref()?
+                .labels
+                .as_ref()?
+                .clone(),
+            cpu_limit: container_inspect_response.host_config.as_ref()?.nano_cpus? as f32
+                / 10_f32.powi(9), // ncpu, ucores=3, mcores=6, cores=9
+            memory_limit: container_inspect_response.host_config.as_ref()?.memory? as u64,
+        })
     }
 }
