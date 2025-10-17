@@ -121,8 +121,10 @@ impl fmt::Debug for OrcaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
             Kind::AgentCommunicationFailure { backtrace, .. }
+            | Kind::FailedToStartPod { backtrace, .. }
+            | Kind::FailedToExtractRunInfo { backtrace, .. }
             | Kind::IncompletePacket { backtrace, .. }
-            | Kind::InvalidFilepath { backtrace, .. }
+            | Kind::InvalidPath { backtrace, .. }
             | Kind::InvalidIndex { backtrace, .. }
             | Kind::KeyMissing { backtrace, .. }
             | Kind::MissingInfo { backtrace, .. }

@@ -40,7 +40,6 @@ fn simple() -> Result<()> {
     Ok(())
 }
 
-#[expect(clippy::excessive_nesting, reason = "Nesting is manageable")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn parallel_four_cores() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
