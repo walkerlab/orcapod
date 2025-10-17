@@ -4,7 +4,6 @@
     clippy::panic,
     clippy::expect_used,
     clippy::unwrap_used,
-    clippy::indexing_slicing,
     reason = "OK in tests."
 )]
 
