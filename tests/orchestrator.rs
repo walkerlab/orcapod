@@ -295,3 +295,44 @@ async fn verify_pod_result_not_running() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn logs() -> Result<()> {
+    execute_wrapper(|orchestrator, namespace_lookup| {
+        let pod_job = pod_job_custom(
+            pod_custom(
+                "alpine:3.14",
+                vec!["bin/sh".into(), "-c".into(), "echo \"hi\"".into()],
+                HashMap::new(),
+            )?,
+            HashMap::new(),
+            namespace_lookup,
+        )?;
+
+        let pod_run = orchestrator.start_blocking(&pod_job, namespace_lookup)?;
+        let pod_result = orchestrator.get_result_blocking(&pod_run, namespace_lookup)?;
+
+        assert_eq!(
+            pod_result.status,
+            PodStatus::Completed,
+            "Pod status is not completed"
+        );
+
+        assert_eq!(orchestrator.get_logs_blocking(&pod_run)?, "hi\n");
+        assert_eq!(
+            orchestrator
+                .get_result_blocking(&pod_run, namespace_lookup)?
+                .logs,
+            "hi\n"
+        );
+
+        orchestrator.delete_blocking(&pod_run)?;
+
+        assert!(
+            !orchestrator.list_blocking()?.contains(&pod_run),
+            "Unexpected container remains."
+        );
+
+        Ok(())
+    })
+}

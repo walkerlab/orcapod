@@ -32,6 +32,13 @@ pub(crate) enum Kind {
         backtrace: Option<Backtrace>,
     },
     #[snafu(display(
+        "Failed to extract run info from the container image file: {container_name}."
+    ))]
+    FailedToExtractRunInfo {
+        container_name: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
         "Missing expected output file or dir with key {packet_key} at path {path:?} for pod job (hash: {pod_job_hash})."
     ))]
     FailedToGetPodJobOutput {

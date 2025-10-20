@@ -157,6 +157,7 @@ pub fn pod_result_style(
         1_737_922_307,
         1_737_925_907,
         namespace_lookup,
+        "Example logs".to_owned(),
     )
 }
 
