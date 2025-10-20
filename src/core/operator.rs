@@ -1,7 +1,6 @@
-use crate::uniffi::{error::Result, model::packet::Packet};
+use crate::uniffi::{error::Result, model::packet::Packet, operator::MapOperator};
 use async_trait;
 use itertools::Itertools as _;
-use serde::{Deserialize, Serialize};
 use std::{clone::Clone, collections::HashMap, iter::IntoIterator, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -62,17 +61,6 @@ impl Operator for JoinOperator {
     }
 }
 
-#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct MapOperator {
-    pub map: HashMap<String, String>,
-}
-
-impl MapOperator {
-    pub fn new(map: &HashMap<String, String>) -> Self {
-        Self { map: map.clone() }
-    }
-}
-
 #[async_trait::async_trait]
 impl Operator for MapOperator {
     async fn process_packet(&self, _: String, packet: Packet) -> Result<Vec<Packet>> {
@@ -89,5 +77,224 @@ impl Operator for MapOperator {
                 })
                 .collect(),
         ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![expect(clippy::panic_in_result_fn, reason = "OK in tests.")]
+
+    use crate::{
+        core::operator::{JoinOperator, MapOperator, Operator},
+        uniffi::{
+            error::Result,
+            model::packet::{Blob, BlobKind, Packet, PathSet, URI},
+        },
+    };
+    use std::{collections::HashMap, path::PathBuf};
+
+    fn make_packet_key(key_name: String, filepath: String) -> (String, PathSet) {
+        (
+            key_name,
+            PathSet::Unary(Blob {
+                kind: BlobKind::File,
+                location: URI {
+                    namespace: "default".into(),
+                    path: PathBuf::from(filepath),
+                },
+                checksum: String::new(),
+            }),
+        )
+    }
+
+    async fn next_batch(
+        operator: impl Operator,
+        packets: Vec<(String, Packet)>,
+    ) -> Result<Vec<Packet>> {
+        let mut next_packets = vec![];
+        for (stream_name, packet) in packets {
+            next_packets.extend(operator.process_packet(stream_name, packet).await?);
+        }
+        Ok(next_packets)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn join_once() -> Result<()> {
+        let operator = JoinOperator::new(2);
+
+        let left_stream = (0..3)
+            .map(|i| {
+                (
+                    "left".into(),
+                    Packet::from([make_packet_key(
+                        "subject".into(),
+                        format!("left/subject{i}.png"),
+                    )]),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let right_stream = (0..2)
+            .map(|i| {
+                (
+                    "right".into(),
+                    Packet::from([make_packet_key(
+                        "style".into(),
+                        format!("right/style{i}.t7"),
+                    )]),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let mut input_streams = left_stream;
+        input_streams.extend(right_stream);
+
+        assert_eq!(
+            next_batch(operator, input_streams).await?,
+            vec![
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject0.png".into()),
+                    make_packet_key("style".into(), "right/style0.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject1.png".into()),
+                    make_packet_key("style".into(), "right/style0.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject2.png".into()),
+                    make_packet_key("style".into(), "right/style0.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject0.png".into()),
+                    make_packet_key("style".into(), "right/style1.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject1.png".into()),
+                    make_packet_key("style".into(), "right/style1.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject2.png".into()),
+                    make_packet_key("style".into(), "right/style1.t7".into()),
+                ]),
+            ],
+            "Unexpected streams."
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn join_spotty() -> Result<()> {
+        let operator = JoinOperator::new(2);
+
+        assert_eq!(
+            operator
+                .process_packet(
+                    "right".into(),
+                    Packet::from([make_packet_key("style".into(), "right/style0.t7".into())])
+                )
+                .await?,
+            vec![],
+            "Unexpected streams."
+        );
+
+        assert_eq!(
+            operator
+                .process_packet(
+                    "right".into(),
+                    Packet::from([make_packet_key("style".into(), "right/style1.t7".into())])
+                )
+                .await?,
+            vec![],
+            "Unexpected streams."
+        );
+
+        assert_eq!(
+            operator
+                .process_packet(
+                    "left".into(),
+                    Packet::from([make_packet_key(
+                        "subject".into(),
+                        "left/subject0.png".into()
+                    )])
+                )
+                .await?,
+            vec![
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject0.png".into()),
+                    make_packet_key("style".into(), "right/style0.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject0.png".into()),
+                    make_packet_key("style".into(), "right/style1.t7".into()),
+                ]),
+            ],
+            "Unexpected streams."
+        );
+
+        assert_eq!(
+            next_batch(
+                operator,
+                (1..3)
+                    .map(|i| {
+                        (
+                            "left".into(),
+                            Packet::from([make_packet_key(
+                                "subject".into(),
+                                format!("left/subject{i}.png"),
+                            )]),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            )
+            .await?,
+            vec![
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject1.png".into()),
+                    make_packet_key("style".into(), "right/style0.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject1.png".into()),
+                    make_packet_key("style".into(), "right/style1.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject2.png".into()),
+                    make_packet_key("style".into(), "right/style0.t7".into()),
+                ]),
+                Packet::from([
+                    make_packet_key("subject".into(), "left/subject2.png".into()),
+                    make_packet_key("style".into(), "right/style1.t7".into()),
+                ]),
+            ],
+            "Unexpected streams."
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    async fn map_once() -> Result<()> {
+        let operator = MapOperator {
+            map: HashMap::from([("key_old".into(), "key_new".into())]),
+        };
+
+        assert_eq!(
+            operator
+                .process_packet(
+                    "parent".into(),
+                    Packet::from([
+                        make_packet_key("key_old".into(), "some/key.txt".into()),
+                        make_packet_key("subject".into(), "some/subject.txt".into()),
+                    ]),
+                )
+                .await?,
+            vec![Packet::from([
+                make_packet_key("key_new".into(), "some/key.txt".into()),
+                make_packet_key("subject".into(), "some/subject.txt".into()),
+            ]),],
+            "Unexpected packet."
+        );
+
+        Ok(())
     }
 }

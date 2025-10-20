@@ -9,7 +9,7 @@
 
 use names::{Generator, Name};
 use orcapod::{
-    core::operator::MapOperator,
+    uniffi::operator::MapOperator,
     uniffi::{
         error::Result,
         model::{

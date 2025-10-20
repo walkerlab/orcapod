@@ -9,17 +9,15 @@
 
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
-use orcapod::{
-    core::orchestrator::agent::extract_metadata,
-    uniffi::{
-        error::Result,
-        model::pod::PodResult,
-        orchestrator::{
-            agent::{Agent, AgentClient},
-            docker::LocalDockerOrchestrator,
-        },
-        store::{ModelID, Store as _, filestore::LocalFileStore},
+use itertools::Itertools as _;
+use orcapod::uniffi::{
+    error::Result,
+    model::pod::PodResult,
+    orchestrator::{
+        agent::{Agent, AgentClient},
+        docker::LocalDockerOrchestrator,
     },
+    store::{ModelID, Store as _, filestore::LocalFileStore},
 };
 use std::{
     collections::HashMap,
@@ -100,7 +98,13 @@ async fn parallel_four_cores() -> Result<()> {
                 .recv_async()
                 .await
                 .expect("All senders have dropped.");
-            let metadata = extract_metadata(sample.key_expr().as_str());
+            let metadata: HashMap<String, String> = sample
+                .key_expr()
+                .as_str()
+                .split('/')
+                .map(ToOwned::to_owned)
+                .tuples()
+                .collect();
             let topic_kind = metadata["event"].as_str();
             if ["success", "failure"].contains(&topic_kind) {
                 let pod_result = serde_json::from_slice::<PodResult>(&sample.payload().to_bytes())?;

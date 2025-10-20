@@ -3,7 +3,6 @@ use crate::{
         crypto::{hash_blob, make_random_hash},
         graph::make_graph,
         model::pipeline::PipelineNode,
-        operator::MapOperator,
         validation::validate_packet,
     },
     uniffi::{
@@ -12,6 +11,7 @@ use crate::{
             packet::{PathSet, URI},
             pod::Pod,
         },
+        operator::MapOperator,
     },
 };
 use derive_more::Display;

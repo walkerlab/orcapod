@@ -3,6 +3,7 @@
     missing_docs,
     clippy::panic_in_result_fn,
     clippy::indexing_slicing,
+    clippy::unwrap_used,
     reason = "OK in tests."
 )]
 
@@ -10,16 +11,22 @@ pub mod fixture;
 use fixture::{
     NAMESPACE_LOOKUP_READ_ONLY, TestDirs, TestSetup, pod_job_style, pod_result_style, pod_style,
 };
-use orcapod::{
-    core::{crypto::hash_buffer, model::to_yaml},
-    uniffi::{
-        error::Result,
-        model::{Annotation, ModelType},
-        store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
-    },
+use orcapod::uniffi::{
+    error::Result,
+    model::{Annotation, ModelType, packet::PathInfo, pod::Pod},
+    store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
 };
 use pretty_assertions::assert_eq as pretty_assert_eq;
-use std::{collections::HashMap, fmt::Debug, ops::Deref as _, path::Path, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::Debug,
+    ops::Deref as _,
+    path::{Path, PathBuf},
+    sync::Arc,
+    vec,
+};
+
+use crate::fixture::str_to_vec;
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     Some(
@@ -241,37 +248,84 @@ fn pod_annotation_delete() -> Result<()> {
     Ok(())
 }
 
+#[expect(clippy::too_many_lines, reason = "Okay because of creating pods")]
 #[test]
 fn pod_annotation_unique() -> Result<()> {
     let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
     let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
-    let original_annotation = Annotation {
-        name: "example".to_owned(),
+
+    // Pod values
+    let annotation = Annotation {
+        name: "style-transfer".to_owned(),
+        description: "This is an example pod.".to_owned(),
         version: "1.0.0".to_owned(),
-        description: "original".to_owned(),
     };
-    let mut pod = pod_style()?;
-    pod.annotation = Some(original_annotation.clone());
+    let image = "example.server.com/user/style-transfer:1.0.0".to_owned();
+    let command = str_to_vec("python /run.py");
+    let input_spec = HashMap::from([(
+        "input_key_1".to_owned(),
+        PathInfo {
+            path: PathBuf::from("/input"),
+            match_pattern: "input/.*".to_owned(),
+        },
+    )]);
+    let output_spec = HashMap::from([(
+        "output_key_1".to_owned(),
+        PathInfo {
+            path: PathBuf::from("/output"),
+            match_pattern: "output/.*".to_owned(),
+        },
+    )]);
+    let output_dir: PathBuf = "/output".into();
+    let source_commit_url = "https://github.com/user/style-transfer/tree/1.0.0".to_owned();
+    let recommended_cpus = 0.25; // 250 millicores as frac cores
+    let recommended_memory = 1_u64 << 30; // 1GiB in
+
+    let pod = Pod::new(
+        Some(annotation.clone()),
+        image.clone(),
+        command.clone(),
+        input_spec.clone(),
+        output_dir.clone(),
+        output_spec.clone(),
+        source_commit_url.clone(),
+        recommended_cpus,
+        recommended_memory,
+        None,
+    )?;
+
+    // Save pod above
     store.save_pod(&pod)?;
-    let original_hash = pod.hash.clone();
-    // case 1: Only change description, should skip saving model and annotation
-    pod.annotation = Some(Annotation {
-        description: "new".to_owned(),
-        ..original_annotation.clone()
-    });
-    store.save_pod(&pod)?;
+    // case 1: Only change description, should skip saving model and annotation since overriding annotation is not allowed
+    let pod_with_new_annotation = Pod::new(
+        Some(Annotation {
+            description: "new description".into(),
+            ..pod.annotation.as_ref().unwrap().clone()
+        }),
+        "example.server.com/user/style-transfer:1.0.0".to_owned(),
+        command,
+        input_spec.clone(),
+        "/output".into(),
+        output_spec.clone(),
+        source_commit_url.clone(),
+        recommended_cpus,
+        recommended_memory,
+        None,
+    )?;
+
+    store.save_pod(&pod_with_new_annotation)?;
     pretty_assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
-                name: Some(original_annotation.name.clone()),
-                version: Some(original_annotation.version.clone()),
-                hash: original_hash.clone(),
+                name: Some(annotation.name.clone()),
+                version: Some(annotation.version.clone()),
+                hash: pod_with_new_annotation.hash,
             },
             ModelInfo {
                 name: None,
                 version: None,
-                hash: original_hash.clone(),
+                hash: pod.hash.clone(),
             },
         ],
         "Pod list didn't return 2 expected entries."
@@ -279,35 +333,44 @@ fn pod_annotation_unique() -> Result<()> {
     pretty_assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
-                original_annotation.name.clone(),
-                original_annotation.version.clone()
+                annotation.name.clone(),
+                annotation.version.clone()
             ))?
             .annotation,
-        Some(original_annotation.clone()),
+        Some(annotation.clone()),
         "Pod annotation unexpected."
     );
     // case 2: Change description + model, should save model but skip annotation
-    pod.output_dir = "/output_2".into();
-    pod.hash = hash_buffer(to_yaml(&pod)?);
-    let new_hash = pod.hash.clone();
-    store.save_pod(&pod)?;
+    let pod_with_updated_command = Pod::new(
+        Some(annotation.clone()),
+        image,
+        str_to_vec("python new_run.py"),
+        input_spec,
+        output_dir,
+        output_spec,
+        source_commit_url,
+        recommended_cpus,
+        recommended_memory,
+        None,
+    )?;
+    store.save_pod(&pod_with_updated_command)?;
     pretty_assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
-                name: Some(original_annotation.name.clone()),
-                version: Some(original_annotation.version.clone()),
-                hash: original_hash.clone(),
+                name: Some(annotation.name.clone()),
+                version: Some(annotation.version.clone()),
+                hash: pod.hash.clone(),
             },
             ModelInfo {
                 name: None,
                 version: None,
-                hash: original_hash,
+                hash: pod.hash,
             },
             ModelInfo {
                 name: None,
                 version: None,
-                hash: new_hash,
+                hash: pod_with_updated_command.hash,
             },
         ],
         "Pod list didn't return 3 expected entries."
@@ -315,11 +378,11 @@ fn pod_annotation_unique() -> Result<()> {
     pretty_assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
-                original_annotation.name.clone(),
-                original_annotation.version.clone()
+                annotation.name.clone(),
+                annotation.version.clone()
             ))?
             .annotation,
-        Some(original_annotation),
+        Some(annotation),
         "Pod annotation unexpected."
     );
     Ok(())

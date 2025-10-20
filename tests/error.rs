@@ -10,16 +10,13 @@ use chrono::DateTime;
 use dot_parser::ast::Graph as DOTGraph;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style, str_to_vec};
 use glob::glob;
-use orcapod::{
-    core::crypto::hash_file,
-    uniffi::{
-        error::{OrcaError, Result},
-        model::packet::PathInfo,
-        orchestrator::{
-            Orchestrator as _,
-            agent::{AgentClient, Response},
-            docker::LocalDockerOrchestrator,
-        },
+use orcapod::uniffi::{
+    error::{OrcaError, Result},
+    model::packet::PathInfo,
+    orchestrator::{
+        Orchestrator as _,
+        agent::{AgentClient, Response},
+        docker::LocalDockerOrchestrator,
     },
 };
 use serde_json;
@@ -152,14 +149,6 @@ fn internal_incomplete_packet() -> Result<()> {
         "Did not raise an incomplete packet error."
     );
     Ok(())
-}
-
-#[test]
-fn internal_invalid_filepath() {
-    assert!(
-        hash_file("nonexistent_file.txt").is_err_and(contains_debug),
-        "Did not raise an invalid filepath error."
-    );
 }
 
 #[test]
