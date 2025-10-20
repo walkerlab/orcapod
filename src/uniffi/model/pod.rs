@@ -182,7 +182,6 @@ impl PodJob {
         })
     }
 }
-
 /// Result from a compute job run.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct PodResult {
@@ -263,6 +262,7 @@ impl PodResult {
             })
             .collect::<Result<_>>()?;
 
+        // If packet is completed, the output packet must meet the output spec
         if matches!(status, PodStatus::Completed) {
             validate_packet("output".into(), &pod_job.pod.output_spec, &output_packet)?;
         }

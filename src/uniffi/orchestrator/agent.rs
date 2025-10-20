@@ -51,7 +51,7 @@ pub struct AgentClient {
     /// Connecting agent's assigned name used for reference.
     pub host: String,
     #[getset(skip)]
-    pub(crate) session: zenoh::Session,
+    pub(crate) session: Arc<zenoh::Session>,
 }
 
 #[uniffi::export]
@@ -72,7 +72,8 @@ impl AgentClient {
                         .await
                         .context(selector::AgentCommunicationFailure {})?,
                 )
-            })?,
+            })?
+            .into(),
         })
     }
     /// Start many pod jobs to be processed in parallel.
@@ -155,15 +156,15 @@ impl Agent {
     /// # Errors
     ///
     /// Will stop and return an error if encounters an error while processing any pod job request.
-    #[expect(clippy::excessive_nesting, reason = "Nesting manageable.")]
     pub async fn start(
         &self,
         namespace_lookup: &HashMap<String, PathBuf>,
         available_store: Option<Arc<LocalFileStore>>,
     ) -> Result<()> {
         let mut services = JoinSet::new();
+        let self_ref = Arc::new(self.clone());
         services.spawn(start_service(
-            Arc::new(self.clone()),
+            Arc::clone(&self_ref),
             "pod_job",
             BTreeMap::from([("action", "request".to_owned())]),
             namespace_lookup.clone(),
@@ -185,7 +186,7 @@ impl Agent {
                         "pod_job",
                         BTreeMap::from([
                             (
-                                "action",
+                                "event",
                                 match &pod_result.status {
                                     PodStatus::Completed => "success",
                                     PodStatus::Running
@@ -204,23 +205,9 @@ impl Agent {
         ));
         if let Some(store) = available_store {
             services.spawn(start_service(
-                Arc::new(self.clone()),
+                Arc::clone(&self_ref),
                 "pod_job",
-                BTreeMap::from([("action", "success".to_owned())]),
-                namespace_lookup.clone(),
-                {
-                    let inner_store = Arc::clone(&store);
-                    async move |_, _, _, pod_result| {
-                        inner_store.save_pod_result(&pod_result)?;
-                        Ok(())
-                    }
-                },
-                async |_, ()| Ok(()),
-            ));
-            services.spawn(start_service(
-                Arc::new(self.clone()),
-                "pod_job",
-                BTreeMap::from([("action", "failure".to_owned())]),
+                BTreeMap::from([("event", "*".to_owned())]),
                 namespace_lookup.clone(),
                 async move |_, _, _, pod_result| {
                     store.save_pod_result(&pod_result)?;

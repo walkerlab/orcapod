@@ -29,7 +29,7 @@ async def verify(group, pod_job_count):
 
     with zenoh.open(zenoh.Config()) as session:
         with session.declare_subscriber(
-            f"**/action/success/**/group/{group}/**/topic/pod_job/**", count
+            f"**/event/success/**/group/{group}/**/topic/pod_job/**", count
         ) as subscriber:
             await asyncio.sleep(20)  # wait for results
 
@@ -45,7 +45,7 @@ async def main(client, agent, test_dir, namespace_lookup, pod_jobs):
             available_store=LocalFileStore(directory=f"{test_dir}/store"),
         ),
     )
-    await asyncio.sleep(5)  # ensure service ready
+    await asyncio.sleep(1)  # ensure service ready
 
     try:
         await client.start_pod_jobs(pod_jobs=pod_jobs)
@@ -90,7 +90,7 @@ if __name__ == "__main__":
                 output_spec={},
                 source_commit_url="https://github.com/user/simple",
                 recommended_cpus=0.1,
-                recommended_memory=10 << 20,
+                recommended_memory=128 << 20,
                 required_gpu=None,
             ),
             input_packet={},
@@ -99,7 +99,7 @@ if __name__ == "__main__":
                 path=".",
             ),
             cpu_limit=1,
-            memory_limit=10 << 20,
+            memory_limit=128 << 20,
             env_vars=None,
             namespace_lookup=namespace_lookup,
         )

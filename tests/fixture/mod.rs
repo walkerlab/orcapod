@@ -8,15 +8,19 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::uniffi::{
-    error::Result,
-    model::{
-        Annotation,
-        packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
-        pod::{Pod, PodJob, PodResult},
+use orcapod::{
+    core::operator::MapOperator,
+    uniffi::{
+        error::Result,
+        model::{
+            Annotation,
+            packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
+            pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
+            pod::{Pod, PodJob, PodResult},
+        },
+        orchestrator::PodStatus,
+        store::{ModelID, ModelInfo, Store},
     },
-    orchestrator::PodStatus,
-    store::{ModelID, ModelInfo, Store},
 };
 use std::{
     collections::HashMap,
@@ -278,6 +282,275 @@ pub fn pull_image(reference: &str) -> Result<()> {
         .stdout(Stdio::inherit())
         .output()?;
     Ok(())
+}
+
+// Pipeline Fixture
+pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
+    Pod::new(
+        Some(Annotation {
+            name: pod_name.to_owned(),
+            description: "Takes two input files, remove the final next line and combine them"
+                .to_owned(),
+            version: "1.0.0".to_owned(),
+        }),
+        "alpine:3.14".to_owned(),
+        vec![
+            "sh".into(),
+            "-c".into(),
+            format!(
+                "printf '%s %s\\n' \"$(cat input/input_1.txt | head -c -1)\" \"$(cat input/input_2.txt | head -c -1)\" > /output/output.txt"
+            ),
+        ],
+        HashMap::from([
+            (
+                "input_1".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("/input/input_1.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            ),
+            (
+                "input_2".into(),
+                PathInfo {
+                    path: PathBuf::from("/input/input_2.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            ),
+        ]),
+        PathBuf::from("/output"),
+        HashMap::from([(
+            "output".to_owned(),
+            PathInfo {
+                path: PathBuf::from("output.txt"),
+                match_pattern: r".*\.txt".to_owned(),
+            },
+        )]),
+        "N/A".to_owned(),
+        0.25,          // 250 millicores as frac cores
+        128_u64 << 20, // 128MB in bytes
+        None,
+    )
+}
+
+#[expect(clippy::too_many_lines, reason = "OK in tests.")]
+pub fn pipeline() -> Result<Pipeline> {
+    // Create a simple pipeline where the functions job is to add append their name into the input file
+    // Structure: A -> Mapper -> Joiner -> B -> Mapper -> C, D -> Mapper -> Joiner
+
+    // Create the kernel map
+    let mut kernel_map = HashMap::new();
+
+    // Insert the pod into the kernel map
+    for pod_name in ["A", "B", "C", "D", "E"] {
+        kernel_map.insert(pod_name.into(), combine_txt_pod(pod_name)?.into());
+    }
+
+    let output_to_input_1 = Arc::new(MapOperator {
+        map: HashMap::from([("output".to_owned(), "input_1".to_owned())]),
+    });
+
+    let output_to_input_2 = Arc::new(MapOperator {
+        map: HashMap::from([("output".to_owned(), "input_2".to_owned())]),
+    });
+
+    // Create a mapper for A, B, and C
+    kernel_map.insert(
+        "pod_a_mapper".into(),
+        Kernel::MapOperator {
+            mapper: Arc::clone(&output_to_input_1),
+        },
+    );
+    kernel_map.insert(
+        "pod_b_mapper".into(),
+        Kernel::MapOperator {
+            mapper: Arc::clone(&output_to_input_2),
+        },
+    );
+    kernel_map.insert(
+        "pod_c_mapper".into(),
+        Kernel::MapOperator {
+            mapper: Arc::clone(&output_to_input_1),
+        },
+    );
+    kernel_map.insert(
+        "pod_d_mapper".into(),
+        Kernel::MapOperator {
+            mapper: Arc::clone(&output_to_input_2),
+        },
+    );
+
+    for joiner_name in ['c', 'd', 'e'] {
+        kernel_map.insert(format!("pod_{joiner_name}_joiner"), Kernel::JoinOperator);
+    }
+
+    // Write all the edges in DOT format
+    let dot = "
+        digraph {
+        A -> pod_a_mapper -> pod_c_joiner;
+        B -> pod_b_mapper -> pod_c_joiner;
+        pod_c_joiner -> C -> pod_c_mapper-> pod_e_joiner;
+        D -> pod_d_mapper -> pod_e_joiner;
+        pod_e_joiner -> E;
+        }
+    ";
+
+    Pipeline::new(
+        dot,
+        kernel_map,
+        HashMap::from([
+            (
+                "where".into(),
+                vec![NodeURI {
+                    node_id: "A".into(),
+                    key: "input_1".into(),
+                }],
+            ),
+            (
+                "is".into(),
+                vec![NodeURI {
+                    node_id: "A".into(),
+                    key: "input_2".into(),
+                }],
+            ),
+            (
+                "the".into(),
+                vec![NodeURI {
+                    node_id: "B".into(),
+                    key: "input_1".into(),
+                }],
+            ),
+            (
+                "cat_color".into(),
+                vec![NodeURI {
+                    node_id: "B".into(),
+                    key: "input_2".into(),
+                }],
+            ),
+            (
+                "cat".into(),
+                vec![NodeURI {
+                    node_id: "D".into(),
+                    key: "input_1".into(),
+                }],
+            ),
+            (
+                "action".into(),
+                vec![NodeURI {
+                    node_id: "D".into(),
+                    key: "input_2".into(),
+                }],
+            ),
+        ]),
+        HashMap::from([(
+            "output".to_owned(),
+            NodeURI {
+                node_id: "E".into(),
+                key: "output".into(),
+            },
+        )]),
+    )
+}
+
+#[expect(clippy::implicit_hasher, reason = "Could be a false positive?")]
+pub fn pipeline_job(namespace_lookup: &HashMap<String, PathBuf>) -> Result<PipelineJob> {
+    // Create a simple pipeline_job
+    let namespace: String = "default".into();
+    PipelineJob::new(
+        pipeline()?.into(),
+        &HashMap::from([
+            (
+                "where".into(),
+                vec![PathSet::Unary(Blob {
+                    kind: BlobKind::File,
+                    location: URI {
+                        namespace: namespace.clone(),
+                        path: "input_txt/Where.txt".into(),
+                    },
+                    checksum: String::new(),
+                })],
+            ),
+            (
+                "is".into(),
+                vec![PathSet::Unary(Blob {
+                    kind: BlobKind::File,
+                    location: URI {
+                        namespace: namespace.clone(),
+                        path: "input_txt/is.txt".into(),
+                    },
+                    checksum: String::new(),
+                })],
+            ),
+            (
+                "the".into(),
+                vec![PathSet::Unary(Blob {
+                    kind: BlobKind::File,
+                    location: URI {
+                        namespace: namespace.clone(),
+                        path: "input_txt/the.txt".into(),
+                    },
+                    checksum: String::new(),
+                })],
+            ),
+            (
+                "cat_color".into(),
+                vec![
+                    PathSet::Unary(Blob {
+                        kind: BlobKind::File,
+                        location: URI {
+                            namespace: namespace.clone(),
+                            path: "input_txt/black.txt".into(),
+                        },
+                        checksum: String::new(),
+                    }),
+                    PathSet::Unary(Blob {
+                        kind: BlobKind::File,
+                        location: URI {
+                            namespace: namespace.clone(),
+                            path: "input_txt/tabby.txt".into(),
+                        },
+                        checksum: String::new(),
+                    }),
+                ],
+            ),
+            (
+                "cat".into(),
+                vec![PathSet::Unary(Blob {
+                    kind: BlobKind::File,
+                    location: URI {
+                        namespace: namespace.clone(),
+                        path: "input_txt/cat.txt".into(),
+                    },
+                    checksum: String::new(),
+                })],
+            ),
+            (
+                "action".into(),
+                vec![
+                    PathSet::Unary(Blob {
+                        kind: BlobKind::File,
+                        location: URI {
+                            namespace: namespace.clone(),
+                            path: "input_txt/hiding.txt".into(),
+                        },
+                        checksum: String::new(),
+                    }),
+                    PathSet::Unary(Blob {
+                        kind: BlobKind::File,
+                        location: URI {
+                            namespace,
+                            path: "input_txt/playing.txt".into(),
+                        },
+                        checksum: String::new(),
+                    }),
+                ],
+            ),
+        ]),
+        URI {
+            namespace: "default".to_owned(),
+            path: PathBuf::from("pipeline_output"),
+        },
+        namespace_lookup,
+    )
 }
 
 // --- util ---

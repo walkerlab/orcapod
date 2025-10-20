@@ -13,7 +13,7 @@ use orcapod::uniffi::{
     error::Result,
     model::{
         packet::{Blob, BlobKind, PathInfo, PathSet, URI},
-        pipeline::{Kernel, Pipeline, PipelineJob, SpecURI},
+        pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
     },
 };
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ fn input_packet_checksum() -> Result<()> {
         HashMap::from([(
             "A".into(),
             Kernel::Pod {
-                r#ref: pod_custom(
+                pod: pod_custom(
                     "alpine:3.14",
                     vec!["echo".into()],
                     HashMap::from([(
@@ -43,14 +43,14 @@ fn input_packet_checksum() -> Result<()> {
                 .into(),
             },
         )]),
-        &HashMap::from([(
+        HashMap::from([(
             "pipeline_key_1".into(),
-            vec![SpecURI {
-                node: "A".into(),
+            vec![NodeURI {
+                node_id: "A".into(),
                 key: "node_key_1".into(),
             }],
         )]),
-        &HashMap::new(),
+        HashMap::new(),
     )?;
 
     let pipeline_job = PipelineJob::new(
@@ -66,7 +66,7 @@ fn input_packet_checksum() -> Result<()> {
                 checksum: String::new(),
             }])],
         )]),
-        &URI {
+        URI {
             namespace: "default".into(),
             path: "output/pipeline".into(),
         },

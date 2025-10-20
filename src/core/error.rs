@@ -124,7 +124,13 @@ impl fmt::Debug for OrcaError {
             | Kind::FailedToStartPod { backtrace, .. }
             | Kind::IncompletePacket { backtrace, .. }
             | Kind::InvalidPath { backtrace, .. }
+            | Kind::InvalidIndex { backtrace, .. }
+            | Kind::KeyMissing { backtrace, .. }
             | Kind::MissingInfo { backtrace, .. }
+            | Kind::FailedToGetPodJobOutput { backtrace, .. }
+            | Kind::PodJobProcessingError { backtrace, .. }
+            | Kind::PodJobSubmissionFailed { backtrace, .. }
+            | Kind::UnexpectedPathType { backtrace, .. }
             | Kind::BollardError { backtrace, .. }
             | Kind::ChronoParseError { backtrace, .. }
             | Kind::DOTError { backtrace, .. }
