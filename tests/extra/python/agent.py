@@ -17,6 +17,7 @@ from orcapod import (
     Uri,
     Pod,
     Annotation,
+    RecommendSpecs,
 )
 
 
@@ -88,10 +89,11 @@ if __name__ == "__main__":
                 input_spec={},
                 output_dir="/tmp/output",
                 output_spec={},
-                source_commit_url="https://github.com/user/simple",
-                recommended_cpus=0.1,
-                recommended_memory=128 << 20,
-                required_gpu=None,
+                recommend_specs=RecommendSpecs(
+                    cpus=0.1,
+                    memory=128 << 20,
+                ),
+                gpu_requirements=None,
             ),
             input_packet={},
             output_dir=Uri(

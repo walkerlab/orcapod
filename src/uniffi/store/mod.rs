@@ -16,7 +16,7 @@ pub enum ModelID {
 }
 
 /// Metadata for a model.
-#[derive(uniffi::Record, Debug, PartialEq, Eq)]
+#[derive(uniffi::Record, Debug, PartialEq, Eq, Hash)]
 pub struct ModelInfo {
     /// A model's name.
     pub name: Option<String>,

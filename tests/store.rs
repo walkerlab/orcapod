@@ -13,12 +13,16 @@ use fixture::{
 };
 use orcapod::uniffi::{
     error::Result,
-    model::{Annotation, ModelType, packet::PathInfo, pod::Pod},
+    model::{
+        Annotation, ModelType,
+        packet::PathInfo,
+        pod::{Pod, RecommendSpecs},
+    },
     store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
 };
 use pretty_assertions::assert_eq as pretty_assert_eq;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     ops::Deref as _,
     path::{Path, PathBuf},
@@ -81,6 +85,7 @@ fn pod_basic() -> Result<()> {
 fn pod_job_basic() -> Result<()> {
     let mut expected_model = pod_job_style(&NAMESPACE_LOOKUP_READ_ONLY)?;
     let mut pod = expected_model.pod.deref().clone();
+
     pod.annotation = None;
     expected_model.pod = Arc::new(pod);
     basic_test(
@@ -277,9 +282,12 @@ fn pod_annotation_unique() -> Result<()> {
         },
     )]);
     let output_dir: PathBuf = "/output".into();
-    let source_commit_url = "https://github.com/user/style-transfer/tree/1.0.0".to_owned();
-    let recommended_cpus = 0.25; // 250 millicores as frac cores
-    let recommended_memory = 1_u64 << 30; // 1GiB in
+    let exec_requirements = RecommendSpecs {
+        cpus: 0.25,
+        memory: 1_u64 << 30,
+    };
+
+    let gpu_requirements = None;
 
     let pod = Pod::new(
         Some(annotation.clone()),
@@ -288,10 +296,8 @@ fn pod_annotation_unique() -> Result<()> {
         input_spec.clone(),
         output_dir.clone(),
         output_spec.clone(),
-        source_commit_url.clone(),
-        recommended_cpus,
-        recommended_memory,
-        None,
+        exec_requirements.clone(),
+        gpu_requirements.clone(),
     )?;
 
     // Save pod above
@@ -307,16 +313,14 @@ fn pod_annotation_unique() -> Result<()> {
         input_spec.clone(),
         "/output".into(),
         output_spec.clone(),
-        source_commit_url.clone(),
-        recommended_cpus,
-        recommended_memory,
-        None,
+        exec_requirements.clone(),
+        gpu_requirements.clone(),
     )?;
 
     store.save_pod(&pod_with_new_annotation)?;
     pretty_assert_eq!(
-        store.list_pod()?,
-        vec![
+        HashSet::from_iter(store.list_pod()?),
+        HashSet::from([
             ModelInfo {
                 name: Some(annotation.name.clone()),
                 version: Some(annotation.version.clone()),
@@ -327,7 +331,7 @@ fn pod_annotation_unique() -> Result<()> {
                 version: None,
                 hash: pod.hash.clone(),
             },
-        ],
+        ]),
         "Pod list didn't return 2 expected entries."
     );
     pretty_assert_eq!(
@@ -348,15 +352,13 @@ fn pod_annotation_unique() -> Result<()> {
         input_spec,
         output_dir,
         output_spec,
-        source_commit_url,
-        recommended_cpus,
-        recommended_memory,
-        None,
+        exec_requirements,
+        gpu_requirements,
     )?;
     store.save_pod(&pod_with_updated_command)?;
     pretty_assert_eq!(
-        store.list_pod()?,
-        vec![
+        HashSet::from_iter(store.list_pod()?),
+        HashSet::from([
             ModelInfo {
                 name: Some(annotation.name.clone()),
                 version: Some(annotation.version.clone()),
@@ -372,7 +374,7 @@ fn pod_annotation_unique() -> Result<()> {
                 version: None,
                 hash: pod_with_updated_command.hash,
             },
-        ],
+        ]),
         "Pod list didn't return 3 expected entries."
     );
     pretty_assert_eq!(

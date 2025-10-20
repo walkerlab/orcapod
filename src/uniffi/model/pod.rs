@@ -2,8 +2,9 @@ use crate::{
     core::{
         crypto::{hash_blob, hash_buffer},
         model::{
+            ToYaml,
             pod::{deserialize_pod, deserialize_pod_job},
-            serialize_hashmap, serialize_hashmap_option, to_yaml,
+            serialize_hashmap, serialize_hashmap_option,
         },
         util::get,
         validation::validate_packet,
@@ -49,14 +50,11 @@ pub struct Pod {
     /// Exposed, internal output specification.
     #[serde(serialize_with = "serialize_hashmap")]
     pub output_spec: HashMap<String, PathInfo>,
-    /// Link to source associated with image binary.
-    pub source_commit_url: String,
-    /// Recommendation for CPU in fractional cores.
-    pub recommended_cpus: f32,
-    /// Recommendation for memory in bytes.
-    pub recommended_memory: u64,
-    /// If applicable, recommendation for GPU configuration.
-    pub required_gpu: Option<GPURequirement>,
+    /// Execution requirements for the pod.
+    #[serde(default)]
+    pub recommend_specs: RecommendSpecs,
+    /// Optional GPU requirements for the pod. If set, then the running system needs a GPU that meets the requirements.
+    pub gpu_requirements: Option<GPURequirement>,
 }
 
 #[uniffi::export]
@@ -74,10 +72,8 @@ impl Pod {
         input_spec: HashMap<String, PathInfo>,
         output_dir: PathBuf,
         output_spec: HashMap<String, PathInfo>,
-        source_commit_url: String,
-        recommended_cpus: f32,
-        recommended_memory: u64,
-        required_gpu: Option<GPURequirement>,
+        recommend_specs: RecommendSpecs,
+        gpu_requirements: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
             annotation,
@@ -87,19 +83,72 @@ impl Pod {
             input_spec,
             output_dir,
             output_spec,
-            source_commit_url,
-            recommended_cpus,
-            recommended_memory,
-            required_gpu,
+            recommend_specs,
+            gpu_requirements,
         };
         Ok(Self {
-            hash: hash_buffer(to_yaml(&pod_no_hash)?),
+            hash: hash_buffer(pod_no_hash.to_yaml()?),
             ..pod_no_hash
         })
     }
 }
 
+impl ToYaml for Pod {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        match field_name {
+            "annotation" | "hash" | "recommend_specs" => None,
+            _ => Some((field_name.to_owned(), field_value.clone())),
+        }
+    }
+}
+
+/// Execution recommendations for a pod, since it doesn't impact the actual reproducibility
+/// it shouldn't be hashed along with the pod
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
+pub struct RecommendSpecs {
+    /// Optimal number of CPU cores needed to run the pod provided by the user
+    pub cpus: f32,
+    /// Optimal amount of memory needed to run the pod provided by the user, code can probably run with less but may hit OOM
+    pub memory: u64,
+}
+
+impl ToYaml for RecommendSpecs {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        Some((field_name.to_owned(), field_value.clone()))
+    }
+}
+
+/// Specification for GPU requirements in computation.
+#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct GPURequirement {
+    /// GPU model specification.
+    pub model: GPUModel,
+    /// Manufacturer recommended memory.
+    pub recommended_memory: u64,
+    /// Number of GPU cards required.
+    pub count: u16,
+}
+
+/// GPU model specification.
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum GPUModel {
+    /// NVIDIA-manufactured card where `String` is the specific minimum CUDA version in X.XX
+    NVIDIA(String),
+    /// Any GPU architecture, code is generic enough
+    Any,
+}
+
 /// A compute job that specifies resource requests and input/output targets.
+///
+/// `PodJob` represents a specific execution instance of a [`Pod`] with concrete
+/// input data, resource limits, and output specifications. It includes all the
+/// information needed to run a containerized computation job.
 #[derive(
     uniffi::Object, Serialize, Deserialize, Debug, PartialEq, Clone, Default, Display, CloneGetters,
 )]
@@ -177,11 +226,25 @@ impl PodJob {
             env_vars,
         };
         Ok(Self {
-            hash: hash_buffer(to_yaml(&pod_job_no_hash)?),
+            hash: hash_buffer(pod_job_no_hash.to_yaml()?),
             ..pod_job_no_hash
         })
     }
 }
+
+impl ToYaml for PodJob {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        match field_name {
+            "annotation" | "hash" => None,
+            "pod" => Some((field_name.to_owned(), field_value["hash"].clone())),
+            _ => Some((field_name.to_owned(), field_value.clone())),
+        }
+    }
+}
+
 /// Result from a compute job run.
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct PodResult {
@@ -282,28 +345,21 @@ impl PodResult {
             logs,
         };
         Ok(Self {
-            hash: hash_buffer(to_yaml(&pod_result_no_hash)?),
+            hash: hash_buffer(pod_result_no_hash.to_yaml()?),
             ..pod_result_no_hash
         })
     }
 }
 
-/// Specification for GPU requirements in computation.
-#[derive(uniffi::Record, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct GPURequirement {
-    /// GPU model specification.
-    pub model: GPUModel,
-    /// Manufacturer recommended memory.
-    pub recommended_memory: u64,
-    /// Number of GPU cards required.
-    pub count: u16,
-}
-
-/// GPU model specification.
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub enum GPUModel {
-    /// NVIDIA-manufactured card where `String` is the specific model e.g. ???
-    NVIDIA(String),
-    /// AMD-manufactured card where `String` is the specific model e.g. ???
-    AMD(String),
+impl ToYaml for PodResult {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        match field_name {
+            "annotation" | "hash" => None,
+            "pod_job" => Some((field_name.to_owned(), field_value["hash"].clone())),
+            _ => Some((field_name.to_owned(), field_value.clone())),
+        }
+    }
 }

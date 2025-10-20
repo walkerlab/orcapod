@@ -31,6 +31,11 @@ pub(crate) enum Kind {
         source: Box<dyn Error + Send + Sync>,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display("Empty directory: {dir:?}, where they should be files"))]
+    EmptyDir {
+        dir: PathBuf,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display(
         "Failed to extract run info from the container image file: {container_name}."
     ))]
