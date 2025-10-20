@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 use uniffi;
 
-use crate::core::util::get;
-use crate::uniffi::error::Result;
+use crate::{error::Result, util::get};
 
 /// Path sets are named and represent an abstraction for the file(s) that represent some particular
 /// data within a compute environment.

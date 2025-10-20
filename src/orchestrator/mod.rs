@@ -1,14 +1,22 @@
-use crate::uniffi::{
+use async_trait;
+use std::{
+    collections::HashMap,
+    fmt,
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
+use tokio::runtime::Runtime;
+use uniffi;
+
+use crate::{
     error::Result,
     model::{
         packet::URI,
-        pod::{PodJob, PodResult},
+        pod::{PodJob, PodResult, PodStatus},
     },
+    util::get_type_name,
 };
-use async_trait;
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
-use uniffi;
+
 /// Options for sourcing compute environment images.
 #[derive(uniffi::Enum)]
 pub enum ImageKind {
@@ -18,21 +26,7 @@ pub enum ImageKind {
     /// A packaged compute environment of image+tag as a tarball.
     Tarball(URI),
 }
-/// Status of a particular compute run.
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
-pub enum PodStatus {
-    /// Run is ongoing.
-    Running,
-    /// Run has completed successfully.
-    Completed,
-    /// Run failed with the provided error code.
-    Failed(i16),
-    /// For other container states that are not listed.
-    Undefined,
-    /// No status set.
-    #[default]
-    Unset,
-}
+
 /// Run metadata
 #[derive(uniffi::Record, Debug)]
 pub struct PodRunInfo {
@@ -178,7 +172,26 @@ pub trait Orchestrator: Send + Sync + fmt::Debug {
     /// Get the logs for a specific pod run.
     async fn get_logs(&self, pod_run: &PodRun) -> Result<String>;
 }
-/// Orchestration execution agent daemon and client.
+
+#[expect(
+    clippy::expect_used,
+    reason = "Should be able to create Tokio runtime."
+)]
+static ASYNC_RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("Unable to create Tokio runtime."));
+
+impl PodRun {
+    /// Create a new `PodRun`
+    pub fn new<O: Orchestrator>(pod_job: &PodJob, assigned_name: String) -> Self {
+        Self {
+            pod_job: pod_job.clone().into(),
+            orchestrator_source: get_type_name::<O>(),
+            assigned_name,
+        }
+    }
+}
+
+/// Daemon agent for execution of pod jobs and pipeline jobs
 pub mod agent;
-/// Orchestration implementation for Docker backend.
+/// Docker-based orchestrator implementation
 pub mod docker;

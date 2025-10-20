@@ -1,10 +1,3 @@
-use crate::{
-    core::util::get,
-    uniffi::{
-        error::{Result, selector},
-        model::packet::{Blob, BlobKind},
-    },
-};
 use hex;
 use rand::{self, RngCore as _};
 use serde_yaml;
@@ -16,6 +9,12 @@ use std::{
     hash::RandomState,
     io::Read,
     path::{Path, PathBuf},
+};
+
+use crate::{
+    error::{Result, selector},
+    model::packet::{Blob, BlobKind},
+    util::get,
 };
 /// Evaluate checksum hash of streamed data i.e. chunked buffers.
 ///
@@ -112,11 +111,12 @@ pub fn make_random_hash() -> String {
 #[cfg(test)]
 mod tests {
     #![expect(clippy::panic_in_result_fn, reason = "OK in tests.")]
-    use crate::{
-        core::crypto::{hash_buffer, hash_dir, hash_file},
-        uniffi::error::Result,
-    };
     use std::fs::read;
+
+    use crate::{
+        crypto::{hash_buffer, hash_dir, hash_file},
+        error::Result,
+    };
 
     #[test]
     fn consistent_hash() -> Result<()> {

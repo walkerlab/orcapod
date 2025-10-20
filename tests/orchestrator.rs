@@ -10,10 +10,10 @@
 pub mod fixture;
 use fixture::{TestDirs, container_image_style, pod_job_style};
 use futures_util::future::join_all;
-use orcapod::uniffi::{
+use orcapod::{
     error::{OrcaError, Result},
-    model::packet::URI,
-    orchestrator::{ImageKind, Orchestrator, PodRun, PodStatus, docker::LocalDockerOrchestrator},
+    model::{packet::URI, pod::PodStatus},
+    orchestrator::{ImageKind, Orchestrator, PodRun, docker::LocalDockerOrchestrator},
 };
 use pretty_assertions::assert_eq;
 use std::{collections::HashMap, path::PathBuf};

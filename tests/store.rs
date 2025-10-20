@@ -11,7 +11,7 @@ pub mod fixture;
 use fixture::{
     NAMESPACE_LOOKUP_READ_ONLY, TestDirs, TestSetup, pod_job_style, pod_result_style, pod_style,
 };
-use orcapod::uniffi::{
+use orcapod::{
     error::Result,
     model::{
         Annotation, ModelType,

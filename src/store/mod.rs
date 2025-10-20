@@ -1,4 +1,7 @@
-use crate::uniffi::{
+/// Namespace where models will be stored.
+const MODEL_NAMESPACE: &str = "orcapod_model";
+
+use crate::{
     error::Result,
     model::{
         ModelType,

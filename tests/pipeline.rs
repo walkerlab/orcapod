@@ -10,7 +10,7 @@
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom};
 use indoc::indoc;
-use orcapod::uniffi::{
+use orcapod::{
     error::Result,
     model::{
         packet::{Blob, BlobKind, PathInfo, PathSet, URI},

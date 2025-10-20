@@ -1,4 +1,4 @@
-use crate::uniffi::error::{Result, selector};
+use crate::error::{Result, selector};
 use snafu::OptionExt as _;
 use std::collections::{HashMap, HashSet};
 

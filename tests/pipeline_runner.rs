@@ -16,12 +16,10 @@ use std::{
 use crate::fixture::TestDirs;
 use fixture::pipeline_job;
 use orcapod::{
-    core::pipeline_runner::DockerPipelineRunner,
-    uniffi::{
-        error::Result,
-        model::pipeline::PipelineStatus,
-        orchestrator::{agent::Agent, docker::LocalDockerOrchestrator},
-    },
+    error::Result,
+    model::pipeline::PipelineStatus,
+    orchestrator::{agent::Agent, docker::LocalDockerOrchestrator},
+    pipeline_runner::DockerPipelineRunner,
 };
 use tokio::fs::read_to_string;
 

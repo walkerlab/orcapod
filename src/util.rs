@@ -1,4 +1,4 @@
-use crate::uniffi::error::{Result, selector};
+use crate::error::{Result, selector};
 use heck::ToSnakeCase as _;
 use snafu::OptionExt as _;
 use std::{

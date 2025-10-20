@@ -8,16 +8,15 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::uniffi::{
+use orcapod::{
     error::Result,
     model::{
         Annotation,
         packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
-        pod::{Pod, PodJob, PodResult, RecommendSpecs},
+        pod::{Pod, PodJob, PodResult, PodStatus, RecommendSpecs},
     },
     operator::MapOperator,
-    orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{

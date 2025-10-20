@@ -1,23 +1,62 @@
-use crate::{
-    core::model::ToYaml,
-    uniffi::{error::Result, model::packet::Packet, operator::MapOperator},
-};
-use async_trait;
+use std::{collections::HashMap, sync::Arc};
+
 use itertools::Itertools as _;
-use std::{clone::Clone, collections::HashMap, iter::IntoIterator, sync::Arc};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use crate::{
+    crypto::hash_buffer,
+    error::Result,
+    model::{ToYaml, packet::Packet, serialize_hashmap},
+};
+
+/// Trait that all operators must implement for it to work in the pipeline
 #[async_trait::async_trait]
 pub trait Operator {
+    /// Method where the operator get pass a packet for processing one at a time
     async fn process_packet(&self, stream_name: String, packet: Packet) -> Result<Vec<Packet>>;
 }
 
+/// Operator class that map `input_keys` to `output_key`, effectively renaming it
+/// For use in pipelines
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
+pub struct MapOperator {
+    /// Unique hash of the map operator
+    #[serde(skip)]
+    pub hash: String,
+    /// Mapping of input keys to output keys
+    #[serde(serialize_with = "serialize_hashmap")]
+    pub map: HashMap<String, String>,
+}
+
+#[uniffi::export]
+impl MapOperator {
+    #[uniffi::constructor]
+    /// Create a new `MapOperator`
+    ///
+    /// # Errors
+    /// Will error if there are issues converting the map to yaml for hashing
+    pub fn new(map: HashMap<String, String>) -> Result<Self> {
+        let no_hash = Self {
+            map,
+            hash: String::new(),
+        };
+
+        Ok(Self {
+            hash: hash_buffer(no_hash.to_yaml()?),
+            ..no_hash
+        })
+    }
+}
+
+/// Operator class that join packets from multiple parent streams into one packet
 pub struct JoinOperator {
     parent_count: usize,
     received_packets: Arc<Mutex<HashMap<String, Vec<Packet>>>>,
 }
 
 impl JoinOperator {
+    /// Create a new `JoinOperator`
     pub fn new(parent_count: usize) -> Self {
         Self {
             parent_count,
@@ -100,11 +139,9 @@ mod tests {
     #![expect(clippy::panic_in_result_fn, reason = "OK in tests.")]
 
     use crate::{
-        core::operator::{JoinOperator, MapOperator, Operator},
-        uniffi::{
-            error::Result,
-            model::packet::{Blob, BlobKind, Packet, PathSet, URI},
-        },
+        error::Result,
+        model::packet::{Blob, BlobKind, Packet, PathSet, URI},
+        operator::{JoinOperator, MapOperator, Operator},
     };
     use std::{collections::HashMap, path::PathBuf};
 
