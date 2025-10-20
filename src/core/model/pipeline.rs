@@ -208,51 +208,56 @@ impl Pipeline {
     }
 
     /// Compute the hash for each node in the graph which is defined as the hash of its kernel + the hashes of its parents
-    pub(crate) fn compute_hash_for_node_and_parents(
+    pub(crate) fn compute_hash_for_node_and_parents<'g>(
         node_idx: NodeIndex,
         input_spec: &HashMap<String, Vec<NodeURI>>,
-        graph: &mut graph::Graph<PipelineNode, ()>,
-    ) {
-        // Collect parent indices first to avoid borrowing issues
-        let parent_indices: Vec<NodeIndex> = graph.neighbors_directed(node_idx, Incoming).collect();
+        graph: &'g mut graph::Graph<PipelineNode, ()>,
+    ) -> &'g str {
+        if graph[node_idx].hash.is_empty() {
+            // Collect parent indices first to avoid borrowing issues
+            let parent_indices: Vec<NodeIndex> =
+                graph.neighbors_directed(node_idx, Incoming).collect();
 
-        // Sort the parent hashes to ensure consistent ordering
-        let mut parent_hashes: Vec<String> = if parent_indices.is_empty() {
-            // This is parent node, thus we will need to use the input_spec to generate a unique hash for the node
-            // Find all the input keys that map to this node
-            let input_keys = input_spec.iter().filter_map(|(input_key, node_uris)| {
-                node_uris.iter().find_map(|node_uri| {
-                    (node_uri.node_id == graph[node_idx].label).then(|| input_key.clone())
-                })
-            });
+            // Sort the parent hashes to ensure consistent ordering
+            let mut parent_hashes: Vec<String> = if parent_indices.is_empty() {
+                // This is parent node, thus we will need to use the input_spec to generate a unique hash for the node
+                // Find all the input keys that map to this node
+                input_spec
+                    .iter()
+                    .filter_map(|(input_key, node_uris)| {
+                        node_uris.iter().find_map(|node_uri| {
+                            (node_uri.node_id == graph[node_idx].label).then(|| input_key.clone())
+                        })
+                    })
+                    .collect()
+            } else {
+                parent_indices
+                    .into_iter()
+                    .map(|parent_idx| {
+                        // Check if hash has been computed for this node, if not trigger computation
+                        Self::compute_hash_for_node_and_parents(parent_idx, input_spec, graph)
+                            .to_owned()
+                    })
+                    .collect()
+            };
 
-            input_keys.collect()
-        } else {
-            parent_indices
-                .into_iter()
-                .map(|parent_idx| {
-                    // Check if hash has been computed for this node, if not trigger computation
-                    if graph[parent_idx].hash.is_empty() {
-                        // Recursive call to compute the parent's hash
-                        Self::compute_hash_for_node_and_parents(parent_idx, input_spec, graph);
-                    }
-                    graph[parent_idx].hash.clone()
-                })
-                .collect()
-        };
+            parent_hashes.sort();
 
-        parent_hashes.sort();
-
-        // Combine the node's kernel hash + the parent_hashes by concatenation only if there are parents hashes, else it is just the kernel hash
-        if parent_hashes.is_empty() {
-        } else {
-            let hash_for_node = format!(
-                "{}{}",
-                &graph[node_idx].kernel.get_hash(),
-                parent_hashes.into_iter().join("")
-            );
-            graph[node_idx].hash = hash_buffer(hash_for_node.as_bytes());
+            // Combine the node's kernel hash + the parent_hashes by concatenation only if there are parents hashes, else it is just the kernel hash
+            if parent_hashes.is_empty() {
+                let kernel_hash = graph[node_idx].kernel.get_hash().to_owned();
+                graph[node_idx].hash.clone_from(&kernel_hash);
+            } else {
+                let hash_for_node = format!(
+                    "{}{}",
+                    &graph[node_idx].kernel.get_hash(),
+                    parent_hashes.into_iter().join("")
+                );
+                graph[node_idx].hash = hash_buffer(hash_for_node.as_bytes());
+            }
         }
+
+        &graph[node_idx].hash
     }
 }
 
