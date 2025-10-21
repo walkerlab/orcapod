@@ -717,15 +717,203 @@ impl PipelineJob {
 
 #[cfg(test)]
 mod tests {
+    #![expect(
+        clippy::panic_in_result_fn,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::type_complexity,
+        reason = "OK in tests."
+    )]
+
     use indoc::indoc;
     use pretty_assertions::assert_eq;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
-    use crate::error::Result;
-    use crate::model::ToYaml as _;
-    use crate::model::pipeline::NodeURI;
-    use crate::model::{Annotation, pipeline::Pipeline};
-    use crate::operator::MapOperator;
+    use crate::{
+        error::Result,
+        model::{
+            Annotation, ToYaml as _,
+            packet::{Blob, BlobKind, PathInfo, PathSet, URI},
+            pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
+            pod::{Pod, RecommendedSpecs, tests::pod_fixture},
+        },
+        operator::MapOperator,
+    };
+
+    // Pipeline Fixture
+    pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
+        Pod::new(
+            Some(Annotation {
+                name: pod_name.to_owned(),
+                description: "Takes two input files, remove the final next line and combine them"
+                    .to_owned(),
+                version: "1.0.0".to_owned(),
+            }),
+            "alpine:3.14".to_owned(),
+            vec![
+                "sh".into(),
+                "-c".into(),
+                format!(
+                    "printf '%s %s\\n' \"$(cat input/input_1.txt | head -c -1)\" \"$(cat input/input_2.txt | head -c -1)\" > /output/output.txt"
+                ),
+            ],
+            HashMap::from([
+                (
+                    "input_1".to_owned(),
+                    PathInfo {
+                        path: PathBuf::from("/input/input_1.txt"),
+                        match_pattern: r".*\.txt".to_owned(),
+                    },
+                ),
+                (
+                    "input_2".into(),
+                    PathInfo {
+                        path: PathBuf::from("/input/input_2.txt"),
+                        match_pattern: r".*\.txt".to_owned(),
+                    },
+                ),
+            ]),
+            PathBuf::from("/output"),
+            HashMap::from([(
+                "output".to_owned(),
+                PathInfo {
+                    path: PathBuf::from("output.txt"),
+                    match_pattern: r".*\.txt".to_owned(),
+                },
+            )]),
+            RecommendedSpecs {
+                cpus: 0.25,
+                memory: 128_u64 << 20,
+            },
+            None,
+        )
+    }
+
+    #[expect(clippy::too_many_lines, reason = "Test fixture.")]
+    fn pipeline_fixture() -> Result<Pipeline> {
+        // Create a simple pipeline where the functions job is to add append their name into the input file
+        // Structure: A -> Mapper -> Joiner -> B -> Mapper -> C, D -> Mapper -> Joiner
+
+        // Create the kernel map
+        let mut kernel_map = HashMap::new();
+
+        // Insert the pod into the kernel map
+        for pod_name in ["A", "B", "C", "D", "E"] {
+            kernel_map.insert(pod_name.into(), combine_txt_pod(pod_name)?.into());
+        }
+
+        let output_to_input_1 = Arc::new(MapOperator::new(HashMap::from([(
+            "output".to_owned(),
+            "input_1".to_owned(),
+        )]))?);
+
+        let output_to_input_2 = Arc::new(MapOperator::new(HashMap::from([(
+            "output".to_owned(),
+            "input_2".to_owned(),
+        )]))?);
+
+        // Create a mapper for A, B, and C
+        kernel_map.insert(
+            "pod_a_mapper".into(),
+            Kernel::MapOperator {
+                mapper: Arc::clone(&output_to_input_1),
+            },
+        );
+        kernel_map.insert(
+            "pod_b_mapper".into(),
+            Kernel::MapOperator {
+                mapper: Arc::clone(&output_to_input_2),
+            },
+        );
+        kernel_map.insert(
+            "pod_c_mapper".into(),
+            Kernel::MapOperator {
+                mapper: Arc::clone(&output_to_input_1),
+            },
+        );
+        kernel_map.insert(
+            "pod_d_mapper".into(),
+            Kernel::MapOperator {
+                mapper: Arc::clone(&output_to_input_2),
+            },
+        );
+
+        for joiner_name in ['c', 'd', 'e'] {
+            kernel_map.insert(format!("pod_{joiner_name}_joiner"), Kernel::JoinOperator);
+        }
+
+        // Write all the edges in DOT format
+        let dot = "
+        digraph {
+        A -> pod_a_mapper -> pod_c_joiner;
+        B -> pod_b_mapper -> pod_c_joiner;
+        pod_c_joiner -> C -> pod_c_mapper-> pod_e_joiner;
+        D -> pod_d_mapper -> pod_e_joiner;
+        pod_e_joiner -> E;
+        }
+    ";
+
+        Pipeline::new(
+            dot,
+            &kernel_map,
+            HashMap::from([
+                (
+                    "where".into(),
+                    vec![NodeURI {
+                        node_id: "A".into(),
+                        key: "input_1".into(),
+                    }],
+                ),
+                (
+                    "is".into(),
+                    vec![NodeURI {
+                        node_id: "A".into(),
+                        key: "input_2".into(),
+                    }],
+                ),
+                (
+                    "the".into(),
+                    vec![NodeURI {
+                        node_id: "B".into(),
+                        key: "input_1".into(),
+                    }],
+                ),
+                (
+                    "cat_color".into(),
+                    vec![NodeURI {
+                        node_id: "B".into(),
+                        key: "input_2".into(),
+                    }],
+                ),
+                (
+                    "cat".into(),
+                    vec![NodeURI {
+                        node_id: "D".into(),
+                        key: "input_1".into(),
+                    }],
+                ),
+                (
+                    "action".into(),
+                    vec![NodeURI {
+                        node_id: "D".into(),
+                        key: "input_2".into(),
+                    }],
+                ),
+            ]),
+            HashMap::from([(
+                "output".to_owned(),
+                NodeURI {
+                    node_id: "E".into(),
+                    key: "output".into(),
+                },
+            )]),
+            Some(Annotation {
+                name: "test".into(),
+                version: "0.0.0".into(),
+                description: "Test pipeline".into(),
+            }),
+        )
+    }
 
     #[test]
     fn to_yaml() -> Result<()> {
@@ -789,6 +977,338 @@ mod tests {
                 key: node_key_1
             output_spec: {}
             "#},
+        );
+
+        Ok(())
+    }
+
+    #[expect(clippy::too_many_lines, reason = "Test code")]
+    #[test]
+    fn preprocessing() -> Result<()> {
+        let pipeline = pipeline_fixture()?;
+
+        // Assert that every node has a non-empty hash
+        let node_hashes = pipeline
+            .graph
+            .node_indices()
+            .map(|idx| {
+                (
+                    pipeline.graph[idx].label.as_str(),
+                    pipeline.graph[idx].hash.as_str(),
+                )
+            })
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(
+            node_hashes,
+            HashMap::from([
+                (
+                    "pod_c_joiner",
+                    "d2141ce0c203a8b556d7dbbbc6268ac4bbfa444748f92baff42235787f2b7550"
+                ),
+                (
+                    "B",
+                    "964ebb9ddd6bb7db56e53c19e9ac34dfd08779a656295b01e70b5973adc61103"
+                ),
+                (
+                    "C",
+                    "96b30227e0243f282f7a898bd85a246127e664635a3969577932d7653cfb79cb"
+                ),
+                (
+                    "pod_a_mapper",
+                    "83bd3d17026c882db6b6cca7ccca0173f478c11449cfa8bfb13a0518a7e5e32a"
+                ),
+                (
+                    "pod_b_mapper",
+                    "dd73cd3ab345917b25fc028131d83da7ce1c53702fcbabdd19b86a8bdde158b3"
+                ),
+                (
+                    "pod_d_mapper",
+                    "d37f595093e8f7235f97213b3f7ff88b12786e48ec4f22275018cc7d22c113f8"
+                ),
+                (
+                    "A",
+                    "8e43dbc9fd55fa7d1a36fc4a6c036f4113b7aa7fcf38646a2f2472bac6774962"
+                ),
+                (
+                    "E",
+                    "6ec68cc43ea15472731a318584cc8792fb2ff93c96fed6f3f998849b75976694"
+                ),
+                (
+                    "D",
+                    "04cb341a09eeb771846377405a5f33d011f99a7dfa4739fd7876a7e70c994e4e"
+                ),
+                (
+                    "pod_c_mapper",
+                    "240c8e7fa5e0bd88239aba625387ea495fc5323a5d4b6b519946b8f8b907ddf6"
+                ),
+                (
+                    "pod_e_joiner",
+                    "36f3e88889ecf89183205f340043de61f3c6a254026aae5aa1ce587a666e8c30"
+                ),
+            ]),
+            "Node hashes did not match"
+        );
+
+        // Check if the input spec contains the correct node hashes
+        assert_eq!(
+            pipeline.input_spec,
+            HashMap::from([
+                (
+                    "the".into(),
+                    vec![NodeURI {
+                        node_id: "964ebb9ddd6bb7db56e53c19e9ac34dfd08779a656295b01e70b5973adc61103"
+                            .into(),
+                        key: "input_1".into(),
+                    },]
+                ),
+                (
+                    "where".into(),
+                    vec![NodeURI {
+                        node_id: "8e43dbc9fd55fa7d1a36fc4a6c036f4113b7aa7fcf38646a2f2472bac6774962"
+                            .into(),
+                        key: "input_1".into(),
+                    },]
+                ),
+                (
+                    "cat_color".into(),
+                    vec![NodeURI {
+                        node_id: "964ebb9ddd6bb7db56e53c19e9ac34dfd08779a656295b01e70b5973adc61103"
+                            .into(),
+                        key: "input_2".into(),
+                    },]
+                ),
+                (
+                    "is".into(),
+                    vec![NodeURI {
+                        node_id: "8e43dbc9fd55fa7d1a36fc4a6c036f4113b7aa7fcf38646a2f2472bac6774962"
+                            .into(),
+                        key: "input_2".into(),
+                    },]
+                ),
+                (
+                    "cat".into(),
+                    vec![NodeURI {
+                        node_id: "04cb341a09eeb771846377405a5f33d011f99a7dfa4739fd7876a7e70c994e4e"
+                            .into(),
+                        key: "input_1".into(),
+                    },]
+                ),
+                (
+                    "action".into(),
+                    vec![NodeURI {
+                        node_id: "04cb341a09eeb771846377405a5f33d011f99a7dfa4739fd7876a7e70c994e4e"
+                            .into(),
+                        key: "input_2".into(),
+                    },]
+                ),
+            ]),
+            "Input spec did not match"
+        );
+
+        // Check if the output spec contain the correct node hashes
+        assert_eq!(
+            pipeline.output_spec,
+            HashMap::from([(
+                "output".into(),
+                NodeURI {
+                    node_id: "6ec68cc43ea15472731a318584cc8792fb2ff93c96fed6f3f998849b75976694"
+                        .into(),
+                    key: "output".into(),
+                }
+            ),]),
+            "Output spec did not match"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn input_packet_checksum() -> Result<()> {
+        let pipeline = Pipeline::new(
+            indoc! {"
+            digraph {
+                A
+            }
+        "},
+            &HashMap::from([(
+                "A".into(),
+                Kernel::Pod {
+                    pod: pod_fixture()?.into(),
+                },
+            )]),
+            HashMap::from([(
+                "input_txt".into(),
+                vec![NodeURI {
+                    node_id: "A".into(),
+                    key: "input_txt".into(),
+                }],
+            )]),
+            HashMap::new(),
+            None,
+        )?;
+
+        let pipeline_job = PipelineJob::new(
+            pipeline.into(),
+            &HashMap::from([(
+                "input_txt".into(),
+                vec![PathSet::Collection(vec![Blob {
+                    kind: BlobKind::File,
+                    location: URI {
+                        namespace: "default".into(),
+                        path: "input_txt/cat.txt".into(),
+                    },
+                    checksum: String::new(),
+                }])],
+            )]),
+            URI {
+                namespace: "default".into(),
+                path: "output/pipeline".into(),
+            },
+            &HashMap::from([("default".to_owned(), PathBuf::from("./tests/extra/data"))]),
+        )?;
+
+        let checksum = match &pipeline_job.input_packet["input_txt"].first() {
+            Some(PathSet::Collection(blobs)) => blobs[0].checksum.clone(),
+            Some(_) | None => panic!("Input configuration unexpectedly changed."),
+        };
+
+        assert_eq!(
+            checksum, "175cc6f362b2f75acd08a373e000144fdb8d14a833d4b70fd743f16a7039103f",
+            "Incorrect checksum"
+        );
+
+        Ok(())
+    }
+
+    /// Testing invalid conditions to make sure validation works
+    fn basic_pipeline_components() -> Result<(
+        String,
+        HashMap<String, Kernel>,
+        HashMap<String, Vec<NodeURI>>,
+        HashMap<String, NodeURI>,
+    )> {
+        let dot = indoc! {"
+        digraph {
+            A
+        }
+    "};
+
+        let metadata = HashMap::from([("A".into(), combine_txt_pod("A")?.into())]);
+
+        let input_spec = HashMap::from([
+            (
+                "input_1".into(),
+                vec![NodeURI {
+                    node_id: "A".into(),
+                    key: "input_1".into(),
+                }],
+            ),
+            (
+                "input_2".into(),
+                vec![NodeURI {
+                    node_id: "A".into(),
+                    key: "input_2".into(),
+                }],
+            ),
+        ]);
+
+        let output_spec = HashMap::from([(
+            "output".into(),
+            NodeURI {
+                node_id: "A".into(),
+                key: "output".into(),
+            },
+        )]);
+
+        Ok((dot.to_owned(), metadata, input_spec, output_spec))
+    }
+
+    #[test]
+    fn invalid_input_spec() -> Result<()> {
+        let (dot, metadata, _, output_spec) = basic_pipeline_components()?;
+
+        // Test invalid node reference in input_spec
+        assert!(
+            Pipeline::new(
+                &dot,
+                &metadata,
+                HashMap::from([(
+                    "input_1".into(),
+                    vec![NodeURI {
+                        node_id: "B".into(),
+                        key: "input_1".into(),
+                    }],
+                )]),
+                output_spec.clone(),
+                None
+            )
+            .is_err(),
+            "Pipeline creation should have failed due to invalid input_spec"
+        );
+
+        // Test invalid key reference in input_spec
+        assert!(
+            Pipeline::new(
+                &dot,
+                &metadata,
+                HashMap::from([(
+                    "input_1".into(),
+                    vec![NodeURI {
+                        node_id: "A".into(),
+                        key: "input_3".into(),
+                    }],
+                )]),
+                output_spec,
+                None
+            )
+            .is_err(),
+            "Pipeline creation should have failed due to invalid input_spec"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_output_spec() -> Result<()> {
+        let (dot, metadata, input_spec, _) = basic_pipeline_components()?;
+
+        // Test invalid output_spec node reference
+        assert!(
+            Pipeline::new(
+                &dot,
+                &metadata,
+                input_spec.clone(),
+                HashMap::from([(
+                    "A".into(),
+                    NodeURI {
+                        node_id: "B".into(),
+                        key: "output".into(),
+                    }
+                )]),
+                None
+            )
+            .is_err(),
+            "Pipeline creation should have failed due to invalid output_spec"
+        );
+
+        // Test invalid output_spec key reference
+        assert!(
+            Pipeline::new(
+                &dot,
+                &metadata,
+                input_spec,
+                HashMap::from([(
+                    "A".into(),
+                    NodeURI {
+                        node_id: "A".into(),
+                        key: "output_dne".into(),
+                    }
+                )]),
+                None
+            )
+            .is_err(),
+            "Pipeline creation should have failed due to invalid output_spec"
         );
 
         Ok(())

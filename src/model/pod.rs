@@ -45,7 +45,7 @@ pub struct Pod {
     pub output_spec: HashMap<String, PathInfo>,
     /// Execution requirements for the pod.
     #[serde(default)]
-    pub recommend_specs: RecommendSpecs,
+    pub recommend_specs: RecommendedSpecs,
     /// Optional GPU requirements for the pod. If set, then the running system needs a GPU that meets the requirements.
     pub gpu_requirements: Option<GPURequirement>,
 }
@@ -65,7 +65,7 @@ impl Pod {
         input_spec: HashMap<String, PathInfo>,
         output_dir: PathBuf,
         output_spec: HashMap<String, PathInfo>,
-        recommend_specs: RecommendSpecs,
+        recommend_specs: RecommendedSpecs,
         gpu_requirements: Option<GPURequirement>,
     ) -> Result<Self> {
         let pod_no_hash = Self {
@@ -101,14 +101,14 @@ impl ToYaml for Pod {
 /// Execution recommendations for a pod, since it doesn't impact the actual reproducibility
 /// it shouldn't be hashed along with the pod
 #[derive(uniffi::Record, Serialize, Deserialize, Debug, PartialEq, Default, Clone)]
-pub struct RecommendSpecs {
+pub struct RecommendedSpecs {
     /// Optimal number of CPU cores needed to run the pod provided by the user
     pub cpus: f32,
     /// Optimal amount of memory needed to run the pod provided by the user, code can probably run with less but may hit OOM
     pub memory: u64,
 }
 
-impl ToYaml for RecommendSpecs {
+impl ToYaml for RecommendedSpecs {
     fn process_field(
         field_name: &str,
         field_value: &serde_yaml::Value,
@@ -426,7 +426,7 @@ pub enum PodStatus {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     #![expect(clippy::unwrap_used, reason = "OK in tests.")]
     use std::{
         collections::HashMap,
@@ -441,7 +441,7 @@ mod tests {
         model::{
             Annotation, ToYaml as _,
             packet::{Blob, BlobKind, PathInfo, PathSet, URI},
-            pod::{Pod, PodJob, PodResult, PodStatus, RecommendSpecs},
+            pod::{Pod, PodJob, PodResult, PodStatus, RecommendedSpecs},
         },
     };
 
@@ -454,7 +454,7 @@ mod tests {
         ])
     });
 
-    fn basic_pod() -> Result<Pod> {
+    pub fn pod_fixture() -> Result<Pod> {
         Pod::new(
             Some(Annotation {
                 name: "test".into(),
@@ -481,7 +481,7 @@ mod tests {
                     match_pattern: r".*\.txt".into(),
                 },
             )]),
-            RecommendSpecs {
+            RecommendedSpecs {
                 cpus: 0.20,
                 memory: 128 << 20,
             },
@@ -489,8 +489,8 @@ mod tests {
         )
     }
 
-    fn basic_pod_job() -> Result<PodJob> {
-        let pod = Arc::new(basic_pod()?);
+    fn pod_job_fixture() -> Result<PodJob> {
+        let pod = Arc::new(pod_fixture()?);
         PodJob::new(
             Some(Annotation {
                 name: "test_job".into(),
@@ -519,14 +519,14 @@ mod tests {
         )
     }
 
-    fn basic_pod_result() -> Result<PodResult> {
+    fn pod_result_fixture() -> Result<PodResult> {
         PodResult::new(
             Some(Annotation {
                 name: "test".into(),
                 version: "0.1".into(),
                 description: "Basic Result for testing hashing and yaml serialization".into(),
             }),
-            basic_pod_job()?.into(),
+            pod_job_fixture()?.into(),
             "randomly_assigned_name".into(),
             PodStatus::Completed,
             1_737_922_307,
@@ -539,7 +539,7 @@ mod tests {
     #[test]
     fn pod_hash() {
         assert_eq!(
-            basic_pod().unwrap().hash,
+            pod_fixture().unwrap().hash,
             "b5574e2efdf26361e8e8e886389a250cfbfcceed08b29325a78fd738cbb2a1b8",
             "Hash didn't match."
         );
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn pod_to_yaml() {
         assert_eq!(
-            basic_pod().unwrap().to_yaml().unwrap(),
+            pod_fixture().unwrap().to_yaml().unwrap(),
             indoc! {r"
                 class: pod
                 image: alpine:3.14
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn pod_job_hash() {
         assert_eq!(
-            basic_pod_job().unwrap().hash,
+            pod_job_fixture().unwrap().hash,
             "80348a4ef866a9dfc1a5d0a48467a6592ef2ed9e8de67930d64afefbb395f1c6",
             "Hash didn't match."
         );
@@ -583,7 +583,7 @@ mod tests {
     #[test]
     fn pod_job_to_yaml() {
         assert_eq!(
-            basic_pod_job().unwrap().to_yaml().unwrap(),
+            pod_job_fixture().unwrap().to_yaml().unwrap(),
             indoc! {"
                 class: pod_job
                 pod: b5574e2efdf26361e8e8e886389a250cfbfcceed08b29325a78fd738cbb2a1b8
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn pod_result_hash() {
         assert_eq!(
-            basic_pod_result().unwrap().hash,
+            pod_result_fixture().unwrap().hash,
             "92809a4ce13b4fe8c8dcdcf2b48dd14a9dd885593fe3ab5d9809d27bc9a16354",
             "Hash didn't match."
         );
@@ -618,7 +618,7 @@ mod tests {
     #[test]
     fn pod_result_to_yaml() {
         assert_eq!(
-            basic_pod_result().unwrap().to_yaml().unwrap(),
+            pod_result_fixture().unwrap().to_yaml().unwrap(),
             indoc! {"
                 class: pod_result
                 pod_job: 80348a4ef866a9dfc1a5d0a48467a6592ef2ed9e8de67930d64afefbb395f1c6

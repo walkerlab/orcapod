@@ -16,7 +16,7 @@ use orcapod::{
     model::{
         Annotation, ModelType,
         packet::PathInfo,
-        pod::{Pod, RecommendSpecs},
+        pod::{Pod, RecommendedSpecs},
     },
     operator::MapOperator,
     store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
@@ -284,7 +284,7 @@ fn pod_annotation_unique() -> Result<()> {
         },
     )]);
     let output_dir: PathBuf = "/output".into();
-    let exec_requirements = RecommendSpecs {
+    let exec_requirements = RecommendedSpecs {
         cpus: 0.25,
         memory: 1_u64 << 30,
     };

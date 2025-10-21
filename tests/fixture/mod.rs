@@ -14,7 +14,7 @@ use orcapod::{
         Annotation,
         packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
-        pod::{Pod, PodJob, PodResult, PodStatus, RecommendSpecs},
+        pod::{Pod, PodJob, PodResult, PodStatus, RecommendedSpecs},
     },
     operator::MapOperator,
     store::{ModelID, ModelInfo, Store},
@@ -76,7 +76,7 @@ pub fn pod_style() -> Result<Pod> {
                 },
             ),
         ]),
-        RecommendSpecs {
+        RecommendedSpecs {
             cpus: 0.25,
             memory: 1_u64 << 30,
         },
@@ -171,7 +171,7 @@ pub fn pod_custom(
         input_spec,
         PathBuf::from("/tmp/output"),
         HashMap::new(),
-        RecommendSpecs {
+        RecommendedSpecs {
             cpus: 0.1,
             memory: 50_u64 << 20,
         },
@@ -325,7 +325,7 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
                 match_pattern: r".*\.txt".to_owned(),
             },
         )]),
-        RecommendSpecs {
+        RecommendedSpecs {
             cpus: 0.25,
             memory: 128_u64 << 20,
         },
