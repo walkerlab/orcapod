@@ -1,12 +1,8 @@
 use crate::{
-    core::{
-        model::ToYaml,
-        store::MODEL_NAMESPACE,
-        util::{get_type_name, parse_debug_name},
-    },
+    core::{model::ToYaml, store::MODEL_NAMESPACE, util::get_type_name},
     uniffi::{
-        error::{Result, selector},
-        model::Annotation,
+        error::{OrcaError, Result, selector},
+        model::{Annotation, pipeline::Pipeline},
         store::{ModelID, ModelInfo, filestore::LocalFileStore},
     },
 };
@@ -16,7 +12,7 @@ use heck::ToSnakeCase as _;
 use regex::Regex;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_yaml;
-use snafu::{OptionExt as _, ResultExt as _};
+use snafu::OptionExt as _;
 use std::{
     fmt, fs,
     path::{Path, PathBuf},
@@ -55,17 +51,12 @@ impl LocalFileStore {
         PathBuf::from(format!("annotation/{name}-{version}.yaml"))
     }
     /// Build the storage path with the model directory (`hash`) and a file's relative path.
-    pub fn make_path<T: fmt::Debug>(
-        &self,
-        model: &T,
-        hash: &str,
-        relpath: impl AsRef<Path>,
-    ) -> PathBuf {
+    pub fn make_path<T: fmt::Debug>(&self, hash: &str, relpath: impl AsRef<Path>) -> PathBuf {
         PathBuf::from(format!(
             "{}/{}/{}/{}",
             self.directory.to_string_lossy(),
             MODEL_NAMESPACE,
-            parse_debug_name(model).to_snake_case(),
+            get_type_name::<T>().to_snake_case(),
             hash
         ))
         .join(relpath)
@@ -90,22 +81,15 @@ impl LocalFileStore {
     /// # Errors
     ///
     /// Will return error if unable to find.
-    pub(crate) fn lookup_hash<T: fmt::Debug>(
-        &self,
-        model: &T,
-        name: &str,
-        version: &str,
-    ) -> Result<String> {
-        let model_info = Self::find_model_metadata(&self.make_path(
-            model,
-            "*",
-            Self::make_annotation_relpath(name, version),
-        ))?
+    pub(crate) fn lookup_hash<T: fmt::Debug>(&self, name: &str, version: &str) -> Result<String> {
+        let model_info = Self::find_model_metadata(
+            &self.make_path::<T>("*", Self::make_annotation_relpath(name, version)),
+        )?
         .next()
         .context(selector::MissingInfo {
             details: format!(
                 "annotation where class = {}, name = {name}, version = {version}",
-                parse_debug_name(model).to_snake_case()
+                get_type_name::<T>().to_snake_case()
             ),
         })?;
         Ok(model_info.hash)
@@ -137,7 +121,7 @@ impl LocalFileStore {
                 &provided_annotation.version,
             );
             if let Some((found_hash, found_name, found_version)) =
-                Self::find_model_metadata(&self.make_path(model, "*", relpath))?
+                Self::find_model_metadata(&self.make_path::<T>("*", relpath))?
                     .next()
                     .and_then(|model_info| {
                         Some((model_info.hash, model_info.name?, model_info.version?))
@@ -156,13 +140,13 @@ impl LocalFileStore {
                 );
             } else {
                 Self::save_file(
-                    self.make_path(model, hash, relpath),
+                    self.make_path::<T>(hash, relpath),
                     serde_yaml::to_string(provided_annotation)?,
                 )?;
             }
         }
         // Save model specification and skip if it already exist e.g. on new annotations
-        let spec_file = &self.make_path(model, hash, Self::SPEC_RELPATH);
+        let spec_file = &self.make_path::<T>(hash, Self::SPEC_RELPATH);
         if spec_file.exists() {
             println!(
                 "{}",
@@ -188,33 +172,30 @@ impl LocalFileStore {
         &self,
         model_id: &ModelID,
     ) -> Result<(T, Option<Annotation>, String)> {
+        let (hash, annotation) = self.decode_model_id::<T>(model_id)?;
+
+        Ok((
+            serde_yaml::from_str(&fs::read_to_string(
+                self.make_path::<T>(&hash, Self::SPEC_RELPATH),
+            )?)?,
+            annotation,
+            hash,
+        ))
+    }
+
+    pub(crate) fn decode_model_id<T: fmt::Debug>(
+        &self,
+        model_id: &ModelID,
+    ) -> Result<(String, Option<Annotation>)> {
         match model_id {
-            ModelID::Hash(hash) => {
-                let path = self.make_path(&T::default(), hash, Self::SPEC_RELPATH);
-                Ok((
-                    serde_yaml::from_str(
-                        &fs::read_to_string(path.clone())
-                            .context(selector::InvalidPath { path })?,
-                    )?,
-                    None,
-                    hash.to_owned(),
-                ))
-            }
+            ModelID::Hash(hash) => Ok((hash.to_owned(), None)),
             ModelID::Annotation(name, version) => {
-                let hash = self.lookup_hash(&T::default(), name, version)?;
-                Ok((
-                    serde_yaml::from_str(&fs::read_to_string(self.make_path(
-                        &T::default(),
-                        &hash,
-                        Self::SPEC_RELPATH,
-                    ))?)?,
-                    serde_yaml::from_str(&fs::read_to_string(self.make_path(
-                        &T::default(),
-                        &hash,
-                        Self::make_annotation_relpath(name, version),
-                    ))?)?,
-                    hash,
-                ))
+                let hash = self.lookup_hash::<T>(name, version)?;
+                let annotation_str = fs::read_to_string(
+                    self.make_path::<T>(&hash, Self::make_annotation_relpath(name, version)),
+                )?;
+                let annotation: Annotation = serde_yaml::from_str(&annotation_str)?;
+                Ok((hash, Some(annotation)))
             }
         }
     }
@@ -224,7 +205,7 @@ impl LocalFileStore {
     ///
     /// Will return `Err` if there is an issue querying metadata from existing models in the store.
     pub(crate) fn list_model<T: Default + fmt::Debug>(&self) -> Result<Vec<ModelInfo>> {
-        Ok(Self::find_model_metadata(&self.make_path(&T::default(), "**", "*"))?.collect())
+        Ok(Self::find_model_metadata(&self.make_path::<T>("**", "*"))?.collect())
     }
     /// How to explicitly delete any stored model and all associated annotations (does not propagate).
     ///
@@ -236,13 +217,32 @@ impl LocalFileStore {
         // assumes propagate = false
         let hash = match model_id {
             ModelID::Hash(hash) => hash,
-            ModelID::Annotation(name, version) => {
-                &self.lookup_hash(&T::default(), name, version)?
-            }
+            ModelID::Annotation(name, version) => &self.lookup_hash::<T>(name, version)?,
         };
-        let spec_dir = self.make_path(&T::default(), hash, "");
+        let spec_dir = self.make_path::<T>(hash, "");
         fs::remove_dir_all(spec_dir)?;
 
         Ok(())
+    }
+
+    pub(crate) fn get_latest_pipeline_labels_file_name(
+        &self,
+        pipeline_hash: &str,
+    ) -> Result<Option<String>> {
+        let existing_labels_path = self.make_path::<Pipeline>(pipeline_hash, "labels/");
+        Ok(if existing_labels_path.exists() {
+            let mut label_file_names = fs::read_dir(&existing_labels_path)?
+                .map(|entry| Ok::<_, OrcaError>(entry?.file_name()))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Sort and get the latest one
+            label_file_names.sort();
+
+            label_file_names
+                .last()
+                .map(|os_str| os_str.to_string_lossy().to_string())
+        } else {
+            None
+        })
     }
 }

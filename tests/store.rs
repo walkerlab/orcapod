@@ -18,9 +18,10 @@ use orcapod::uniffi::{
         packet::PathInfo,
         pod::{Pod, RecommendSpecs},
     },
+    operator::MapOperator,
     store::{ModelID, ModelInfo, Store as _, filestore::LocalFileStore},
 };
-use pretty_assertions::assert_eq as pretty_assert_eq;
+use pretty_assertions::assert_eq;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -30,7 +31,14 @@ use std::{
     vec,
 };
 
-use crate::fixture::str_to_vec;
+use crate::fixture::{pipeline, str_to_vec};
+
+fn get_store_fixtures() -> (TestDirs, LocalFileStore) {
+    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))
+        .expect("Failed to create test directories.");
+    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    (test_dirs, store)
+}
 
 fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
     Some(
@@ -44,11 +52,11 @@ fn is_dir_empty(file: &Path, levels_up: usize) -> Option<bool> {
 }
 
 fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     model.save(&store)?;
     let annotation = model.get_annotation().expect("Annotation missing.");
-    pretty_assert_eq!(
+
+    assert_eq!(
         model.list(&store)?,
         vec![
             ModelInfo {
@@ -64,7 +72,7 @@ fn basic_test<T: TestSetup + PartialEq + Debug>(model: &T, expected_model: &T) -
         ],
         "List didn't match."
     );
-    pretty_assert_eq!(
+    assert_eq!(
         &model.load(&store)?,
         expected_model,
         "Loaded model doesn't match."
@@ -113,19 +121,17 @@ fn pod_result_basic() -> Result<()> {
 
 #[test]
 fn pod_files() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     let pod_style = pod_style()?;
     let annotation = pod_style
         .annotation
         .as_ref()
         .expect("Annotation missing from `pod_style`");
-    let annotation_file = store.make_path(
-        &pod_style,
+    let annotation_file = store.make_path::<Pod>(
         &pod_style.hash,
         LocalFileStore::make_annotation_relpath(&annotation.name, &annotation.version),
     );
-    let spec_file = store.make_path(&pod_style, &pod_style.hash, LocalFileStore::SPEC_RELPATH);
+    let spec_file = store.make_path::<Pod>(&pod_style.hash, LocalFileStore::SPEC_RELPATH);
 
     store.save_pod(&pod_style)?;
     assert!(spec_file.exists(), "Spec file missing.");
@@ -151,20 +157,18 @@ fn pod_files() -> Result<()> {
 
 #[test]
 fn pod_list_empty() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     assert_eq!(store.list_pod()?, vec![], "Pod list is not empty.");
     Ok(())
 }
 
 #[test]
 fn pod_load_from_hash() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     pod.annotation = None;
-    pretty_assert_eq!(
+    assert_eq!(
         store.load_pod(&ModelID::Hash(pod.hash.clone()))?,
         pod,
         "Loaded model from hash doesn't match."
@@ -174,8 +178,7 @@ fn pod_load_from_hash() -> Result<()> {
 
 #[test]
 fn pod_annotation_delete() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
     let mut pod = pod_style()?;
     store.save_pod(&pod)?;
     let model_version = &pod.annotation.as_ref().map(|x| x.version.clone());
@@ -187,7 +190,7 @@ fn pod_annotation_delete() -> Result<()> {
         description: String::new(),
     });
     store.save_pod(&pod)?;
-    pretty_assert_eq!(
+    assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
@@ -210,7 +213,7 @@ fn pod_annotation_delete() -> Result<()> {
     );
     // case 2: delete new annotation, assert list gives 2 entries: hash, annotation (original).
     store.delete_annotation(&ModelType::Pod, "new-name", "0.5.0")?;
-    pretty_assert_eq!(
+    assert_eq!(
         store.list_pod()?,
         vec![
             ModelInfo {
@@ -234,7 +237,7 @@ fn pod_annotation_delete() -> Result<()> {
             .to_owned()
             .expect("Version missing from `pod_style`"),
     )?;
-    pretty_assert_eq!(
+    assert_eq!(
         store.list_pod()?,
         vec![ModelInfo {
             name: None,
@@ -256,8 +259,7 @@ fn pod_annotation_delete() -> Result<()> {
 #[expect(clippy::too_many_lines, reason = "Okay because of creating pods")]
 #[test]
 fn pod_annotation_unique() -> Result<()> {
-    let test_dirs = TestDirs::new(&HashMap::from([("default".to_owned(), None::<String>)]))?;
-    let store = LocalFileStore::new(test_dirs.0["default"].path().to_path_buf());
+    let (_, store) = get_store_fixtures();
 
     // Pod values
     let annotation = Annotation {
@@ -318,7 +320,7 @@ fn pod_annotation_unique() -> Result<()> {
     )?;
 
     store.save_pod(&pod_with_new_annotation)?;
-    pretty_assert_eq!(
+    assert_eq!(
         HashSet::from_iter(store.list_pod()?),
         HashSet::from([
             ModelInfo {
@@ -334,7 +336,7 @@ fn pod_annotation_unique() -> Result<()> {
         ]),
         "Pod list didn't return 2 expected entries."
     );
-    pretty_assert_eq!(
+    assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
                 annotation.name.clone(),
@@ -356,7 +358,7 @@ fn pod_annotation_unique() -> Result<()> {
         gpu_requirements,
     )?;
     store.save_pod(&pod_with_updated_command)?;
-    pretty_assert_eq!(
+    assert_eq!(
         HashSet::from_iter(store.list_pod()?),
         HashSet::from([
             ModelInfo {
@@ -377,7 +379,7 @@ fn pod_annotation_unique() -> Result<()> {
         ]),
         "Pod list didn't return 3 expected entries."
     );
-    pretty_assert_eq!(
+    assert_eq!(
         store
             .load_pod(&ModelID::Annotation(
                 annotation.name.clone(),
@@ -388,4 +390,36 @@ fn pod_annotation_unique() -> Result<()> {
         "Pod annotation unexpected."
     );
     Ok(())
+}
+
+#[test]
+fn map_operator_basic() -> Result<()> {
+    let map_operator =
+        MapOperator::new(HashMap::from([("input_key".into(), "output_key".into())]))?;
+
+    let (_, store) = get_store_fixtures();
+
+    println!("Saved map operator with hash: {}", &map_operator.hash);
+    store.save_map_operator(&map_operator)?;
+
+    assert!(store.list_map_operator()?.contains(&map_operator.hash));
+
+    // Load and compare
+    assert_eq!(
+        &store.load_map_operator(&map_operator.hash)?,
+        &map_operator,
+        "Loaded map operator doesn't match."
+    );
+
+    // Delete and assert not found
+    store.delete_map_operator(&map_operator.hash)?;
+    assert!(!store.list_map_operator()?.contains(&map_operator.hash));
+
+    Ok(())
+}
+
+#[test]
+fn pipeline_basic() -> Result<()> {
+    let pipeline = pipeline()?;
+    basic_test(&pipeline, &pipeline)
 }

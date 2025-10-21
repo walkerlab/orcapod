@@ -15,6 +15,7 @@ use orcapod::uniffi::{
     model::packet::URI,
     orchestrator::{ImageKind, Orchestrator, PodRun, PodStatus, docker::LocalDockerOrchestrator},
 };
+use pretty_assertions::assert_eq;
 use std::{collections::HashMap, path::PathBuf};
 
 use crate::fixture::{

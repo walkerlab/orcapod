@@ -54,6 +54,13 @@ pub(crate) enum Kind {
         io_error: Box<io::Error>,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display(
+        "Failed to get label hash from file name: {file_name}. Split result by \"-\" didn't return hash"
+    ))]
+    FailedToGetLabelHashFromFileName {
+        file_name: String,
+        backtrace: Option<Backtrace>,
+    },
     #[snafu(display("Incomplete {kind} packet. Missing `{missing_keys:?}` keys."))]
     IncompletePacket {
         kind: String,

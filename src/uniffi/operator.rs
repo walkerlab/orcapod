@@ -8,9 +8,10 @@ use crate::uniffi::error::Result;
 
 /// Operator class that map `input_keys` to `output_key`, effectively renaming it
 /// For use in pipelines
-#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub struct MapOperator {
     /// Unique hash of the map operator
+    #[serde(skip)]
     pub hash: String,
     /// Mapping of input keys to output keys
     #[serde(serialize_with = "serialize_hashmap")]

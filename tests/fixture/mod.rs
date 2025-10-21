@@ -452,6 +452,11 @@ pub fn pipeline() -> Result<Pipeline> {
                 key: "output".into(),
             },
         )]),
+        Some(Annotation {
+            name: "test".into(),
+            version: "0.0.0".into(),
+            description: "Test pipeline".into(),
+        }),
     )
 }
 
@@ -567,6 +572,8 @@ pub struct TestDirs(pub HashMap<String, TempDir>);
 
 impl TestDirs {
     pub fn new(config: &HashMap<String, Option<impl AsRef<Path>>>) -> Result<Self> {
+        // Check if .tmp exists if not create it
+        fs::create_dir_all("tests/.tmp")?;
         Ok(Self(
             config
                 .iter()
@@ -693,5 +700,30 @@ impl TestSetup for PodResult {
     }
     fn list(&self, store: &impl Store) -> Result<Vec<ModelInfo>> {
         store.list_pod_result()
+    }
+}
+
+impl TestSetup for Pipeline {
+    fn save(&self, store: &impl Store) -> Result<()> {
+        store.save_pipeline(self)
+    }
+    fn delete(&self, store: &impl Store) -> Result<()> {
+        store.delete_pipeline(&ModelID::Hash(self.hash.clone()))
+    }
+    fn load(&self, store: &impl Store) -> Result<Self> {
+        let annotation = self.annotation.as_ref().expect("Annotation missing.");
+        store.load_pipeline(&ModelID::Annotation(
+            annotation.name.clone(),
+            annotation.version.clone(),
+        ))
+    }
+    fn get_annotation(&self) -> Option<&Annotation> {
+        self.annotation.as_ref()
+    }
+    fn get_hash(&self) -> &str {
+        &self.hash
+    }
+    fn list(&self, store: &impl Store) -> Result<Vec<ModelInfo>> {
+        store.list_pipeline()
     }
 }

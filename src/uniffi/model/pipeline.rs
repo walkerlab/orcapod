@@ -2,12 +2,13 @@ use crate::{
     core::{
         crypto::{hash_blob, hash_buffer, make_random_hash},
         graph::make_graph,
-        model::pipeline::PipelineNode,
+        model::{ToYaml as _, pipeline::PipelineNode},
         validation::validate_packet,
     },
     uniffi::{
         error::{OrcaError, Result, selector},
         model::{
+            Annotation,
             packet::{PathSet, URI},
             pod::Pod,
         },
@@ -19,20 +20,33 @@ use getset::CloneGetters;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 use snafu::OptionExt as _;
-use std::sync::LazyLock;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+    path::PathBuf,
+    sync::Arc,
+};
+use std::{hash::Hasher, sync::LazyLock};
 use uniffi;
 
-static JOIN_OPERATOR_HASH: LazyLock<String> = LazyLock::new(|| hash_buffer(b"join_operator"));
+pub(crate) static JOIN_OPERATOR_HASH: LazyLock<String> =
+    LazyLock::new(|| hash_buffer(b"join_operator"));
 
 /// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
-#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize, Serialize)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize, Default)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
 #[display("{self:#?}")]
 #[uniffi::export(Display)]
 pub struct Pipeline {
+    /// Hash for pipeline
+    #[serde(default)]
+    pub hash: String,
+    /// Annotations for the pipeline.
+    #[serde(default)]
+    pub annotation: Option<Annotation>,
     /// Computational DAG in-memory.
     #[getset(skip)]
+    #[serde(skip_deserializing)]
     pub graph: DiGraph<PipelineNode, ()>,
     /// Exposed, internal input specification. Each input may be fed into more than one node/key if desired.
     pub input_spec: HashMap<String, Vec<NodeURI>>,
@@ -53,6 +67,7 @@ impl Pipeline {
         metadata: &HashMap<String, Kernel>,
         mut input_spec: HashMap<String, Vec<NodeURI>>,
         mut output_spec: HashMap<String, NodeURI>,
+        annotation: Option<Annotation>,
     ) -> Result<Self> {
         // Note this gives us the graph, but the nodes do not have their hashes computed yet.
         let mut graph = make_graph(graph_dot, metadata)?;
@@ -97,16 +112,33 @@ impl Pipeline {
             Ok::<(), OrcaError>(())
         })?;
 
-        let pipeline = Self {
+        let pipeline_no_hash = Self {
+            hash: String::new(),
             graph,
             input_spec,
             output_spec,
+            annotation,
         };
 
         // Run verification on the pipeline first before computing hash
-        pipeline.validate()?;
+        pipeline_no_hash.validate()?;
 
-        Ok(pipeline)
+        Ok(Self {
+            hash: hash_buffer(pipeline_no_hash.to_yaml()?.as_bytes()),
+            ..pipeline_no_hash
+        })
+    }
+}
+
+impl PartialEq for Pipeline {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+            && self.annotation == other.annotation
+            && self.input_spec.keys().collect::<HashSet<_>>()
+                == other.input_spec.keys().collect::<HashSet<_>>()
+            && self.input_spec.values().collect::<HashSet<_>>()
+                == other.input_spec.values().collect::<HashSet<_>>()
+            && self.output_spec == other.output_spec
     }
 }
 
@@ -209,7 +241,7 @@ pub enum PipelineStatus {
     PartiallySucceeded,
 }
 /// A node in a computational pipeline.
-#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize)]
 pub enum Kernel {
     /// Pod reference.
     Pod {
@@ -257,8 +289,24 @@ impl Kernel {
     }
 }
 
+impl PartialEq for Kernel {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_hash() == other.get_hash()
+    }
+}
+
+impl Eq for Kernel {}
+
+impl Hash for Kernel {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get_hash().hash(state);
+    }
+}
+
 /// Index from pipeline node into pod specification.
-#[derive(uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(
+    uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
 pub struct NodeURI {
     /// Node reference name in pipeline.
     pub node_id: String,

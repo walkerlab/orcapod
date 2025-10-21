@@ -2,8 +2,10 @@ use crate::uniffi::{
     error::Result,
     model::{
         ModelType,
+        pipeline::Pipeline,
         pod::{Pod, PodJob, PodResult},
     },
+    operator::MapOperator,
 };
 use uniffi;
 /// Options for identifying a model.
@@ -35,6 +37,7 @@ pub trait Store: Send + Sync {
     ///
     /// Will return `Err` if there is an issue storing `pod`.
     fn save_pod(&self, pod: &Pod) -> Result<()>;
+
     /// How to load a stored pod into a model instance.
     ///
     /// # Errors
@@ -42,82 +45,135 @@ pub trait Store: Send + Sync {
     /// Will return `Err` if there is an issue loading a pod from the store using `name` and
     /// `version`.
     fn load_pod(&self, model_id: &ModelID) -> Result<Pod>;
+
     /// How to query stored pods.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue querying metadata from existing pods in the store.
     fn list_pod(&self) -> Result<Vec<ModelInfo>>;
+
     /// How to explicitly delete a stored pod and all associated annotations (does not propagate).
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue deleting a pod from the store using `name` and
     /// `version`.
     fn delete_pod(&self, model_id: &ModelID) -> Result<()>;
+
     /// How a pod job is stored.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue storing `pod_job`.
     fn save_pod_job(&self, pod_job: &PodJob) -> Result<()>;
+
     /// How to load a stored pod job into a model instance.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue loading a pod job from the store using `name` and
     /// `version`.
     fn load_pod_job(&self, model_id: &ModelID) -> Result<PodJob>;
+
     /// How to query stored pod jobs.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue querying metadata from existing pod jobs in the
     /// store.
     fn list_pod_job(&self) -> Result<Vec<ModelInfo>>;
+
     /// How to explicitly delete a stored pod job and all associated annotations (does not
     /// propagate).
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue deleting a pod job from the store using `name` and
     /// `version`.
     fn delete_pod_job(&self, model_id: &ModelID) -> Result<()>;
+
     /// How a pod result is stored.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue storing `pod_result`.
     fn save_pod_result(&self, pod_result: &PodResult) -> Result<()>;
+
     /// How to load a stored pod result into a model instance.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue loading a pod result from the store using `name` and
     /// `version`.
     fn load_pod_result(&self, model_id: &ModelID) -> Result<PodResult>;
+
     /// How to query stored pod results.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue querying metadata from existing pod results in the
     /// store.
     fn list_pod_result(&self) -> Result<Vec<ModelInfo>>;
+
     /// How to explicitly delete a stored pod result and all associated annotations (does not
     /// propagate).
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue deleting a pod result from the store using `name` and
     /// `version`.
     fn delete_pod_result(&self, model_id: &ModelID) -> Result<()>;
+
     /// How to explicitly delete an annotation.
     ///
     /// # Errors
-    ///
     /// Will return `Err` if there is an issue deleting an annotation from the store using `name`
     /// and `version`.
     fn delete_annotation(&self, model_type: &ModelType, name: &str, version: &str) -> Result<()>;
+
+    /// How to save a Mapping
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue saving `mapping`.
+    fn save_map_operator(&self, map_operator: &MapOperator) -> Result<()>;
+
+    /// How to load a stored `MapOperator`
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue loading a `MapOperator` from the store
+    fn load_map_operator(&self, hash: &str) -> Result<MapOperator>;
+
+    /// How to query stored `MapOperators`
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue querying metadata from existing `MapOperators` in the store.
+    fn list_map_operator(&self) -> Result<Vec<String>>;
+
+    /// How to explicitly delete a stored `MapOperator`
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue deleting a `MapOperator` from the store using `hash`.
+    ///
+    fn delete_map_operator(&self, hash: &str) -> Result<()>;
+
+    /// How to save a pipeline
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue saving `pipeline`.
+    fn save_pipeline(&self, pipeline: &Pipeline) -> Result<()>;
+
+    /// How to load a stored `Pipeline`
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue loading a `Pipeline` from the store
+    fn load_pipeline(&self, model_id: &ModelID) -> Result<Pipeline>;
+
+    /// How to query stored pipelines.
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue querying metadata from existing pipelines in the
+    /// store.
+    fn list_pipeline(&self) -> Result<Vec<ModelInfo>>;
+
+    /// How to explicitly delete a stored pipeline and all associated annotations (does not
+    /// propagate).
+    ///
+    /// # Errors
+    /// Will return `Err` if there is an issue deleting a pipeline from the store using `name` and
+    /// `version`.
+    fn delete_pipeline(&self, model_id: &ModelID) -> Result<()>;
 }
+
 /// Store implementation on a local filesystem.
 pub mod filestore;
