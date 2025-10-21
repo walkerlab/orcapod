@@ -347,13 +347,15 @@ pub fn pipeline() -> Result<Pipeline> {
         kernel_map.insert(pod_name.into(), combine_txt_pod(pod_name)?.into());
     }
 
-    let output_to_input_1 = Arc::new(MapOperator {
-        map: HashMap::from([("output".to_owned(), "input_1".to_owned())]),
-    });
+    let output_to_input_1 = Arc::new(MapOperator::new(HashMap::from([(
+        "output".to_owned(),
+        "input_1".to_owned(),
+    )]))?);
 
-    let output_to_input_2 = Arc::new(MapOperator {
-        map: HashMap::from([("output".to_owned(), "input_2".to_owned())]),
-    });
+    let output_to_input_2 = Arc::new(MapOperator::new(HashMap::from([(
+        "output".to_owned(),
+        "input_2".to_owned(),
+    )]))?);
 
     // Create a mapper for A, B, and C
     kernel_map.insert(
@@ -398,7 +400,7 @@ pub fn pipeline() -> Result<Pipeline> {
 
     Pipeline::new(
         dot,
-        kernel_map,
+        &kernel_map,
         HashMap::from([
             (
                 "where".into(),

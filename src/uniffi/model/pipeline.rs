@@ -1,12 +1,12 @@
 use crate::{
     core::{
-        crypto::{hash_blob, make_random_hash},
+        crypto::{hash_blob, hash_buffer, make_random_hash},
         graph::make_graph,
         model::pipeline::PipelineNode,
         validation::validate_packet,
     },
     uniffi::{
-        error::Result,
+        error::{OrcaError, Result, selector},
         model::{
             packet::{PathSet, URI},
             pod::Pod,
@@ -18,8 +18,12 @@ use derive_more::Display;
 use getset::CloneGetters;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
+use snafu::OptionExt as _;
+use std::sync::LazyLock;
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
+
+static JOIN_OPERATOR_HASH: LazyLock<String> = LazyLock::new(|| hash_buffer(b"join_operator"));
 
 /// Computational dependencies as a [DAG](https://en.wikipedia.org/wiki/Directed_acyclic_graph).
 #[derive(uniffi::Object, Debug, Display, CloneGetters, Clone, Deserialize, Serialize)]
@@ -46,17 +50,63 @@ impl Pipeline {
     #[uniffi::constructor]
     pub fn new(
         graph_dot: &str,
-        metadata: HashMap<String, Kernel>,
-        input_spec: HashMap<String, Vec<NodeURI>>,
-        output_spec: HashMap<String, NodeURI>,
+        metadata: &HashMap<String, Kernel>,
+        mut input_spec: HashMap<String, Vec<NodeURI>>,
+        mut output_spec: HashMap<String, NodeURI>,
     ) -> Result<Self> {
-        let graph = make_graph(graph_dot, metadata)?;
+        // Note this gives us the graph, but the nodes do not have their hashes computed yet.
+        let mut graph = make_graph(graph_dot, metadata)?;
 
-        Ok(Self {
+        // Run preprocessing to compute the hash for each node
+        for node_idx in graph.node_indices() {
+            Self::compute_hash_for_node_and_parents(node_idx, &input_spec, &mut graph);
+        }
+
+        // Build LUT for node_label -> node_hash
+        let label_to_hash_lut =
+            graph
+                .node_indices()
+                .fold(HashMap::<&String, &String>::new(), |mut acc, node_idx| {
+                    let node = &graph[node_idx];
+                    acc.insert(&node.label, &node.hash);
+                    acc
+                });
+
+        // Build the new input_spec to refer to the hash instead of label
+        input_spec.iter_mut().try_for_each(|(_, node_uris)| {
+            node_uris.iter_mut().try_for_each(|node_uri| {
+                node_uri.node_id = (*label_to_hash_lut.get(&node_uri.node_id).context(
+                    selector::InvalidInputSpecNodeNotInGraph {
+                        node_name: node_uri.node_id.clone(),
+                    },
+                )?)
+                .clone();
+                Ok::<(), OrcaError>(())
+            })
+        })?;
+
+        // Update the output_spec to refer to the hash instead of label
+        output_spec.iter_mut().try_for_each(|(_, node_uri)| {
+            node_uri.node_id = (*label_to_hash_lut.get(&node_uri.node_id).context(
+                selector::InvalidOutputSpecNodeNotInGraph {
+                    node_name: node_uri.node_id.clone(),
+                },
+            )?)
+            .clone();
+
+            Ok::<(), OrcaError>(())
+        })?;
+
+        let pipeline = Self {
             graph,
             input_spec,
             output_spec,
-        })
+        };
+
+        // Run verification on the pipeline first before computing hash
+        pipeline.validate()?;
+
+        Ok(pipeline)
     }
 }
 
@@ -186,6 +236,24 @@ impl From<MapOperator> for Kernel {
 impl From<Pod> for Kernel {
     fn from(pod: Pod) -> Self {
         Self::Pod { pod: Arc::new(pod) }
+    }
+}
+
+impl From<Arc<Pod>> for Kernel {
+    fn from(pod: Arc<Pod>) -> Self {
+        Self::Pod { pod }
+    }
+}
+
+impl Kernel {
+    /// Get a unique hash that represents the kernel.
+    /// The exception here is the `JoinOperator` doesn't have any pre execution configuration, since it's logic is completely dependent on what is fed to it during execution.
+    pub fn get_hash(&self) -> &str {
+        match self {
+            Self::Pod { pod } => &pod.hash,
+            Self::JoinOperator => &JOIN_OPERATOR_HASH,
+            Self::MapOperator { mapper } => &mapper.hash,
+        }
     }
 }
 

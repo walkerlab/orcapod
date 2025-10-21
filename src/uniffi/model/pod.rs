@@ -10,7 +10,7 @@ use crate::{
         validation::validate_packet,
     },
     uniffi::{
-        error::{OrcaError, Result},
+        error::{Kind, OrcaError, Result},
         model::{
             Annotation,
             packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
@@ -21,7 +21,7 @@ use crate::{
 use derive_more::Display;
 use getset::CloneGetters;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{backtrace::Backtrace, collections::HashMap, path::PathBuf, sync::Arc};
 use uniffi;
 
 /// A reusable, containerized computational unit.
@@ -304,7 +304,13 @@ impl PodResult {
 
                 match local_location.try_exists() {
                     Ok(false) => None,
-                    Err(error) => Some(Err(OrcaError::from(error))),
+                    Err(error) => Some(Err(OrcaError {
+                        kind: Kind::InvalidPath {
+                            path: local_location.clone(),
+                            source: error,
+                            backtrace: Some(Backtrace::capture()),
+                        },
+                    })),
                     Ok(true) => Some(Ok((
                         packet_key,
                         Blob {

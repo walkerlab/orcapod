@@ -11,6 +11,7 @@ use serde_yaml;
 use snafu::prelude::Snafu;
 use std::{
     backtrace::Backtrace,
+    collections::HashSet,
     error::Error,
     io,
     path::{self, PathBuf},
@@ -78,6 +79,7 @@ pub(crate) enum Kind {
         idx: usize,
         backtrace: Option<Backtrace>,
     },
+
     #[snafu(display("Key '{key}' was not found in map."))]
     KeyMissing {
         key: String,
@@ -88,6 +90,35 @@ pub(crate) enum Kind {
         details: String,
         backtrace: Option<Backtrace>,
     },
+    #[snafu(display(
+        "Node '{node_name}' was referenced in input_spec, but is not a node in the graph."
+    ))]
+    InvalidInputSpecNodeNotInGraph {
+        node_name: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Key '{key}' was referenced in input_spec for node '{node_name}', but is not a key in that node's input spec."
+    ))]
+    InvalidOutputSpecKeyNotInNode {
+        node_name: String,
+        key: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display(
+        "Node '{node_name}' was referenced in output_spec, but is not a node in the graph."
+    ))]
+    InvalidOutputSpecNodeNotInGraph {
+        node_name: String,
+        backtrace: Option<Backtrace>,
+    },
+    #[snafu(display("Node '{node_name}' is missing required keys: {missing_keys:?}."))]
+    PipelineValidationErrorMissingKeys {
+        node_name: String,
+        missing_keys: HashSet<String>,
+        backtrace: Option<Backtrace>,
+    },
+
     #[snafu(display("Pod job submission failed with reason: {reason}."))]
     PodJobSubmissionFailed {
         reason: String,

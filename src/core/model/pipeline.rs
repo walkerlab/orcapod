@@ -3,39 +3,176 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use crate::uniffi::{
-    error::{Kind, OrcaError, Result},
-    model::{
-        packet::PathSet,
-        pipeline::{Kernel, Pipeline, PipelineJob},
+use crate::{
+    core::crypto::hash_buffer,
+    uniffi::{
+        error::{Kind, OrcaError, Result, selector},
+        model::{
+            packet::PathSet,
+            pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
+        },
     },
 };
 use itertools::Itertools as _;
-use petgraph::Direction::Incoming;
+use petgraph::{
+    Direction::Incoming,
+    graph::{self, NodeIndex},
+};
 use serde::{Deserialize, Serialize};
+use snafu::OptionExt as _;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct PipelineNode {
-    pub id: String,
+    // Hash that represent the node
+    pub hash: String,
+    /// Kernel associated with the node
     pub kernel: Kernel,
+    /// User provided label for the node
+    pub label: String,
+    /// This is meant for internal use only to track the node index in the graph
+    pub node_idx: NodeIndex,
 }
 
 impl Pipeline {
+    /// Validate the pipeline to ensure that, based on user labels:
+    /// 1. Each node's `input_spec` is covered by either its parent nodes or the pipeline's `input_spec`
+    pub(crate) fn validate(&self) -> Result<()> {
+        // For verification we check that each node has it's input_spec covered by either it's parent or input_spec of the pipeline
+        // Build a map from input_spec where HashMap<Node_id (Should be label when coming in from new), HashSet<Key covered by input_spec>,
+        let mut keys_covered_by_input_spec_lut: HashMap<&String, HashSet<&String>> =
+            HashMap::<&String, HashSet<&String>>::new();
+        for node_uris in self.input_spec.values() {
+            for node_uri in node_uris {
+                keys_covered_by_input_spec_lut
+                    .entry(&node_uri.node_id)
+                    .or_default()
+                    .insert(&node_uri.key);
+            }
+        }
+
+        // Iterate over each node in the graph and verify that its input spec is met
+        for node_idx in self.graph.node_indices() {
+            self.validate_valid_input_spec(
+                node_idx,
+                keys_covered_by_input_spec_lut.get(&self.graph[node_idx].hash),
+            )?;
+        }
+
+        // Build a LUT for all node_hash to idx
+        let node_hash_to_idx_lut: HashMap<&String, NodeIndex> = self
+            .graph
+            .node_indices()
+            .map(|idx| (&self.graph[idx].hash, idx))
+            .collect();
+
+        // Validate that all output_keys are valid
+        self.output_spec.iter().try_for_each(|(_, node_uri)| {
+            if !self
+                .get_output_spec_for_node(*node_hash_to_idx_lut.get(&node_uri.node_id).context(
+                    selector::InvalidOutputSpecNodeNotInGraph {
+                        node_name: node_uri.node_id.clone(),
+                    },
+                )?)
+                .contains(&node_uri.key)
+            {
+                return Err(OrcaError {
+                    kind: Kind::InvalidOutputSpecKeyNotInNode {
+                        node_name: node_uri.node_id.clone(),
+                        key: node_uri.key.clone(),
+                        backtrace: Some(Backtrace::capture()),
+                    },
+                });
+            }
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
+    /// Validates that the input spec for a given node is valid based on its parents and the input spec of the pipeline
+    fn validate_valid_input_spec(
+        &self,
+        node_idx: NodeIndex,
+        keys_covered_by_input_spec: Option<&HashSet<&String>>,
+    ) -> Result<()> {
+        // We need to get the input spec of the current node and build the packet based on the
+        // parent nodes output spec + input
+
+        // Get the parent nodes input specs and combine them into
+        let incoming_packet_keys = self
+            .get_parent_node_indices(node_idx)
+            .flat_map(|parent_idx| self.get_output_spec_for_node(parent_idx))
+            .collect::<HashSet<&String>>();
+
+        // Get this node input_spec
+        let missing_keys: HashSet<&String> = self
+            .get_input_spec_for_node(node_idx)
+            .into_iter()
+            .filter(|expected_key| {
+                !(incoming_packet_keys.contains(expected_key)
+                    || keys_covered_by_input_spec.is_some_and(|keys| keys.contains(expected_key)))
+            })
+            .collect();
+
+        // Verify that there are no missing keys, otherwise return error
+        if !missing_keys.is_empty() {
+            return Err(OrcaError {
+                kind: Kind::PipelineValidationErrorMissingKeys {
+                    node_name: self.graph[node_idx].label.clone(),
+                    missing_keys: missing_keys.into_iter().cloned().collect(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            });
+        }
+        Ok(())
+    }
+
+    fn get_input_spec_for_node(&self, node_idx: NodeIndex) -> HashSet<&String> {
+        match &self.graph[node_idx].kernel {
+            Kernel::Pod { pod } => pod.input_spec.keys().collect(),
+            Kernel::JoinOperator => {
+                // JoinOperator input_spec is derived from its parents
+                self.get_parent_node_indices(node_idx)
+                    .flat_map(|parent_idx| self.get_output_spec_for_node(parent_idx))
+                    .collect()
+            }
+            Kernel::MapOperator { mapper } => mapper.map.keys().collect(),
+        }
+    }
+
+    fn get_output_spec_for_node(&self, node_idx: NodeIndex) -> HashSet<&String> {
+        match &self.graph[node_idx].kernel {
+            Kernel::Pod { pod } => pod.output_spec.keys().collect(),
+            Kernel::JoinOperator => {
+                // JoinOperator output_spec is derived from its parents
+                self.get_parent_node_indices(node_idx)
+                    .flat_map(|parent_idx| self.get_output_spec_for_node(parent_idx))
+                    .collect()
+            }
+            Kernel::MapOperator { mapper } => mapper.map.values().collect(),
+        }
+    }
+
     /// Function to get the parents of a node
     pub(crate) fn get_node_parents(
         &self,
         node: &PipelineNode,
-    ) -> impl Iterator<Item = &PipelineNode> {
+    ) -> Result<impl Iterator<Item = &PipelineNode>> {
         // Find the NodeIndex for the given node_key
-        let node_index = self
+        let node_idx = self
             .graph
             .node_indices()
-            .find(|&idx| self.graph[idx] == *node);
-        node_index.into_iter().flat_map(move |idx| {
-            self.graph
-                .neighbors_directed(idx, Incoming)
-                .map(move |parent_idx| &self.graph[parent_idx])
-        })
+            .find(|&idx| self.graph[idx] == *node)
+            .ok_or(OrcaError {
+                kind: Kind::KeyMissing {
+                    key: node.label.clone(),
+                    backtrace: Some(Backtrace::capture()),
+                },
+            })?;
+
+        Ok(self
+            .get_parent_node_indices(node_idx)
+            .map(|parent_idx| &self.graph[parent_idx]))
     }
 
     /// Return a vec of `node_names` that takes in inputs based on the `input_spec`
@@ -49,6 +186,78 @@ impl Pipeline {
         });
 
         input_nodes
+    }
+
+    fn get_parent_node_indices(&self, node_idx: NodeIndex) -> impl Iterator<Item = NodeIndex> {
+        self.graph.neighbors_directed(node_idx, Incoming)
+    }
+
+    /// Find the leaf nodes in the graph (nodes with no outgoing edges)
+    /// # Returns
+    /// A vector of `NodeIndex` representing the leaf nodes in the graph
+    pub fn find_leaf_nodes(&self) -> Vec<NodeIndex> {
+        self.graph
+            .node_indices()
+            .filter(|&idx| {
+                self.graph
+                    .neighbors_directed(idx, petgraph::Direction::Outgoing)
+                    .next()
+                    .is_none()
+            })
+            .collect()
+    }
+
+    /// Compute the hash for each node in the graph which is defined as the hash of its kernel + the hashes of its parents
+    pub(crate) fn compute_hash_for_node_and_parents<'g>(
+        node_idx: NodeIndex,
+        input_spec: &HashMap<String, Vec<NodeURI>>,
+        graph: &'g mut graph::Graph<PipelineNode, ()>,
+    ) -> &'g str {
+        if graph[node_idx].hash.is_empty() {
+            // Collect parent indices first to avoid borrowing issues
+            let parent_indices: Vec<NodeIndex> =
+                graph.neighbors_directed(node_idx, Incoming).collect();
+
+            // Sort the parent hashes to ensure consistent ordering
+            let mut parent_hashes: Vec<String> = if parent_indices.is_empty() {
+                // This is parent node, thus we will need to use the input_spec to generate a unique hash for the node
+                // Find all the input keys that map to this node
+                input_spec
+                    .iter()
+                    .filter_map(|(input_key, node_uris)| {
+                        node_uris.iter().find_map(|node_uri| {
+                            (node_uri.node_id == graph[node_idx].label).then(|| input_key.clone())
+                        })
+                    })
+                    .collect()
+            } else {
+                parent_indices
+                    .into_iter()
+                    .map(|parent_idx| {
+                        // Check if hash has been computed for this node, if not trigger computation
+                        Self::compute_hash_for_node_and_parents(parent_idx, input_spec, graph)
+                            .to_owned()
+                    })
+                    .collect()
+            };
+
+            parent_hashes.sort();
+
+            // Combine the node's kernel hash + the parent_hashes by concatenation only if there are parents hashes, else it is just the kernel hash
+            if parent_hashes.is_empty() {
+                let kernel_hash = graph[node_idx].kernel.get_hash().to_owned();
+                graph[node_idx].hash.clone_from(&kernel_hash);
+            } else {
+                let hash_for_node = format!(
+                    "{}{}",
+                    &graph[node_idx].kernel.get_hash(),
+                    parent_hashes.into_iter().join("")
+                );
+                graph[node_idx].hash = hash_buffer(hash_for_node.as_bytes());
+            }
+        }
+
+        &graph[node_idx].hash
     }
 }
 

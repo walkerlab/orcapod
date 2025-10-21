@@ -37,7 +37,7 @@ pub trait ToYaml: Serialize + Sized {
     fn process_field(field_name: &str, field_value: &Value) -> Option<(String, Value)>;
 }
 
-pub(crate) fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
+pub fn serialize_hashmap<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
     map: &HashMap<K, V, BH>,
     serializer: S,
 ) -> result::Result<S::Ok, S::Error>
@@ -49,7 +49,7 @@ where
 }
 
 #[allow(clippy::ref_option, reason = "Serde requires this signature.")]
-pub(crate) fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
+pub fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
     map_option: &Option<HashMap<K, V, BH>>,
     serializer: S,
 ) -> result::Result<S::Ok, S::Error>
@@ -62,5 +62,5 @@ where
     sorted.serialize(serializer)
 }
 
-pub(crate) mod pipeline;
-pub(crate) mod pod;
+pub mod pipeline;
+pub mod pod;

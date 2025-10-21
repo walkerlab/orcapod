@@ -13,6 +13,8 @@ use std::{
     sync::Arc,
 };
 
+use crate::fixture::TestDirs;
+use fixture::pipeline_job;
 use orcapod::{
     core::pipeline_runner::DockerPipelineRunner,
     uniffi::{
@@ -22,9 +24,6 @@ use orcapod::{
     },
 };
 use tokio::fs::read_to_string;
-
-use crate::fixture::TestDirs;
-use fixture::pipeline_job;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn basic_run() -> Result<()> {

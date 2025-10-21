@@ -10,7 +10,6 @@ use petgraph::{
 use std::collections::HashMap;
 
 #[expect(
-    clippy::needless_pass_by_value,
     clippy::panic_in_result_fn,
     clippy::panic,
     reason = "
@@ -20,15 +19,17 @@ use std::collections::HashMap;
 )]
 pub fn make_graph(
     input_dot: &str,
-    metadata: HashMap<String, Kernel>,
+    metadata: &HashMap<String, Kernel>,
 ) -> Result<DiGraph<PipelineNode, ()>> {
     let graph =
         DiGraph::<DotNodeWeight, DotAttrList>::from_dot_graph(DOTGraph::try_from(input_dot)?).map(
-            |_, node| PipelineNode {
-                id: node.id.clone(),
-                kernel: get(&metadata, &node.id)
+            |node_idx, node| PipelineNode {
+                hash: String::new(),
+                kernel: get(metadata, &node.id)
                     .unwrap_or_else(|error| panic!("{error}"))
                     .clone(),
+                label: node.id.clone(),
+                node_idx,
             },
             |_, _| (),
         );

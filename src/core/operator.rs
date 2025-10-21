@@ -1,4 +1,7 @@
-use crate::uniffi::{error::Result, model::packet::Packet, operator::MapOperator};
+use crate::{
+    core::model::ToYaml,
+    uniffi::{error::Result, model::packet::Packet, operator::MapOperator},
+};
 use async_trait;
 use itertools::Itertools as _;
 use std::{clone::Clone, collections::HashMap, iter::IntoIterator, sync::Arc};
@@ -77,6 +80,18 @@ impl Operator for MapOperator {
                 })
                 .collect(),
         ])
+    }
+}
+
+impl ToYaml for MapOperator {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        match field_name {
+            "hash" => None,
+            _ => Some((field_name.to_owned(), field_value.clone())),
+        }
     }
 }
 
@@ -274,9 +289,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn map_once() -> Result<()> {
-        let operator = MapOperator {
-            map: HashMap::from([("key_old".into(), "key_new".into())]),
-        };
+        let operator = MapOperator::new(HashMap::from([("key_old".into(), "key_new".into())]))?;
 
         assert_eq!(
             operator

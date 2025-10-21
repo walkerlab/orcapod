@@ -45,7 +45,19 @@ pub struct Blob {
     /// BLOB location.
     pub location: URI,
     /// BLOB contents checksum.
+    #[uniffi(default = "")]
     pub checksum: String,
+}
+
+impl Blob {
+    /// Create a new `Blob`
+    pub const fn new(kind: BlobKind, location: URI) -> Self {
+        Self {
+            kind,
+            location,
+            checksum: String::new(),
+        }
+    }
 }
 
 /// A single BLOB or a collection of BLOBs.

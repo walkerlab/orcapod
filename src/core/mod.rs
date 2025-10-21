@@ -6,7 +6,7 @@ pub(crate) mod validation;
 
 pub(crate) mod crypto;
 /// Model definition for orcapod
-pub mod model;
+pub(crate) mod model;
 pub(crate) mod operator;
 pub(crate) mod orchestrator;
 
