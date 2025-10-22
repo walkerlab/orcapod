@@ -22,6 +22,8 @@ pub enum ModelType {
     PodJob,
     /// See [`PodResult`](crate::uniffi::model::pod::PodResult).
     PodResult,
+    /// See [`Pipeline`](crate::uniffi::model::pipeline::Pipeline).
+    Pipeline,
 }
 
 /// Standard metadata structure for all model instances.
@@ -80,7 +82,7 @@ where
     sorted.serialize(serializer)
 }
 
-#[allow(clippy::ref_option, reason = "Serde requires this signature.")]
+#[expect(clippy::ref_option, reason = "Serde requires this signature.")]
 pub(crate) fn serialize_hashmap_option<S, K: Ord + Serialize, V: Serialize, BH: BuildHasher>(
     map_option: &Option<HashMap<K, V, BH>>,
     serializer: S,

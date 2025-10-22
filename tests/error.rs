@@ -19,8 +19,6 @@ use orcapod::{
         docker::LocalDockerOrchestrator,
     },
 };
-use serde_json;
-use serde_yaml;
 use std::{collections::HashMap, fs, ops::Deref as _, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{self, time::sleep as async_sleep};
 

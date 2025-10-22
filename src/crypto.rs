@@ -1,6 +1,4 @@
-use hex;
 use rand::{self, RngCore as _};
-use serde_yaml;
 use sha2::{Digest as _, Sha256};
 use snafu::ResultExt as _;
 use std::{

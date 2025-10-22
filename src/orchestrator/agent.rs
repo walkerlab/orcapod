@@ -127,6 +127,66 @@ impl AgentClient {
     }
 }
 
+impl AgentClient {
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "write! on a `String` cannot fail. https://rust-lang.github.io/rust-clippy/master/index.html#format_collect"
+    )]
+    pub(crate) fn make_key_expr(
+        &self,
+        is_subscriber: bool,
+        topic: &str,
+        mut metadata: BTreeMap<&str, String>,
+    ) -> String {
+        metadata.insert("group", self.group.clone());
+        metadata.insert("topic", topic.to_owned());
+
+        let delimiter = if is_subscriber {
+            "**/".to_owned()
+        } else {
+            metadata.insert("host", self.host.clone());
+            metadata.insert("timestamp", Utc::now().to_rfc3339());
+            String::new()
+        };
+
+        metadata
+            .iter()
+            .fold(delimiter.clone(), |mut key_expr, (key, value)| {
+                let _ = write!(key_expr, "{key}/{value}/{delimiter}");
+                key_expr
+            })
+            .trim_end_matches('/')
+            .to_owned()
+    }
+
+    pub(crate) async fn publish<T>(
+        &self,
+        topic: &str,
+        metadata: BTreeMap<&str, String>,
+        payload: &T,
+    ) -> Result<()>
+    where
+        T: Serialize + Sync + ?Sized,
+    {
+        Ok(self
+            .session
+            .put(
+                self.make_key_expr(false, topic, metadata),
+                &serde_json::to_vec(payload)?,
+            )
+            .await
+            .context(selector::AgentCommunicationFailure {})?)
+    }
+    /// Send a log message to the agent network.
+    ///
+    /// # Errors
+    ///
+    /// Will fail if there is an issue sending the message.
+    pub(crate) async fn log(&self, message: &str) -> Result<()> {
+        self.publish("log", BTreeMap::new(), message).await
+    }
+}
+
 /// An execution agent.
 #[derive(uniffi::Object, CloneGetters, Display, Debug, Clone)]
 #[getset(get_clone, impl_attrs = "#[uniffi::export]")]
@@ -235,66 +295,6 @@ pub(crate) fn extract_metadata(key_expr: &str) -> HashMap<String, String> {
         .map(ToOwned::to_owned)
         .tuples()
         .collect()
-}
-
-impl AgentClient {
-    #[expect(
-        clippy::let_underscore_must_use,
-        reason = "write! on a `String` cannot fail. https://rust-lang.github.io/rust-clippy/master/index.html#format_collect"
-    )]
-    pub(crate) fn make_key_expr(
-        &self,
-        is_subscriber: bool,
-        topic: &str,
-        mut metadata: BTreeMap<&str, String>,
-    ) -> String {
-        metadata.insert("group", self.group.clone());
-        metadata.insert("topic", topic.to_owned());
-
-        let delimiter = if is_subscriber {
-            "**/".to_owned()
-        } else {
-            metadata.insert("host", self.host.clone());
-            metadata.insert("timestamp", Utc::now().to_rfc3339());
-            String::new()
-        };
-
-        metadata
-            .iter()
-            .fold(delimiter.clone(), |mut key_expr, (key, value)| {
-                let _ = write!(key_expr, "{key}/{value}/{delimiter}");
-                key_expr
-            })
-            .trim_end_matches('/')
-            .to_owned()
-    }
-
-    pub(crate) async fn publish<T>(
-        &self,
-        topic: &str,
-        metadata: BTreeMap<&str, String>,
-        payload: &T,
-    ) -> Result<()>
-    where
-        T: Serialize + Sync + ?Sized,
-    {
-        Ok(self
-            .session
-            .put(
-                self.make_key_expr(false, topic, metadata),
-                &serde_json::to_vec(payload)?,
-            )
-            .await
-            .context(selector::AgentCommunicationFailure {})?)
-    }
-    /// Send a log message to the agent network.
-    ///
-    /// # Errors
-    ///
-    /// Will fail if there is an issue sending the message.
-    pub(crate) async fn log(&self, message: &str) -> Result<()> {
-        self.publish("log", BTreeMap::new(), message).await
-    }
 }
 
 #[expect(

@@ -25,7 +25,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{self, task::JoinSet, time::sleep as async_sleep};
-use zenoh;
 
 #[test]
 fn simple() -> Result<()> {

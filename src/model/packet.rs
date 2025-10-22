@@ -20,11 +20,11 @@ impl PathInfo {}
 /// File or directory options for BLOBs.
 #[derive(uniffi::Enum, Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
 pub enum BlobKind {
+    /// A single directory.
+    Directory,
     /// A single file.
     #[default]
     File,
-    /// A single directory.
-    Directory,
 }
 
 /// Location of BLOB data.

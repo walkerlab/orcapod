@@ -113,28 +113,19 @@ restriction = "deny"
 style = "deny"
 suspicious = "deny"
 
-allow_attributes = { level = "allow", priority = 127 }                  # Useful when suppressing warnings is also desired.
 arbitrary_source_item_ordering = { level = "allow", priority = 127 }    # allow arbitrary ordering to keep relevant code nearby
-arithmetic_side_effects = { level = "allow", priority = 127 }           # allow arithmetic for convenience though it could overflow
 as_conversions = { level = "allow", priority = 127 }                    # allow casting
-assertions_on_result_states = { level = "allow", priority = 127 }       # allow checking is_ok/is_err
-big_endian_bytes = { level = "allow", priority = 127 }                  # allow to_be_bytes / from_be_bytes
 blanket_clippy_restriction_lints = { level = "allow", priority = 127 }  # allow setting all restrictions so we can omit specific ones
-default_numeric_fallback = { level = "allow", priority = 127 }          # allow type inferred by numeric literal
+default_numeric_fallback = { level = "allow", priority = 127 }          # allow type inferred by numeric literal, detection is buggy
 disallowed_script_idents = { level = "allow", priority = 127 }          # skip since we use only ascii
-else_if_without_else = { level = "allow", priority = 127 }              # missing else ok
-exhaustive_enums = { level = "allow", priority = 127 }                  # revisit once lib is ready to be used externally
+exhaustive_enums = { level = "allow", priority = 127 }                  # remove requirement to label enum as exhaustive
 exhaustive_structs = { level = "allow", priority = 127 }                # revisit once lib is ready to be used externally
 field_scoped_visibility_modifiers = { level = "allow", priority = 127 } # allow field-level visibility modifiers
 float_arithmetic = { level = "allow", priority = 127 }                  # allow float arithmetic
-host_endian_bytes = { level = "allow", priority = 127 }                 # allow to_ne_bytes / from_ne_bytes
 impl_trait_in_params = { level = "allow", priority = 127 }              # impl in params ok
 implicit_return = { level = "allow", priority = 127 }                   # missing return ok
-inline_asm_x86_intel_syntax = { level = "allow", priority = 127 }       # intel syntax ok
-integer_division = { level = "allow", priority = 127 }                  # allow discarding remainder
 iter_over_hash_type = { level = "allow", priority = 127 }               # allow iterating over unordered iterables like `HashMap`
 little_endian_bytes = { level = "allow", priority = 127 }               # allow to_le_bytes / from_le_bytes
-missing_asserts_for_indexing = { level = "allow", priority = 127 }      # missing assert before indexing ok
 missing_docs_in_private_items = { level = "allow", priority = 127 }     # missing docs on private ok
 missing_inline_in_public_items = { level = "allow", priority = 127 }    # let rust compiler determine best inline logic
 missing_trait_methods = { level = "allow", priority = 127 }             # allow in favor of rustc `implement the missing item`
@@ -150,21 +141,16 @@ print_stderr = { level = "allow", priority = 127 }                      # stderr
 print_stdout = { level = "allow", priority = 127 }                      # stdout prints ok
 pub_use = { level = "allow", priority = 127 }                           # ok to structure source into many files but clean up import
 pub_with_shorthand = { level = "allow", priority = 127 }                # allow use of pub(super)
-pub_without_shorthand = { level = "allow", priority = 127 }             # allow use of pub(in super)
 question_mark_used = { level = "allow", priority = 127 }                # allow question operator
 self_named_module_files = { level = "allow", priority = 127 }           # mod files ok
-semicolon_inside_block = { level = "allow", priority = 127 }            # ok to keep inside block
 separated_literal_suffix = { level = "allow", priority = 127 }          # literal suffixes should be separated by underscore
+single_call_fn = { level = "allow", priority = 127 }                    # allow functions called only once, which allows better code organization
 single_char_lifetime_names = { level = "allow", priority = 127 }        # single char lifetimes ok
-single_component_path_imports = { level = "allow", priority = 127 }     # allow for readability
 std_instead_of_alloc = { level = "allow", priority = 127 }              # we should use std when possible
 std_instead_of_core = { level = "allow", priority = 127 }               # we should use std when possible
 string_add = { level = "allow", priority = 127 }                        # simple concat ok
-string_lit_chars_any = { level = "allow", priority = 127 }              # favor readability until a perf case comes up
 use_debug = { level = "warn", priority = 127 }                          # debug print
 wildcard_enum_match_arm = { level = "allow", priority = 127 }           # allow wildcard match arm in enums
 
 # temporary
-single_call_fn = { level = "allow", priority = 127 }            # remove once more models need pointer serializers/deserializers
 tests_outside_test_module = { level = "allow", priority = 127 } # for now due to false-positive for integration tests: https://github.com/rust-lang/rust-clippy/pull/13038
-todo = { level = "allow", priority = 127 }                      # allow while we are working towards MVP release

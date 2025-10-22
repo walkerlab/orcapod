@@ -185,6 +185,10 @@ impl Store for LocalFileStore {
                 &self.lookup_hash::<PodResult>(name, version)?,
                 Self::make_annotation_relpath(name, version),
             ),
+            ModelType::Pipeline => self.make_path::<Pipeline>(
+                &self.lookup_hash::<Pipeline>(name, version)?,
+                Self::make_annotation_relpath(name, version),
+            ),
         };
         fs::remove_file(&annotation_file_path)?;
 

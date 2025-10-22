@@ -241,11 +241,11 @@ impl DockerPipelineRunner {
 
         // Wait for all nodes to be ready before sending inputs
         let num_of_nodes = graph.node_count();
-        let mut ready_nodes = 0;
+        let mut ready_nodes: usize = 0;
 
         while (subscriber.recv_async().await).is_ok() {
             // Message is empty, just increment the counter
-            ready_nodes += 1;
+            ready_nodes = ready_nodes.saturating_add(1);
             if ready_nodes == num_of_nodes {
                 break; // All nodes are ready, we can start sending inputs
             }
@@ -472,7 +472,7 @@ impl DockerPipelineRunner {
             node.label, node.hash
         );
         while status_subscriber.recv_async().await.is_ok() {
-            num_of_ready_event_handler += 1;
+            num_of_ready_event_handler = num_of_ready_event_handler.saturating_add(1);
             if num_of_ready_event_handler == nodes_to_sub_to.len() {
                 // +1 for the stop request task
                 break; // All tasks are ready, we can start sending inputs
@@ -827,7 +827,7 @@ impl<T: Operator + Send + Sync + 'static> OperatorProcessor<T> {
     }
 }
 
-#[allow(
+#[expect(
     clippy::excessive_nesting,
     reason = "Nesting manageable and mute github action error"
 )]

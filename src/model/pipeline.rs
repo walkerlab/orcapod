@@ -132,203 +132,6 @@ impl Pipeline {
     }
 }
 
-impl PartialEq for Pipeline {
-    fn eq(&self, other: &Self) -> bool {
-        self.hash == other.hash
-            && self.annotation == other.annotation
-            && self.input_spec.keys().collect::<HashSet<_>>()
-                == other.input_spec.keys().collect::<HashSet<_>>()
-            && self.input_spec.values().collect::<HashSet<_>>()
-                == other.input_spec.values().collect::<HashSet<_>>()
-            && self.output_spec == other.output_spec
-    }
-}
-
-/// A compute pipeline job that supplies input/output targets.
-#[expect(
-    clippy::field_scoped_visibility_modifiers,
-    reason = "Temporary until a proper hash is implemented."
-)]
-#[derive(uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone)]
-#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
-#[display("{self:#?}")]
-#[uniffi::export(Display)]
-pub struct PipelineJob {
-    /// todo: replace with a consistent hash
-    #[getset(skip)]
-    pub(crate) hash: String,
-    /// A pipeline to base the pipeline job on.
-    pub pipeline: Arc<Pipeline>,
-    /// Attached, external input packet. Applies cartesian product by default on keys pointing to the same node.
-    pub input_packet: HashMap<String, Vec<PathSet>>,
-    /// Attached, external output directory.
-    pub output_dir: URI,
-}
-
-#[uniffi::export]
-impl PipelineJob {
-    /// Construct a new pipeline job instance.
-    ///
-    /// # Errors
-    ///
-    /// Will return `Err` if there is an issue initializing a `PipelineJob` instance.
-    #[uniffi::constructor]
-    pub fn new(
-        pipeline: Arc<Pipeline>,
-        input_packet: &HashMap<String, Vec<PathSet>>,
-        output_dir: URI,
-        namespace_lookup: &HashMap<String, PathBuf>,
-    ) -> Result<Self> {
-        validate_packet("input".into(), &pipeline.input_spec, input_packet)?;
-        let input_packet_with_checksum = input_packet
-            .iter()
-            .map(|(path_set_key, path_sets)| {
-                Ok((
-                    path_set_key.clone(),
-                    path_sets
-                        .iter()
-                        .map(|path_set| {
-                            Ok(match path_set {
-                                PathSet::Unary(blob) => {
-                                    PathSet::Unary(hash_blob(namespace_lookup, blob)?)
-                                }
-                                PathSet::Collection(blobs) => PathSet::Collection(
-                                    blobs
-                                        .iter()
-                                        .map(|blob| hash_blob(namespace_lookup, blob))
-                                        .collect::<Result<_>>()?,
-                                ),
-                            })
-                        })
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
-
-        Ok(Self {
-            hash: make_random_hash(),
-            pipeline,
-            input_packet: input_packet_with_checksum,
-            output_dir,
-        })
-    }
-}
-
-/// Struct to hold the result of a pipeline execution.
-#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, Display, CloneGetters)]
-#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
-#[display("{self:#?}")]
-#[uniffi::export(Display)]
-pub struct PipelineResult {
-    /// The pipeline job that was executed.
-    pub pipeline_job: Arc<PipelineJob>,
-    /// The result of the pipeline execution.
-    pub output_packets: HashMap<String, Vec<PathSet>>,
-    /// Logs of any failures that occurred during the pipeline execution.
-    pub failure_logs: Vec<String>,
-    /// The status of the pipeline execution.
-    pub status: PipelineStatus,
-}
-
-/// The status of a pipeline execution.
-#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub enum PipelineStatus {
-    /// The pipeline is currently running.
-    Running,
-    /// The pipeline has completed successfully.
-    Succeeded,
-    /// The pipeline has failed.
-    Failed,
-    /// The pipeline has partially succeeded. There should be some failure logs
-    PartiallySucceeded,
-}
-/// A node in a computational pipeline.
-#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize)]
-pub enum Kernel {
-    /// Pod reference.
-    Pod {
-        /// See [`Pod`](crate::uniffi::model::pod::Pod).
-        pod: Arc<Pod>,
-    },
-    /// Cartesian product operation. See [`JoinOperator`](crate::core::operator::JoinOperator).
-    JoinOperator,
-    /// Rename a path set key operation.
-    MapOperator {
-        /// See [`MapOperator`](crate::core::operator::MapOperator).
-        mapper: Arc<MapOperator>,
-    },
-}
-
-impl From<MapOperator> for Kernel {
-    fn from(mapper: MapOperator) -> Self {
-        Self::MapOperator {
-            mapper: Arc::new(mapper),
-        }
-    }
-}
-
-impl From<Pod> for Kernel {
-    fn from(pod: Pod) -> Self {
-        Self::Pod { pod: Arc::new(pod) }
-    }
-}
-
-impl From<Arc<Pod>> for Kernel {
-    fn from(pod: Arc<Pod>) -> Self {
-        Self::Pod { pod }
-    }
-}
-
-impl Kernel {
-    /// Get a unique hash that represents the kernel.
-    /// The exception here is the `JoinOperator` doesn't have any pre execution configuration, since it's logic is completely dependent on what is fed to it during execution.
-    pub fn get_hash(&self) -> &str {
-        match self {
-            Self::Pod { pod } => &pod.hash,
-            Self::JoinOperator => &JOIN_OPERATOR_HASH,
-            Self::MapOperator { mapper } => &mapper.hash,
-        }
-    }
-}
-
-impl PartialEq for Kernel {
-    fn eq(&self, other: &Self) -> bool {
-        self.get_hash() == other.get_hash()
-    }
-}
-
-impl Eq for Kernel {}
-
-impl Hash for Kernel {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.get_hash().hash(state);
-    }
-}
-
-/// Index from pipeline node into pod specification.
-#[derive(
-    uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
-)]
-pub struct NodeURI {
-    /// Node reference name in pipeline.
-    pub node_id: String,
-    /// Specification key.
-    pub key: String,
-}
-
-/// A node in the computation pipeline that stores its hash, kernel, and user provided label.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct PipelineNode {
-    /// Hash that represent the node
-    pub hash: String,
-    /// Kernel associated with the node
-    pub kernel: Kernel,
-    /// User provided label for the node
-    pub label: String,
-    /// This is meant for internal use only to track the node index in the graph
-    pub node_idx: NodeIndex,
-}
-
 impl Pipeline {
     /// Validate the pipeline to ensure that, based on user labels:
     /// 1. Each node's `input_spec` is covered by either its parent nodes or the pipeline's `input_spec`
@@ -622,40 +425,85 @@ impl Pipeline {
     }
 }
 
-impl Serialize for Pipeline {
-    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("Pipeline", 4)?;
-        state.serialize_field("kernel_lut", &self.get_kernel_to_node_lut())?;
-        state.serialize_field("dot", &self.to_dot_lex())?;
-
-        // Input spec needs to be sorted for consistent serialization
-        let input_spec_sorted: BTreeMap<_, Vec<NodeURI>> = self
-            .input_spec
-            .iter()
-            .map(|(k, v)| {
-                let mut sorted_v = v.clone();
-                sorted_v.sort();
-                (k, sorted_v)
-            })
-            .collect();
-        state.serialize_field("input_spec", &input_spec_sorted)?;
-        state.serialize_field("output_spec", &self.output_spec)?;
-        state.end()
+impl PartialEq for Pipeline {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash
+            && self.annotation == other.annotation
+            && self.input_spec.keys().collect::<HashSet<_>>()
+                == other.input_spec.keys().collect::<HashSet<_>>()
+            && self.input_spec.values().collect::<HashSet<_>>()
+                == other.input_spec.values().collect::<HashSet<_>>()
+            && self.output_spec == other.output_spec
     }
 }
 
-impl ToYaml for Pipeline {
-    fn process_field(
-        field_name: &str,
-        field_value: &serde_yaml::Value,
-    ) -> Option<(String, serde_yaml::Value)> {
-        match field_name {
-            "hash" | "annotation" => None, // Skip annotation field
-            _ => Some((field_name.to_owned(), field_value.clone())),
-        }
+/// A compute pipeline job that supplies input/output targets.
+#[expect(
+    clippy::field_scoped_visibility_modifiers,
+    reason = "Temporary until a proper hash is implemented."
+)]
+#[derive(uniffi::Object, Debug, Display, CloneGetters, Deserialize, Serialize, Clone)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct PipelineJob {
+    /// todo: replace with a consistent hash
+    #[getset(skip)]
+    pub(crate) hash: String,
+    /// A pipeline to base the pipeline job on.
+    pub pipeline: Arc<Pipeline>,
+    /// Attached, external input packet. Applies cartesian product by default on keys pointing to the same node.
+    pub input_packet: HashMap<String, Vec<PathSet>>,
+    /// Attached, external output directory.
+    pub output_dir: URI,
+}
+
+#[uniffi::export]
+impl PipelineJob {
+    /// Construct a new pipeline job instance.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if there is an issue initializing a `PipelineJob` instance.
+    #[uniffi::constructor]
+    pub fn new(
+        pipeline: Arc<Pipeline>,
+        input_packet: &HashMap<String, Vec<PathSet>>,
+        output_dir: URI,
+        namespace_lookup: &HashMap<String, PathBuf>,
+    ) -> Result<Self> {
+        validate_packet("input".into(), &pipeline.input_spec, input_packet)?;
+        let input_packet_with_checksum = input_packet
+            .iter()
+            .map(|(path_set_key, path_sets)| {
+                Ok((
+                    path_set_key.clone(),
+                    path_sets
+                        .iter()
+                        .map(|path_set| {
+                            Ok(match path_set {
+                                PathSet::Unary(blob) => {
+                                    PathSet::Unary(hash_blob(namespace_lookup, blob)?)
+                                }
+                                PathSet::Collection(blobs) => PathSet::Collection(
+                                    blobs
+                                        .iter()
+                                        .map(|blob| hash_blob(namespace_lookup, blob))
+                                        .collect::<Result<_>>()?,
+                                ),
+                            })
+                        })
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+
+        Ok(Self {
+            hash: make_random_hash(),
+            pipeline,
+            input_packet: input_packet_with_checksum,
+            output_dir,
+        })
     }
 }
 
@@ -713,6 +561,158 @@ impl PipelineJob {
 
         Ok(node_input_packets)
     }
+}
+
+impl Serialize for Pipeline {
+    fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("Pipeline", 4)?;
+        state.serialize_field("kernel_lut", &self.get_kernel_to_node_lut())?;
+        state.serialize_field("dot", &self.to_dot_lex())?;
+
+        // Input spec needs to be sorted for consistent serialization
+        let input_spec_sorted: BTreeMap<_, Vec<NodeURI>> = self
+            .input_spec
+            .iter()
+            .map(|(k, v)| {
+                let mut sorted_v = v.clone();
+                sorted_v.sort();
+                (k, sorted_v)
+            })
+            .collect();
+        state.serialize_field("input_spec", &input_spec_sorted)?;
+        state.serialize_field("output_spec", &self.output_spec)?;
+        state.end()
+    }
+}
+
+impl ToYaml for Pipeline {
+    fn process_field(
+        field_name: &str,
+        field_value: &serde_yaml::Value,
+    ) -> Option<(String, serde_yaml::Value)> {
+        match field_name {
+            "hash" | "annotation" => None, // Skip annotation field
+            _ => Some((field_name.to_owned(), field_value.clone())),
+        }
+    }
+}
+
+/// Struct to hold the result of a pipeline execution.
+#[derive(uniffi::Object, Debug, Clone, Deserialize, Serialize, Display, CloneGetters)]
+#[getset(get_clone, impl_attrs = "#[uniffi::export]")]
+#[display("{self:#?}")]
+#[uniffi::export(Display)]
+pub struct PipelineResult {
+    /// The pipeline job that was executed.
+    pub pipeline_job: Arc<PipelineJob>,
+    /// The result of the pipeline execution.
+    pub output_packets: HashMap<String, Vec<PathSet>>,
+    /// Logs of any failures that occurred during the pipeline execution.
+    pub failure_logs: Vec<String>,
+    /// The status of the pipeline execution.
+    pub status: PipelineStatus,
+}
+
+/// The status of a pipeline execution.
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum PipelineStatus {
+    /// The pipeline is currently running.
+    Running,
+    /// The pipeline has completed successfully.
+    Succeeded,
+    /// The pipeline has failed.
+    Failed,
+    /// The pipeline has partially succeeded. There should be some failure logs
+    PartiallySucceeded,
+}
+/// A node in a computational pipeline.
+#[derive(uniffi::Enum, Debug, Clone, Deserialize, Serialize)]
+pub enum Kernel {
+    /// Pod reference.
+    Pod {
+        /// See [`Pod`](crate::uniffi::model::pod::Pod).
+        pod: Arc<Pod>,
+    },
+    /// Cartesian product operation. See [`JoinOperator`](crate::core::operator::JoinOperator).
+    JoinOperator,
+    /// Rename a path set key operation.
+    MapOperator {
+        /// See [`MapOperator`](crate::core::operator::MapOperator).
+        mapper: Arc<MapOperator>,
+    },
+}
+
+impl From<MapOperator> for Kernel {
+    fn from(mapper: MapOperator) -> Self {
+        Self::MapOperator {
+            mapper: Arc::new(mapper),
+        }
+    }
+}
+
+impl From<Pod> for Kernel {
+    fn from(pod: Pod) -> Self {
+        Self::Pod { pod: Arc::new(pod) }
+    }
+}
+
+impl From<Arc<Pod>> for Kernel {
+    fn from(pod: Arc<Pod>) -> Self {
+        Self::Pod { pod }
+    }
+}
+
+impl Kernel {
+    /// Get a unique hash that represents the kernel.
+    /// The exception here is the `JoinOperator` doesn't have any pre execution configuration, since it's logic is completely dependent on what is fed to it during execution.
+    pub fn get_hash(&self) -> &str {
+        match self {
+            Self::Pod { pod } => &pod.hash,
+            Self::JoinOperator => &JOIN_OPERATOR_HASH,
+            Self::MapOperator { mapper } => &mapper.hash,
+        }
+    }
+}
+
+impl PartialEq for Kernel {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_hash() == other.get_hash()
+    }
+}
+
+impl Eq for Kernel {}
+
+impl Hash for Kernel {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get_hash().hash(state);
+    }
+}
+
+/// Index from pipeline node into pod specification.
+#[derive(
+    uniffi::Record, Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord,
+)]
+pub struct NodeURI {
+    /// Node reference name in pipeline.
+    pub node_id: String,
+    /// Specification key.
+    pub key: String,
+}
+
+/// A node in the computation pipeline that stores its hash, kernel, and user provided label.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct PipelineNode {
+    /// Hash that represent the node
+    pub hash: String,
+    /// Kernel associated with the node
+    pub kernel: Kernel,
+    /// User provided label for the node
+    pub label: String,
+    /// This is meant for internal use only to track the node index in the graph
+    pub node_idx: NodeIndex,
 }
 
 #[cfg(test)]

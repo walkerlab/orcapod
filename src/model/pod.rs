@@ -363,6 +363,22 @@ impl ToYaml for PodResult {
     }
 }
 
+/// Status of a particular compute run.
+#[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
+pub enum PodStatus {
+    /// Run is ongoing.
+    Running,
+    /// Run has completed successfully.
+    Completed,
+    /// Run failed with the provided error code.
+    Failed(i16),
+    /// For other container states that are not listed.
+    Undefined,
+    /// No status set.
+    #[default]
+    Unset,
+}
+
 #[expect(clippy::expect_used, reason = "Serde requires this signature.")]
 fn deserialize_pod<'de, D>(deserializer: D) -> result::Result<Arc<Pod>, D::Error>
 where
@@ -407,22 +423,6 @@ where
             })
         },
     )
-}
-
-/// Status of a particular compute run.
-#[derive(uniffi::Enum, Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Default)]
-pub enum PodStatus {
-    /// Run is ongoing.
-    Running,
-    /// Run has completed successfully.
-    Completed,
-    /// Run failed with the provided error code.
-    Failed(i16),
-    /// For other container states that are not listed.
-    Undefined,
-    /// No status set.
-    #[default]
-    Unset,
 }
 
 #[cfg(test)]

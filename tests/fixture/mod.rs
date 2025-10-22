@@ -205,7 +205,7 @@ pub fn pod_jobs_stresser(
     success_count: usize,
     error_count: usize,
 ) -> Result<Vec<Arc<PodJob>>> {
-    (1..=(success_count + error_count))
+    (1..=success_count.saturating_add(error_count))
         .map(|i| {
             if i <= success_count {
                 return Ok(pod_job_custom(
