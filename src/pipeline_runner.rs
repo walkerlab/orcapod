@@ -827,10 +827,6 @@ impl<T: Operator + Send + Sync + 'static> OperatorProcessor<T> {
     }
 }
 
-#[expect(
-    clippy::excessive_nesting,
-    reason = "Nesting manageable and mute github action error"
-)]
 #[async_trait]
 impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T> {
     async fn process_incoming_packet(
