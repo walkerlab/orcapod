@@ -6,8 +6,6 @@ uniffi_external::setup_scaffolding!();
 #[cfg(all(feature = "default", feature = "test"))]
 compile_error!(r#"Feature "default" and feature "test" cannot be enabled at the same time."#);
 
-/// Pure Rust source.
-pub mod core;
 /// Exposed CFFI client based on [uniffi](https://crates.io/crates/uniffi).
 ///
 /// `uniffi` brings a lot of convenience in creating a CFFI but we also must meet several
@@ -34,4 +32,20 @@ pub mod core;
 /// 1. (Rust limitation) No associated functions in traits e.g. class methods in Python
 /// 1. Hint: Enum variants with named fields offer a better UX (e.g. in Python) as opposed to
 ///    unnamed enum fields i.e. will show up in help.
-pub mod uniffi;
+pub mod error;
+pub(crate) mod graph;
+/// Store backends for model persistence
+pub mod store;
+pub(crate) mod util;
+pub(crate) mod validation;
+
+pub(crate) mod crypto;
+/// Model definition for orcapod
+pub mod model;
+/// Operators for data transformation in a pipeline
+pub mod operator;
+/// For pod execution orchestration
+pub mod orchestrator;
+
+/// Pipeline runner module
+pub mod pipeline_runner;

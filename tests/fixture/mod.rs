@@ -8,16 +8,15 @@
 )]
 
 use names::{Generator, Name};
-use orcapod::uniffi::{
+use orcapod::{
     error::Result,
     model::{
         Annotation,
         packet::{Blob, BlobKind, Packet, PathInfo, PathSet, URI},
         pipeline::{Kernel, NodeURI, Pipeline, PipelineJob},
-        pod::{Pod, PodJob, PodResult, RecommendSpecs},
+        pod::{Pod, PodJob, PodResult, PodStatus, RecommendedSpecs},
     },
     operator::MapOperator,
-    orchestrator::PodStatus,
     store::{ModelID, ModelInfo, Store},
 };
 use std::{
@@ -77,7 +76,7 @@ pub fn pod_style() -> Result<Pod> {
                 },
             ),
         ]),
-        RecommendSpecs {
+        RecommendedSpecs {
             cpus: 0.25,
             memory: 1_u64 << 30,
         },
@@ -172,7 +171,7 @@ pub fn pod_custom(
         input_spec,
         PathBuf::from("/tmp/output"),
         HashMap::new(),
-        RecommendSpecs {
+        RecommendedSpecs {
             cpus: 0.1,
             memory: 50_u64 << 20,
         },
@@ -206,7 +205,7 @@ pub fn pod_jobs_stresser(
     success_count: usize,
     error_count: usize,
 ) -> Result<Vec<Arc<PodJob>>> {
-    (1..=(success_count + error_count))
+    (1..=success_count.saturating_add(error_count))
         .map(|i| {
             if i <= success_count {
                 return Ok(pod_job_custom(
@@ -326,7 +325,7 @@ pub fn combine_txt_pod(pod_name: &str) -> Result<Pod> {
                 match_pattern: r".*\.txt".to_owned(),
             },
         )]),
-        RecommendSpecs {
+        RecommendedSpecs {
             cpus: 0.25,
             memory: 128_u64 << 20,
         },

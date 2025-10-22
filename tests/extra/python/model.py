@@ -16,7 +16,7 @@ from orcapod import (
     LocalFileStore,
     ModelId,
     ModelType,
-    RecommendSpecs,
+    RecommendedSpecs,
     OrcaError,
 )
 
@@ -33,7 +33,7 @@ def create_pod(data, _):
         input_spec={},
         output_dir="/tmp/output",
         output_spec={},
-        recommend_specs=RecommendSpecs(
+        recommend_specs=RecommendedSpecs(
             cpus=0.1,
             memory=10 << 20,
         ),

@@ -17,7 +17,7 @@ from orcapod import (
     Uri,
     Pod,
     Annotation,
-    RecommendSpecs,
+    RecommendedSpecs,
 )
 
 
@@ -89,7 +89,7 @@ if __name__ == "__main__":
                 input_spec={},
                 output_dir="/tmp/output",
                 output_spec={},
-                recommend_specs=RecommendSpecs(
+                recommend_specs=RecommendedSpecs(
                     cpus=0.1,
                     memory=128 << 20,
                 ),

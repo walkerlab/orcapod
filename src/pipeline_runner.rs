@@ -1,26 +1,3 @@
-use crate::{
-    core::{
-        crypto::hash_buffer,
-        model::{pipeline::PipelineNode, serialize_hashmap},
-        operator::{JoinOperator, Operator},
-        util::{get, make_key_expr},
-    },
-    uniffi::{
-        error::{
-            Kind, OrcaError, Result,
-            selector::{self},
-        },
-        model::{
-            packet::{Packet, PathSet, URI},
-            pipeline::{Kernel, PipelineJob, PipelineResult, PipelineStatus},
-            pod::{Pod, PodJob, PodResult},
-        },
-        orchestrator::{
-            PodStatus,
-            agent::{Agent, AgentClient, Response},
-        },
-    },
-};
 use async_trait::async_trait;
 use names::{Generator, Name};
 use serde_yaml::Serializer;
@@ -33,6 +10,23 @@ use std::{
 use tokio::{
     sync::{Mutex, RwLock},
     task::JoinSet,
+};
+
+use crate::{
+    crypto::hash_buffer,
+    error::{
+        Kind, OrcaError, Result,
+        selector::{self},
+    },
+    model::{
+        packet::{Packet, PathSet, URI},
+        pipeline::{Kernel, PipelineJob, PipelineNode, PipelineResult, PipelineStatus},
+        pod::{Pod, PodJob, PodResult, PodStatus},
+        serialize_hashmap,
+    },
+    operator::{JoinOperator, Operator},
+    orchestrator::agent::{Agent, AgentClient, Response},
+    util::{get, make_key_expr},
 };
 
 static NODE_OUTPUT_KEY_EXPR: &str = "output";
@@ -247,11 +241,11 @@ impl DockerPipelineRunner {
 
         // Wait for all nodes to be ready before sending inputs
         let num_of_nodes = graph.node_count();
-        let mut ready_nodes = 0;
+        let mut ready_nodes: usize = 0;
 
         while (subscriber.recv_async().await).is_ok() {
             // Message is empty, just increment the counter
-            ready_nodes += 1;
+            ready_nodes = ready_nodes.saturating_add(1);
             if ready_nodes == num_of_nodes {
                 break; // All nodes are ready, we can start sending inputs
             }
@@ -478,7 +472,7 @@ impl DockerPipelineRunner {
             node.label, node.hash
         );
         while status_subscriber.recv_async().await.is_ok() {
-            num_of_ready_event_handler += 1;
+            num_of_ready_event_handler = num_of_ready_event_handler.saturating_add(1);
             if num_of_ready_event_handler == nodes_to_sub_to.len() {
                 // +1 for the stop request task
                 break; // All tasks are ready, we can start sending inputs
@@ -833,10 +827,6 @@ impl<T: Operator + Send + Sync + 'static> OperatorProcessor<T> {
     }
 }
 
-#[allow(
-    clippy::excessive_nesting,
-    reason = "Nesting manageable and mute github action error"
-)]
 #[async_trait]
 impl<T: Operator + Send + Sync + 'static> NodeProcessor for OperatorProcessor<T> {
     async fn process_incoming_packet(

@@ -10,7 +10,7 @@
 pub mod fixture;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, TestDirs, pod_jobs_stresser, pull_image};
 use itertools::Itertools as _;
-use orcapod::uniffi::{
+use orcapod::{
     error::Result,
     model::pod::PodResult,
     orchestrator::{
@@ -25,7 +25,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{self, task::JoinSet, time::sleep as async_sleep};
-use zenoh;
 
 #[test]
 fn simple() -> Result<()> {

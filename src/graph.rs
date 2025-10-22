@@ -1,13 +1,15 @@
-use crate::{
-    core::{model::pipeline::PipelineNode, util::get},
-    uniffi::{error::Result, model::pipeline::Kernel},
-};
 use dot_parser::ast::Graph as DOTGraph;
 use petgraph::{
     dot::dot_parser::{DotAttrList, DotNodeWeight, ParseFromDot as _},
     graph::DiGraph,
 };
 use std::collections::HashMap;
+
+use crate::{
+    error::Result,
+    model::pipeline::{Kernel, PipelineNode},
+    util::get,
+};
 
 #[expect(
     clippy::panic_in_result_fn,

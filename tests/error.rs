@@ -10,7 +10,7 @@ use chrono::DateTime;
 use dot_parser::ast::Graph as DOTGraph;
 use fixture::{NAMESPACE_LOOKUP_READ_ONLY, pod_custom, pod_job_custom, pod_job_style, str_to_vec};
 use glob::glob;
-use orcapod::uniffi::{
+use orcapod::{
     error::{OrcaError, Result},
     model::packet::PathInfo,
     orchestrator::{
@@ -19,8 +19,6 @@ use orcapod::uniffi::{
         docker::LocalDockerOrchestrator,
     },
 };
-use serde_json;
-use serde_yaml;
 use std::{collections::HashMap, fs, ops::Deref as _, path::PathBuf, sync::Arc, time::Duration};
 use tokio::{self, time::sleep as async_sleep};
 
