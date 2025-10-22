@@ -298,7 +298,6 @@ pub(crate) fn extract_metadata(key_expr: &str) -> HashMap<String, String> {
 }
 
 #[expect(
-    clippy::excessive_nesting,
     clippy::let_underscore_must_use,
     reason = "`result::Result<(), SendError<_>>` is the only uncaptured result since it would mean we can't transmit results over mpsc."
 )]

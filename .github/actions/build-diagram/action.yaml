@@ -16,7 +16,7 @@ runs:
         cargo modules dependencies --lib --max-depth 0 \
           --no-uses --no-fns \
           --focus-on "
-            orcapod::uniffi::{
+            orcapod::{
               model::{Pod,PodJob,PodResult},
               store::filestore::LocalFileStore,
               orchestrator::{PodRun,docker::LocalDockerOrchestrator},
