@@ -11,12 +11,5 @@ services:
       - ${LOCAL_WORKSPACE_PATH}:${ENV_WORKSPACE_PATH} # source
       - docker_data:/var/lib/docker # Docker image cache
       - ${LOCAL_GIT_PATH}:${ENV_GIT_PATH} # Base Git worktree history
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
 volumes:
   docker_data:

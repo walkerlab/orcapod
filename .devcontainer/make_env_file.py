@@ -41,5 +41,5 @@ def make_config(local_workspace_path: Path):
 if __name__ == "__main__":
     local_workspace_path = Path(sys.argv[1])
 
-    with open(Path(__file__).absolute().parent / ".env", "w") as f:
+    with open(Path(__file__).absolute().parent / f"{sys.argv[2]}.env", "w") as f:
         f.write(make_config(local_workspace_path))

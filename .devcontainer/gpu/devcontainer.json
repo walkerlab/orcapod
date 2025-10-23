@@ -3,7 +3,7 @@
 	"dockerComposeFile": "./docker-compose.yaml",
 	"service": "ide",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-	"initializeCommand": ".devcontainer/gpu/make_env_file.py ${localWorkspaceFolder}",
+	"initializeCommand": ".devcontainer/make_env_file.py ${localWorkspaceFolder} ./gpu/",
 	"postStartCommand": "mkdir -p tests/.tmp && docker system prune -fa && docker volume prune -f",
 	"hostRequirements": {
 		"cpus": 2,
