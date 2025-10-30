@@ -51,4 +51,3 @@ RUN \
     uv pip install ipykernel eclipse-zenoh -p ~/.local/share/base && \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
 ENV VIRTUAL_ENV=/root/.local/share/base
-CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]
