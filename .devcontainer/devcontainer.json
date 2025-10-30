@@ -1,15 +1,29 @@
 {
-	"name": "Development-GPU",
-	"dockerComposeFile": "./docker-compose.yaml",
-	"service": "ide",
+	"name": "Development-CPU-ONLY",
+	"build": {
+		"dockerfile": "./Dockerfile"
+	},
+	"postStartCommand": "sudo rm /var/run/docker.pid; sudo dockerd",
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-	"initializeCommand": ".devcontainer/make_env_file.py ${localWorkspaceFolder} ./gpu/",
-	"postStartCommand": "mkdir -p tests/.tmp && docker system prune -fa && docker volume prune -f",
 	"hostRequirements": {
 		"cpus": 2,
 		"memory": "8gb",
 		"storage": "32gb"
 	},
+	"remoteEnv": {
+		"RUST_BACKTRACE": "1"
+	},
+	"capAdd": [
+		"SYS_ADMIN"
+	],
+	"privileged": true,
+	"runArgs": [
+		"--cgroupns=host",
+		"--gpus=all"
+	],
+	"mounts": [
+		"source=docker_data,target=/var/lib/docker,type=volume"
+	],
 	"customizations": {
 		"vscode": {
 			"extensions": [
